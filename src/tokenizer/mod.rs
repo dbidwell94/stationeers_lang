@@ -1,4 +1,4 @@
-mod token;
+pub mod token;
 
 use std::{
     fs::File,
@@ -165,6 +165,18 @@ where
             self.returned_eof = true;
             Ok(Some(Token::new(TokenType::EOF, self.line, self.column)))
         }
+    }
+
+    pub fn peek_next(&mut self) -> Result<Option<Token>, TokenizerError> {
+        let current_pos = self.reader.stream_position()?;
+        let column = self.column.clone();
+        let line = self.line.clone();
+
+        let token = self.next_token()?;
+        self.reader.seek(SeekFrom::Start(current_pos))?;
+        self.column = column;
+        self.line = line;
+        Ok(token)
     }
 
     /// Tokenizes a symbol
@@ -665,6 +677,34 @@ This is a skippable line"#,
 
             assert_eq!(token.token_type, expected_token);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_peek_next() -> Result<()> {
+        let mut tokenizer = Tokenizer::from(TEST_STRING.to_owned());
+
+        let column = tokenizer.column.clone();
+        let line = tokenizer.line.clone();
+
+        let peeked_token = tokenizer.peek_next()?;
+
+        assert_eq!(
+            peeked_token.unwrap().token_type,
+            TokenType::Keyword(Keyword::Fn)
+        );
+        assert_eq!(tokenizer.column, column);
+        assert_eq!(tokenizer.line, line);
+
+        let next_token = tokenizer.next_token()?;
+
+        assert_eq!(
+            next_token.unwrap().token_type,
+            TokenType::Keyword(Keyword::Fn)
+        );
+        assert_ne!(tokenizer.column, column);
+        assert_ne!(tokenizer.line, line);
 
         Ok(())
     }

@@ -1,3 +1,4 @@
+mod parser;
 mod tokenizer;
 
 use clap::Parser;

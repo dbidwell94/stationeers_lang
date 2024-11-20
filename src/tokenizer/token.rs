@@ -36,12 +36,35 @@ pub enum TokenType {
     EOF,
 }
 
+impl std::fmt::Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenType::String(s) => write!(f, "{}", s),
+            TokenType::Number(n) => write!(f, "{}", n),
+            TokenType::Boolean(b) => write!(f, "{}", b),
+            TokenType::Keyword(k) => write!(f, "{:?}", k),
+            TokenType::Identifier(i) => write!(f, "{}", i),
+            TokenType::Symbol(s) => write!(f, "{:?}", s),
+            TokenType::EOF => write!(f, "EOF"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Hash, Eq)]
 pub enum Number {
     /// Represents an integer number
     Integer(u64),
     /// Represents a decimal type number with a precision of 64 bits
     Decimal(u64, u64),
+}
+
+impl std::fmt::Display for Number {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Number::Integer(i) => write!(f, "{}", i),
+            Number::Decimal(i, d) => write!(f, "{}.{}", i, d),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Hash, Eq)]
@@ -97,6 +120,41 @@ pub enum Symbol {
     LessThanOrEqual,
     /// Represents the `>=` symbol
     GreaterThanOrEqual,
+}
+
+impl Symbol {
+    pub fn is_operator(&self) -> bool {
+        match self {
+            Symbol::Plus | Symbol::Minus | Symbol::Asterisk | Symbol::Slash => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_comparison(&self) -> bool {
+        match self {
+            Symbol::LessThan
+            | Symbol::GreaterThan
+            | Symbol::Equal
+            | Symbol::NotEqual
+            | Symbol::LessThanOrEqual
+            | Symbol::GreaterThanOrEqual => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_logical(&self) -> bool {
+        match self {
+            Symbol::LogicalAnd | Symbol::LogicalOr => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_assignment(&self) -> bool {
+        match self {
+            Symbol::Assign => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Hash, Eq)]
