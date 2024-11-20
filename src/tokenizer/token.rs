@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     /// The type of the token
     pub token_type: TokenType,
@@ -18,7 +18,7 @@ impl Token {
     }
 }
 
-#[derive(Debug, PartialEq, Hash, Eq)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub enum TokenType {
     /// Represents a string token
     String(String),
@@ -50,7 +50,7 @@ impl std::fmt::Display for TokenType {
     }
 }
 
-#[derive(Debug, PartialEq, Hash, Eq)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Number {
     /// Represents an integer number
     Integer(u64),
@@ -67,7 +67,7 @@ impl std::fmt::Display for Number {
     }
 }
 
-#[derive(Debug, PartialEq, Hash, Eq)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Symbol {
     // Single Character Symbols
     /// Represents the `(` symbol
@@ -157,7 +157,7 @@ impl Symbol {
     }
 }
 
-#[derive(Debug, PartialEq, Hash, Eq)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Keyword {
     /// Represents the `let` keyword
     Let,

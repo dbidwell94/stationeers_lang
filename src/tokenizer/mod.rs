@@ -1,6 +1,7 @@
 pub mod token;
 
 use std::{
+    collections::VecDeque,
     fs::File,
     io::{BufReader, Cursor, Read, Seek, SeekFrom},
     path::PathBuf,
@@ -123,6 +124,8 @@ where
         Ok(())
     }
 
+    /// Consumes the tokenizer and returns the next token in the stream
+    /// If there are no more tokens in the stream, this function returns None
     pub fn next_token(&mut self) -> Result<Option<Token>, TokenizerError> {
         while let Some(next_char) = self.next_char()? {
             // skip whitespace
@@ -167,6 +170,8 @@ where
         }
     }
 
+    /// Peeks the next token in the stream without consuming it
+    /// If there are no more tokens in the stream, this function returns None
     pub fn peek_next(&mut self) -> Result<Option<Token>, TokenizerError> {
         let current_pos = self.reader.stream_position()?;
         let column = self.column.clone();
@@ -408,6 +413,106 @@ where
     }
 }
 
+pub struct TokenizerBuffer<T>
+where
+    T: Read + Seek,
+{
+    tokenizer: Tokenizer<T>,
+    buffer: VecDeque<Token>,
+    history: VecDeque<Token>,
+}
+
+impl<T> TokenizerBuffer<T>
+where
+    T: Seek + Read,
+{
+    pub fn new(tokenizer: Tokenizer<T>) -> Self {
+        Self {
+            tokenizer,
+            buffer: VecDeque::new(),
+            history: VecDeque::with_capacity(128),
+        }
+    }
+
+    /// Reads the next token from the tokenizer, pushing the value to the back of the history
+    /// and returning the token
+    pub fn next(&mut self) -> Result<Option<Token>, TokenizerError> {
+        if let Some(token) = self.buffer.pop_front() {
+            self.history.push_back(token.clone());
+            return Ok(Some(token));
+        }
+
+        let token = self.tokenizer.next_token()?;
+        if let Some(ref token) = token {
+            self.history.push_back(token.clone());
+        }
+        Ok(token)
+    }
+
+    /// Peeks the next token in the stream without adding to the history stack
+    pub fn peek(&mut self) -> Result<Option<Token>, TokenizerError> {
+        if let Some(token) = self.buffer.front() {
+            return Ok(Some(token.clone()));
+        }
+
+        let token = self.tokenizer.peek_next()?;
+        Ok(token)
+    }
+
+    fn seek_from_start(&mut self, pos: usize) -> Result<(), TokenizerError> {
+        // if pos 
+
+
+        Ok(())
+    }
+
+    fn seek_from_current(&mut self, seek_to: i64) -> Result<(), TokenizerError> {
+        // if seek_to > 0 then we need to check if the buffer has enough tokens to pop, otherwise we need to read from the tokenizer
+        // if seek_to < 0 then we need to pop from the history and push to the front of the buffer. If not enough, then we throw (we reached the front of the history)
+        // if seek_to == 0 then we don't need to do anything
+
+        if seek_to > 0 {
+            let mut tokens = Vec::with_capacity(seek_to as usize);
+            for _ in 0..seek_to {
+                if let Some(token) = self.tokenizer.next_token()? {
+                    tokens.push(token);
+                } else {
+                    return Err(TokenizerError::IOError(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "Unexpected EOF",
+                    )));
+                }
+            }
+            self.history.extend(tokens);
+        } else if seek_to < 0 {
+            let seek_to = seek_to.abs() as usize;
+            let mut tokens = Vec::with_capacity(seek_to);
+            for _ in 0..seek_to {
+                if let Some(token) = self.history.pop_back() {
+                    tokens.push(token);
+                } else {
+                    return Err(TokenizerError::IOError(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "Unexpected EOF",
+                    )));
+                }
+            }
+            self.buffer.extend(tokens.into_iter().rev());
+        }
+
+        Ok(())
+    }
+
+    /// Adds to or removes from the History stack, allowing the user to move back and forth in the stream
+    pub fn seek(&mut self, from: SeekFrom) -> Result<(), TokenizerError> {
+        Ok(match from {
+            SeekFrom::Start(pos) => self.seek_from_start(pos as usize)?,
+            SeekFrom::Current(seek_to) => self.seek_from_current(seek_to)?,
+            SeekFrom::End(_) => unimplemented!("SeekFrom::End will not be implemented"),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,6 +526,35 @@ mod tests {
             return x + 2;
         }
     "#;
+
+    #[test]
+    fn test_tokenizer_buffer_seek_from_start() -> Result<()> {
+        let tokenizer = Tokenizer::from(TEST_STRING.to_owned());
+        let mut buffer = TokenizerBuffer::new(tokenizer);
+
+        let token = buffer.next()?;
+        assert_eq!(token.unwrap().token_type, TokenType::Keyword(Keyword::Fn));
+
+        let token = buffer.next()?;
+        assert_eq!(
+            token.unwrap().token_type,
+            TokenType::Identifier(String::from("test"))
+        );
+
+        buffer.seek(SeekFrom::Start(0))?;
+
+        let token = buffer.next()?;
+
+        assert_eq!(token.unwrap().token_type, TokenType::Keyword(Keyword::Fn));
+
+        buffer.seek(SeekFrom::Start(16))?;
+
+        let token = buffer.next()?;
+
+        assert_eq!(token.unwrap().token_type, TokenType::Keyword(Keyword::Let));
+
+        Ok(())
+    }
 
     #[test]
     fn test_tokenizer_from_path_ok() {

@@ -1,135 +1,210 @@
-use thiserror::Error;
+mod tree_node;
 
 use crate::tokenizer::{
-    token::{Keyword, Number, Symbol, Token, TokenType},
+    token::{Symbol, Token, TokenType},
     Tokenizer, TokenizerError,
 };
-use std::io::{Read, Seek};
+use std::{
+    collections::VecDeque,
+    io::{Read, Seek},
+};
+use thiserror::Error;
+use tree_node::*;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("{0}")]
+    #[error(transparent)]
     TokenizerError(#[from] TokenizerError),
-    #[error("Unexpected EOF\n\nLine: {0}, Column: {1}", token.line, token.column)]
-    UnexpectedEOF { token: Token },
     #[error("Unexpected token\n\nLine: {0}, Column: {1}\nToken: {2}", token.line, token.column, token.token_type)]
     UnexpectedToken { token: Token },
+    #[error("Unexpected EOF")]
+    UnexpectedEOF,
     #[error("An unknown error has occurred")]
     UnknownError,
 }
 
-#[derive(Debug)]
-enum Literal {
-    Number(Number),
-    String(String),
-    Boolean(bool),
+pub struct Parser<R: Read + Seek> {
+    tokenizer: Tokenizer<R>,
+    current_token: Option<Token>,
 }
 
-#[derive(Debug)]
-struct Identifier(String);
-
-#[derive(Debug)]
-pub enum Expression {
-    Declaration {
-        identifier: Identifier,
-        value: Box<Expression>,
-    },
-    Assignment {
-        identifier: Identifier,
-        value: Box<Expression>,
-    },
-    Binary {
-        left: Box<Expression>,
-        operator: Symbol,
-        right: Box<Expression>,
-    },
-    Literal(Literal),
-}
-
-pub struct Parser<T>
+impl<R> Parser<R>
 where
-    T: Read + Seek,
+    R: Read + Seek,
 {
-    tokenizer: Tokenizer<T>,
-}
-
-impl<T> Parser<T>
-where
-    T: Read + Seek,
-{
-    pub fn new(tokenizer: Tokenizer<T>) -> Self {
-        Self { tokenizer }
-    }
-
-    pub fn parse(&mut self) -> Result<Option<Expression>, ParseError> {
-        while let Some(token) = self.tokenizer.next_token()? {
-            match token.token_type {
-                TokenType::Number(n) => {
-                    if let Some(Token {
-                        token_type: TokenType::Symbol(s),
-                        ..
-                    }) = self.tokenizer.peek_next()?
-                    {
-                        if s.is_operator() {
-                            self.tokenizer.next_token()?;
-                            return Ok(Some(Expression::Binary {
-                                left: Box::new(Expression::Literal(Literal::Number(n))),
-                                operator: s,
-                                right: Box::new(self.parse()?.ok_or(ParseError::UnknownError)?),
-                            }));
-                        }
-                    } else {
-                        return Ok(Some(Expression::Literal(Literal::Number(n))));
-                    }
-                }
-                _ => return Err(ParseError::UnexpectedToken { token }),
-            }
+    pub fn new(tokenizer: Tokenizer<R>) -> Self {
+        Parser {
+            tokenizer,
+            current_token: None,
         }
-        return Err(ParseError::UnknownError);
     }
 
-    fn parse_declaration(&mut self) -> Result<Expression, ParseError> {
-        let identifier = match self.tokenizer.next_token()? {
-            Some(token) => match token.token_type {
-                TokenType::Identifier(i) => Identifier(i),
-                _ => return Err(ParseError::UnexpectedToken { token }),
-            },
-            None => return Err(ParseError::UnknownError),
+    pub fn parse(&mut self) -> Result<tree_node::Expression, ParseError> {
+        self.current_token = self.tokenizer.next_token()?;
+        self.expression()
+    }
+
+    fn expression(&mut self) -> Result<tree_node::Expression, ParseError> {
+        let current_token = self
+            .current_token
+            .as_ref()
+            .ok_or(ParseError::UnknownError)?;
+
+        Ok(match current_token.token_type {
+            // Match a number or string literal as long as the next token is not an operator
+            TokenType::Number(_) | TokenType::String(_)
+                if !matches!(
+                    self.tokenizer.peek_next()?, Some(Token { token_type: TokenType::Symbol(e), .. }) if e.is_operator()
+                ) =>
+            {
+                Expression::Literal(self.literal()?)
+            }
+
+            // Match a negation operator
+            TokenType::Symbol(Symbol::Minus) => Expression::Negation(Box::new(self.parse()?)),
+
+            _ if matches!(self.tokenizer.peek_next()?, Some(Token { token_type: TokenType::Symbol(e), .. }) if e.is_operator()) => {
+                Expression::BinaryExpression(self.binary()?)
+            }
+
+            // Something went wrong. Return an error
+            _ => {
+                return Err(ParseError::UnexpectedToken {
+                    token: current_token.clone(),
+                })
+            }
+        })
+    }
+
+    fn binary(&mut self) -> Result<tree_node::BinaryExpression, ParseError> {
+        let literal = self.literal()?;
+
+        let Some(Token {
+            token_type: TokenType::Symbol(operator),
+            ..
+        }) = self.current_token
+        else {
+            return Err(ParseError::UnknownError);
+        };
+        self.current_token = self.tokenizer.next_token()?;
+
+        Ok(match operator {
+            Symbol::Plus => BinaryExpression::Add(
+                Box::new(Expression::Literal(literal)),
+                Box::new(self.expression()?),
+            ),
+            Symbol::Asterisk => BinaryExpression::Multiply(
+                Box::new(Expression::Literal(literal)),
+                Box::new(self.expression()?),
+            ),
+            Symbol::Slash => BinaryExpression::Divide(
+                Box::new(Expression::Literal(literal)),
+                Box::new(self.expression()?),
+            ),
+            Symbol::Minus => BinaryExpression::Subtract(
+                Box::new(Expression::Literal(literal)),
+                Box::new(self.expression()?),
+            ),
+            _ => {
+                return Err(ParseError::UnexpectedToken {
+                    token: Token {
+                        token_type: TokenType::Symbol(operator),
+                        line: 0,
+                        column: 0,
+                    },
+                })
+            }
+        })
+    }
+
+    fn literal(&mut self) -> Result<tree_node::Literal, ParseError> {
+        let current_token = self
+            .current_token
+            .as_ref()
+            .ok_or(ParseError::UnknownError)?;
+
+        let to_return = match current_token.token_type {
+            TokenType::Number(ref number) => tree_node::Literal::Number(number.clone()),
+            TokenType::String(ref string) => tree_node::Literal::String(string.clone()),
+            _ => {
+                return Err(ParseError::UnexpectedToken {
+                    token: current_token.clone(),
+                })
+            }
         };
 
-        return Ok(Expression::Declaration {
-            identifier,
-            value: Box::new(self.parse()?.ok_or(ParseError::UnknownError)?),
-        });
+        self.current_token = self.tokenizer.next_token()?;
+        Ok(to_return)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::tree_node::*;
     use super::*;
     use anyhow::Result;
 
     #[test]
-    fn test_parser() -> Result<()> {
-        let input = r#"
-            5.3245 + 5
+    fn test_add_expr() -> Result<()> {
+        let input = "123 + 456";
 
+        let mut parser = Parser::new(Tokenizer::from(input.to_owned()));
 
+        let result = parser.parse()?;
+        let formatted_output = format!("{}", result);
 
+        assert_eq!(formatted_output, "(123 + 456)");
+        Ok(())
+    }
 
-            45 - 2
-        "#;
+    #[test]
+    fn test_parse_number() -> Result<()> {
+        let input = "123";
+        let mut parser = Parser::new(Tokenizer::from(input.to_owned()));
+        let result = parser.parse()?;
 
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
+        let formatted_output = format!("{}", result);
 
-        let expr = parser.parse()?;
+        assert_eq!(formatted_output, "123");
 
-        println!("{:?}", expr);
+        Ok(())
+    }
 
-        let expr = parser.parse()?;
+    #[test]
+    fn test_parse_negation() -> Result<()> {
+        let input = "-123";
+        let mut parser = Parser::new(Tokenizer::from(input.to_owned()));
+        let result = parser.parse()?;
 
-        println!("{:?}", expr);
+        let formatted_output = format!("{}", result);
+
+        assert_eq!(formatted_output, "(-123)");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_order_of_operations() -> Result<()> {
+        let input = "123 - 456 + 789";
+
+        let mut parser = Parser::new(Tokenizer::from(input.to_owned()));
+        let result = parser.parse()?;
+
+        let formatted_output = format!("{}", result);
+        println!("{}", formatted_output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_chained_operators() -> Result<()> {
+        let input = "123 + 456 * 789";
+        let mut parser = Parser::new(Tokenizer::from(input.to_owned()));
+        let result = parser.parse()?;
+
+        let formatted_output = format!("{}", result);
+
+        assert_eq!(formatted_output, "(123 + (456 * 789))");
 
         Ok(())
     }
