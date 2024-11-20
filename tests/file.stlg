@@ -1,0 +1,3 @@
+export fn doThings() {
+    power.myPowerItem(12.45 + 5);
+}
