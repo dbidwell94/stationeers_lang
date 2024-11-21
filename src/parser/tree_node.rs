@@ -1,4 +1,4 @@
-use crate::tokenizer::token::Number;
+use crate::tokenizer::token::{Number, TokenType};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Literal {
@@ -10,7 +10,7 @@ impl std::fmt::Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Number(n) => write!(f, "{}", n),
-            Literal::String(s) => write!(f, "{}", s),
+            Literal::String(s) => write!(f, "\"{}\"", s),
         }
     }
 }
@@ -64,11 +64,24 @@ impl std::fmt::Display for LogicalExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct AssignmentExpression {
+    pub identifier: String,
+    pub expression: Box<Expression>,
+}
+
+impl std::fmt::Display for AssignmentExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} = {}", self.identifier, self.expression)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     Literal(Literal),
     Negation(Box<Expression>),
     BinaryExpression(BinaryExpression),
     LogicalExpression(LogicalExpression),
+    AssignmentExpression(AssignmentExpression),
 }
 
 impl std::fmt::Display for Expression {
@@ -78,6 +91,7 @@ impl std::fmt::Display for Expression {
             Expression::Negation(e) => write!(f, "(-{})", e),
             Expression::BinaryExpression(e) => write!(f, "{}", e),
             Expression::LogicalExpression(e) => write!(f, "{}", e),
+            Expression::AssignmentExpression(e) => write!(f, "{}", e),
         }
     }
 }

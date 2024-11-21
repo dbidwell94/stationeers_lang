@@ -459,13 +459,6 @@ where
         Ok(token)
     }
 
-    fn seek_from_start(&mut self, pos: usize) -> Result<(), TokenizerError> {
-        // if pos 
-
-
-        Ok(())
-    }
-
     fn seek_from_current(&mut self, seek_to: i64) -> Result<(), TokenizerError> {
         // if seek_to > 0 then we need to check if the buffer has enough tokens to pop, otherwise we need to read from the tokenizer
         // if seek_to < 0 then we need to pop from the history and push to the front of the buffer. If not enough, then we throw (we reached the front of the history)
@@ -506,9 +499,9 @@ where
     /// Adds to or removes from the History stack, allowing the user to move back and forth in the stream
     pub fn seek(&mut self, from: SeekFrom) -> Result<(), TokenizerError> {
         Ok(match from {
-            SeekFrom::Start(pos) => self.seek_from_start(pos as usize)?,
             SeekFrom::Current(seek_to) => self.seek_from_current(seek_to)?,
             SeekFrom::End(_) => unimplemented!("SeekFrom::End will not be implemented"),
+            SeekFrom::Start(_) => unimplemented!("SeekFrom::Start will not be implemented"),
         })
     }
 }
@@ -528,30 +521,22 @@ mod tests {
     "#;
 
     #[test]
-    fn test_tokenizer_buffer_seek_from_start() -> Result<()> {
+    fn test_tokenizer_buffer_seek_from_current() -> Result<()> {
         let tokenizer = Tokenizer::from(TEST_STRING.to_owned());
         let mut buffer = TokenizerBuffer::new(tokenizer);
 
         let token = buffer.next()?;
         assert_eq!(token.unwrap().token_type, TokenType::Keyword(Keyword::Fn));
 
-        let token = buffer.next()?;
-        assert_eq!(
-            token.unwrap().token_type,
-            TokenType::Identifier(String::from("test"))
-        );
-
-        buffer.seek(SeekFrom::Start(0))?;
+        buffer.seek(SeekFrom::Current(1))?;
 
         let token = buffer.next()?;
+        assert_eq!(token.unwrap().token_type, TokenType::Symbol(Symbol::LParen));
 
-        assert_eq!(token.unwrap().token_type, TokenType::Keyword(Keyword::Fn));
-
-        buffer.seek(SeekFrom::Start(16))?;
+        buffer.seek(SeekFrom::Current(-1))?;
 
         let token = buffer.next()?;
-
-        assert_eq!(token.unwrap().token_type, TokenType::Keyword(Keyword::Let));
+        assert_eq!(token.unwrap().token_type, TokenType::Symbol(Symbol::LParen));
 
         Ok(())
     }
