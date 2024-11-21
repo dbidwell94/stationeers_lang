@@ -1,4 +1,6 @@
-use crate::tokenizer::token::{Number, TokenType};
+use std::collections::HashSet;
+
+use crate::tokenizer::token::Number;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Literal {
@@ -71,7 +73,30 @@ pub struct AssignmentExpression {
 
 impl std::fmt::Display for AssignmentExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} = {}", self.identifier, self.expression)
+        write!(f, "({} = {})", self.identifier, self.expression)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunctionExpression {
+    pub name: String,
+    pub arguments: HashSet<String>,
+    pub body: Box<Expression>,
+}
+
+impl std::fmt::Display for FunctionExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(fn {}({}) {{ {} }})",
+            self.name,
+            self.arguments
+                .iter()
+                .cloned()
+                .collect::<Vec<String>>()
+                .join(", "),
+            self.body
+        )
     }
 }
 
@@ -82,6 +107,8 @@ pub enum Expression {
     BinaryExpression(BinaryExpression),
     LogicalExpression(LogicalExpression),
     AssignmentExpression(AssignmentExpression),
+    DeclarationExpression(String, Box<Expression>),
+    FunctionExpression(FunctionExpression),
 }
 
 impl std::fmt::Display for Expression {
@@ -92,6 +119,8 @@ impl std::fmt::Display for Expression {
             Expression::BinaryExpression(e) => write!(f, "{}", e),
             Expression::LogicalExpression(e) => write!(f, "{}", e),
             Expression::AssignmentExpression(e) => write!(f, "{}", e),
+            Expression::DeclarationExpression(id, e) => write!(f, "(let {} = {})", id, e),
+            Expression::FunctionExpression(e) => write!(f, "{}", e),
         }
     }
 }

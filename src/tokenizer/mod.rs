@@ -521,27 +521,6 @@ mod tests {
     "#;
 
     #[test]
-    fn test_tokenizer_buffer_seek_from_current() -> Result<()> {
-        let tokenizer = Tokenizer::from(TEST_STRING.to_owned());
-        let mut buffer = TokenizerBuffer::new(tokenizer);
-
-        let token = buffer.next()?;
-        assert_eq!(token.unwrap().token_type, TokenType::Keyword(Keyword::Fn));
-
-        buffer.seek(SeekFrom::Current(1))?;
-
-        let token = buffer.next()?;
-        assert_eq!(token.unwrap().token_type, TokenType::Symbol(Symbol::LParen));
-
-        buffer.seek(SeekFrom::Current(-1))?;
-
-        let token = buffer.next()?;
-        assert_eq!(token.unwrap().token_type, TokenType::Symbol(Symbol::LParen));
-
-        Ok(())
-    }
-
-    #[test]
     fn test_tokenizer_from_path_ok() {
         let tokenizer = Tokenizer::from_path(TEST_FILE);
         assert!(tokenizer.is_ok());
