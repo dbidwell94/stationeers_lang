@@ -23,36 +23,20 @@ pub enum TokenizerError {
 
 pub trait Tokenize: Read + Seek {}
 
-pub(crate) struct Tokenizer<T>
-where
-    T: Read + Seek,
-{
-    reader: BufReader<T>,
+impl<T> Tokenize for T where T: Read + Seek {}
+
+pub(crate) struct Tokenizer {
+    reader: BufReader<Box<dyn Tokenize>>,
     char_buffer: [u8; 1],
     line: usize,
     column: usize,
     returned_eof: bool,
 }
 
-impl From<String> for Tokenizer<Cursor<Vec<u8>>> {
-    fn from(input: String) -> Self {
-        let cursor = Cursor::new(input.into_bytes());
-        let reader = BufReader::new(cursor);
-
-        Self {
-            reader,
-            line: 1,
-            column: 1,
-            char_buffer: [0],
-            returned_eof: false,
-        }
-    }
-}
-
-impl Tokenizer<File> {
+impl Tokenizer {
     pub fn from_path(input_file: impl Into<PathBuf>) -> Result<Self, TokenizerError> {
         let file = std::fs::File::open(input_file.into())?;
-        let reader = BufReader::new(file);
+        let reader = BufReader::new(Box::new(file) as Box<dyn Tokenize>);
 
         Ok(Self {
             reader,
@@ -64,10 +48,21 @@ impl Tokenizer<File> {
     }
 }
 
-impl<T> Tokenizer<T>
-where
-    T: Read + Seek,
-{
+impl From<String> for Tokenizer {
+    fn from(input: String) -> Self {
+        let reader = BufReader::new(Box::new(Cursor::new(input)) as Box<dyn Tokenize>);
+
+        Self {
+            reader,
+            line: 1,
+            column: 1,
+            char_buffer: [0],
+            returned_eof: false,
+        }
+    }
+}
+
+impl Tokenizer {
     /// Consumes the tokenizer and returns the next token in the stream
     /// If there are no more tokens in the stream, this function returns None
     /// If there is an error reading the stream, this function returns an error
@@ -415,20 +410,14 @@ where
     }
 }
 
-pub struct TokenizerBuffer<T>
-where
-    T: Read + Seek,
-{
-    tokenizer: Tokenizer<T>,
+pub struct TokenizerBuffer {
+    tokenizer: Tokenizer,
     buffer: VecDeque<Token>,
     history: VecDeque<Token>,
 }
 
-impl<T> TokenizerBuffer<T>
-where
-    T: Seek + Read,
-{
-    pub fn new(tokenizer: Tokenizer<T>) -> Self {
+impl TokenizerBuffer {
+    pub fn new(tokenizer: Tokenizer) -> Self {
         Self {
             tokenizer,
             buffer: VecDeque::new(),

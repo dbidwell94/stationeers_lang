@@ -35,7 +35,7 @@ fn run_logic() -> Result<(), StationlangError> {
     let args = Args::parse();
     let input_file = args.input_file;
 
-    let tokenizer: Tokenizer<_> = match input_file {
+    let tokenizer: Tokenizer = match input_file {
         Some(input_file) => Tokenizer::from_path(&input_file)?,
         None => {
             let mut buf = String::new();

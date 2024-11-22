@@ -90,16 +90,13 @@ macro_rules! token_matches {
     };
 }
 
-pub struct Parser<R: Read + Seek> {
-    tokenizer: TokenizerBuffer<R>,
+pub struct Parser {
+    tokenizer: TokenizerBuffer,
     current_token: Option<Token>,
 }
 
-impl<R> Parser<R>
-where
-    R: Read + Seek,
-{
-    pub fn new(tokenizer: Tokenizer<R>) -> Self {
+impl Parser {
+    pub fn new(tokenizer: Tokenizer) -> Self {
         Parser {
             tokenizer: TokenizerBuffer::new(tokenizer),
             current_token: None,
