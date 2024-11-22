@@ -469,7 +469,7 @@ impl TokenizerBuffer {
             }
             self.history.extend(tokens);
         } else if seek_to < 0 {
-            let seek_to = seek_to.abs() as usize;
+            let seek_to = seek_to.unsigned_abs() as usize;
             let mut tokens = Vec::with_capacity(seek_to);
             for _ in 0..seek_to {
                 if let Some(token) = self.history.pop_back() {
@@ -489,11 +489,13 @@ impl TokenizerBuffer {
 
     /// Adds to or removes from the History stack, allowing the user to move back and forth in the stream
     pub fn seek(&mut self, from: SeekFrom) -> Result<(), TokenizerError> {
-        Ok(match from {
+        match from {
             SeekFrom::Current(seek_to) => self.seek_from_current(seek_to)?,
             SeekFrom::End(_) => unimplemented!("SeekFrom::End will not be implemented"),
             SeekFrom::Start(_) => unimplemented!("SeekFrom::Start will not be implemented"),
-        })
+        }
+
+        Ok(())
     }
 }
 
@@ -510,6 +512,23 @@ mod tests {
             return x + 2;
         }
     "#;
+
+    #[test]
+    fn test_seek_from_current() -> Result<()> {
+        let tokenizer = Tokenizer::from(TEST_STRING.to_owned());
+        let mut buffer = TokenizerBuffer::new(tokenizer);
+
+        let token = buffer.next()?.unwrap();
+        assert_eq!(token.token_type, TokenType::Keyword(Keyword::Fn));
+
+        buffer.seek(SeekFrom::Current(1))?;
+
+        let token = buffer.next()?.unwrap();
+
+        assert_eq!(token.token_type, TokenType::Symbol(Symbol::LParen));
+
+        Ok(())
+    }
 
     #[test]
     fn test_tokenizer_from_path_ok() {

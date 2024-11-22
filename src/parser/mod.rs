@@ -17,6 +17,8 @@ pub enum ParseError {
     DuplicateIdentifier { token: Token },
     #[error("Invalid Syntax\n\nLine: {0}, Column: {1}\nReason: {reason}", token.line, token.column)]
     InvalidSyntax { token: Token, reason: String },
+    #[error("This keyword is either not supported or not yet implemented\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
+    UnsupportedKeyword { token: Token},
     #[error("Unexpected EOF")]
     UnexpectedEOF,
 }
@@ -132,15 +134,31 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Result<Option<tree_node::Expression>, ParseError> {
+        macro_rules! matches_keyword {
+            ($keyword:expr, $($pattern:pat),+) => {
+                matches!($keyword, $($pattern)|+)
+            };
+        }
+
+
         let Some(current_token) = self.current_token.as_ref() else {
             return Ok(None);
         };
+
 
         if token_matches!(current_token, TokenType::EOF) {
             return Ok(None);
         }
 
         let expr = Some(match current_token.token_type {
+            // match unsupported keywords
+            TokenType::Keyword(e) 
+                if matches_keyword!(e, Keyword::Import, Keyword::Export, Keyword::Enum, Keyword::If, Keyword::Else) => {
+                return Err(ParseError::UnsupportedKeyword {
+                    token: current_token.clone(),
+                })
+            },
+
             // match declarations with a `let` keyword
             TokenType::Keyword(Keyword::Let) => self.declaration()?,
 
@@ -161,7 +179,7 @@ impl Parser {
             TokenType::Symbol(Symbol::LBrace) => Expression::BlockExpression(self.block()?),
 
             // match literal expressions with a semi-colon afterwards
-            TokenType::Number(_) | TokenType::String(_) if !self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()) => {
+            TokenType::Number(_) | TokenType::String(_) => {
                 Expression::Literal(self.literal()?)
             }
 
@@ -234,7 +252,7 @@ impl Parser {
             }
         };
 
-        todo!()
+        Ok(expr)
     }
 
     fn priority(&mut self) -> Result<Box<Expression>, ParseError> {
@@ -560,6 +578,22 @@ mod tests {
 
         assert_eq!("(let x = (4))", expression.to_string());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_binary() -> Result<()> {
+        let input = r#"
+            let x = 1 + 2;
+        "#;
+
+        let tokenizer = Tokenizer::from(input.to_owned());
+        let mut parser = Parser::new(tokenizer);
+
+        let expression = parser.parse()?.unwrap();
+
+        assert_eq!("(let x = (1 + 2))", expression.to_string());
+        
         Ok(())
     }
 }
