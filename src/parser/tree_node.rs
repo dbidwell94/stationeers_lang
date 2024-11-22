@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::tokenizer::token::Number;
 
 #[derive(Debug, Eq, PartialEq)]

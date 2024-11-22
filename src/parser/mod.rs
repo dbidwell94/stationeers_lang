@@ -4,7 +4,6 @@ use crate::tokenizer::{
     token::{Keyword, Symbol, Token, TokenType},
     Tokenizer, TokenizerBuffer, TokenizerError,
 };
-use std::collections::HashSet;
 use thiserror::Error;
 use tree_node::*;
 
@@ -20,8 +19,6 @@ pub enum ParseError {
     InvalidSyntax { token: Token, reason: String },
     #[error("Unexpected EOF")]
     UnexpectedEOF,
-    #[error("An unknown error has occurred")]
-    UnknownError,
 }
 
 macro_rules! self_matches_peek {
@@ -143,7 +140,7 @@ impl Parser {
             return Ok(None);
         }
 
-        let to_return = Some(match current_token.token_type {
+        let expr = Some(match current_token.token_type {
             // match declarations with a `let` keyword
             TokenType::Keyword(Keyword::Let) => self.declaration()?,
 
@@ -169,7 +166,7 @@ impl Parser {
             }
 
             // match priority expressions with a left parenthesis
-            TokenType::Symbol(Symbol::LParen) => Expression::PriorityExpression(self.priority()?), 
+            TokenType::Symbol(Symbol::LParen) => Expression::PriorityExpression(self.priority()?),
 
             _ => {
                 return Err(ParseError::UnexpectedToken {
@@ -178,7 +175,66 @@ impl Parser {
             }
         });
 
-        Ok(to_return)
+        let Some(expr) = expr else {
+            return Ok(None);
+        };
+
+        if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
+            return Ok(Some(self.binary(expr)?));
+        }
+
+        // step 2: check if the next token is an operator and if we should parse a binary expression with the previous expression
+
+        Ok(Some(expr))
+    }
+
+    fn binary(&mut self, previous: Expression) -> Result<tree_node::Expression, ParseError> {
+        let current_token = token_from_option!(self.get_next()?).clone();
+
+        // first, make sure the previous expression supports binary expressions
+        match previous {
+            Expression::BinaryExpression(_) // 1 + 2 + 3
+            | Expression::InvocationExpression(_) // add() + 3
+            | Expression::PriorityExpression(_) // (1 + 2) + 3
+            | Expression::Literal(_) // 1 + 2
+            | Expression::Variable(_) // x + 2
+            | Expression::Negation(_) // -1 + 2
+             => {} 
+            _ => {
+                return Err(ParseError::InvalidSyntax {
+                    token: current_token.clone(),
+                    reason: "Invalid expression for binary operation".to_owned(),
+                })
+            }
+        }
+
+        // now check the operator. If we have certain operators, we need to wrap in a priority expression
+        // Example: subtraction and division. Order of operations is important
+
+        let operator = extract_token_data!(
+            current_token,
+            TokenType::Symbol(ref s),
+            s.clone()
+        );
+
+        let expr = match operator {
+            Symbol::Plus => {
+                let right = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+                Expression::BinaryExpression(BinaryExpression::Add(Box::new(previous), Box::new(right)))
+            },
+            Symbol::Minus => {
+                let right = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+                Expression::PriorityExpression(Box::new(Expression::BinaryExpression(BinaryExpression::Subtract(Box::new(previous), Box::new(right)))))
+            },
+            _ => {
+                return Err(ParseError::InvalidSyntax {
+                    token: current_token.clone(),
+                    reason: "Invalid operator for binary operation".to_owned(),
+                })
+            }
+        };
+
+        todo!()
     }
 
     fn priority(&mut self) -> Result<Box<Expression>, ParseError> {
@@ -503,7 +559,6 @@ mod tests {
         let expression = parser.parse()?.unwrap();
 
         assert_eq!("(let x = (4))", expression.to_string());
-
 
         Ok(())
     }
