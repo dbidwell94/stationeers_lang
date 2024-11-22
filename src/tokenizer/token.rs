@@ -106,6 +106,8 @@ pub enum Symbol {
     LogicalNot,
     /// Represents the `.` symbol
     Dot,
+    /// Represents the `^` symbol
+    Caret,
 
     // Double Character Symbols
     /// Represents the `==` symbol
@@ -125,7 +127,7 @@ pub enum Symbol {
 impl Symbol {
     pub fn is_operator(&self) -> bool {
         match self {
-            Symbol::Plus | Symbol::Minus | Symbol::Asterisk | Symbol::Slash => true,
+            Symbol::Plus | Symbol::Minus | Symbol::Asterisk | Symbol::Slash | Symbol::Caret => true,
             _ => false,
         }
     }

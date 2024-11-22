@@ -1,6 +1,7 @@
 pub mod token;
 
 use std::{
+    cmp::Ordering,
     collections::VecDeque,
     fs::File,
     io::{BufReader, Cursor, Read, Seek, SeekFrom},
@@ -210,6 +211,7 @@ impl Tokenizer {
             '/' => symbol!(Slash),
             '*' => symbol!(Asterisk),
             '.' => symbol!(Dot),
+            '^' => symbol!(Caret),
 
             // multi-character symbols
             '<' if self.peek_next_char()? == Some('=') => {
@@ -451,37 +453,42 @@ impl TokenizerBuffer {
     }
 
     fn seek_from_current(&mut self, seek_to: i64) -> Result<(), TokenizerError> {
+        use Ordering::*;
         // if seek_to > 0 then we need to check if the buffer has enough tokens to pop, otherwise we need to read from the tokenizer
         // if seek_to < 0 then we need to pop from the history and push to the front of the buffer. If not enough, then we throw (we reached the front of the history)
         // if seek_to == 0 then we don't need to do anything
 
-        if seek_to > 0 {
-            let mut tokens = Vec::with_capacity(seek_to as usize);
-            for _ in 0..seek_to {
-                if let Some(token) = self.tokenizer.next_token()? {
-                    tokens.push(token);
-                } else {
-                    return Err(TokenizerError::IOError(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "Unexpected EOF",
-                    )));
+        match seek_to.cmp(&0) {
+            Greater => {
+                let mut tokens = Vec::with_capacity(seek_to as usize);
+                for _ in 0..seek_to {
+                    if let Some(token) = self.tokenizer.next_token()? {
+                        tokens.push(token);
+                    } else {
+                        return Err(TokenizerError::IOError(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "Unexpected EOF",
+                        )));
+                    }
                 }
+                self.history.extend(tokens);
             }
-            self.history.extend(tokens);
-        } else if seek_to < 0 {
-            let seek_to = seek_to.unsigned_abs() as usize;
-            let mut tokens = Vec::with_capacity(seek_to);
-            for _ in 0..seek_to {
-                if let Some(token) = self.history.pop_back() {
-                    tokens.push(token);
-                } else {
-                    return Err(TokenizerError::IOError(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "Unexpected EOF",
-                    )));
+            Less => {
+                let seek_to = seek_to.unsigned_abs() as usize;
+                let mut tokens = Vec::with_capacity(seek_to);
+                for _ in 0..seek_to {
+                    if let Some(token) = self.history.pop_back() {
+                        tokens.push(token);
+                    } else {
+                        return Err(TokenizerError::IOError(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "Unexpected EOF",
+                        )));
+                    }
                 }
+                self.buffer.extend(tokens.into_iter().rev());
             }
-            self.buffer.extend(tokens.into_iter().rev());
+            _ => {}
         }
 
         Ok(())
@@ -667,10 +674,11 @@ This is a skippable line"#,
     #[test]
     fn test_symbol_parse() -> Result<()> {
         let mut tokenizer = Tokenizer::from(String::from(
-            "! () [] {} , . ; : + - * / < > = != && || >= <=",
+            "^ ! () [] {} , . ; : + - * / < > = != && || >= <=",
         ));
 
         let expected_tokens = vec![
+            TokenType::Symbol(Symbol::Caret),
             TokenType::Symbol(Symbol::LogicalNot),
             TokenType::Symbol(Symbol::LParen),
             TokenType::Symbol(Symbol::RParen),

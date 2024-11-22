@@ -17,8 +17,8 @@ pub enum ParseError {
     DuplicateIdentifier { token: Token },
     #[error("Invalid Syntax\n\nLine: {0}, Column: {1}\nReason: {reason}", token.line, token.column)]
     InvalidSyntax { token: Token, reason: String },
-    #[error("This keyword is either not supported or not yet implemented\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
-    UnsupportedKeyword { token: Token},
+    #[error("This keyword is not yet implemented\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
+    UnsupportedKeyword { token: Token },
     #[error("Unexpected EOF")]
     UnexpectedEOF,
 }
@@ -140,11 +140,9 @@ impl Parser {
             };
         }
 
-
         let Some(current_token) = self.current_token.as_ref() else {
             return Ok(None);
         };
-
 
         if token_matches!(current_token, TokenType::EOF) {
             return Ok(None);
@@ -152,12 +150,20 @@ impl Parser {
 
         let expr = Some(match current_token.token_type {
             // match unsupported keywords
-            TokenType::Keyword(e) 
-                if matches_keyword!(e, Keyword::Import, Keyword::Export, Keyword::Enum, Keyword::If, Keyword::Else) => {
+            TokenType::Keyword(e)
+                if matches_keyword!(
+                    e,
+                    Keyword::Import,
+                    Keyword::Export,
+                    Keyword::Enum,
+                    Keyword::If,
+                    Keyword::Else
+                ) =>
+            {
                 return Err(ParseError::UnsupportedKeyword {
                     token: current_token.clone(),
                 })
-            },
+            }
 
             // match declarations with a `let` keyword
             TokenType::Keyword(Keyword::Let) => self.declaration()?,
@@ -179,9 +185,7 @@ impl Parser {
             TokenType::Symbol(Symbol::LBrace) => Expression::BlockExpression(self.block()?),
 
             // match literal expressions with a semi-colon afterwards
-            TokenType::Number(_) | TokenType::String(_) => {
-                Expression::Literal(self.literal()?)
-            }
+            TokenType::Number(_) | TokenType::String(_) => Expression::Literal(self.literal()?),
 
             // match priority expressions with a left parenthesis
             TokenType::Symbol(Symbol::LParen) => Expression::PriorityExpression(self.priority()?),
@@ -198,7 +202,7 @@ impl Parser {
         };
 
         if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
-            return Ok(Some(self.binary(expr)?));
+            return Ok(Some(Expression::BinaryExpression(self.binary(expr)?)));
         }
 
         // step 2: check if the next token is an operator and if we should parse a binary expression with the previous expression
@@ -206,18 +210,61 @@ impl Parser {
         Ok(Some(expr))
     }
 
-    fn binary(&mut self, previous: Expression) -> Result<tree_node::Expression, ParseError> {
-        let current_token = token_from_option!(self.get_next()?).clone();
+    fn get_binary_child_node(&mut self) -> Result<tree_node::Expression, ParseError> {
+        let current_token = token_from_option!(self.current_token);
+
+        match current_token.token_type {
+            // A literal number
+            TokenType::Number(_) => self.literal().map(Expression::Literal),
+            // A plain variable
+            TokenType::Identifier(ident)
+                if !self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
+            {
+                Ok(Expression::Variable(ident))
+            }
+            // A priority expression ( -> (1 + 2) <- + 3 )
+            TokenType::Symbol(Symbol::LParen) => {
+                self.priority().map(Expression::PriorityExpression)
+            }
+            // A function invocation
+            TokenType::Identifier(_)
+                if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
+            {
+                self.invocation().map(Expression::InvocationExpression)
+            }
+            _ => Err(ParseError::UnexpectedToken {
+                token: current_token.clone(),
+            }),
+        }
+    }
+
+    /// Handles mathmatical expressions in the explicit order of PEMDAS
+    fn binary(&mut self, previous: Expression) -> Result<BinaryExpression, ParseError> {
+        macro_rules! min {
+            ($a:expr, $b:expr) => {
+                if $a < $b {
+                    $a
+                } else {
+                    $b
+                }
+            };
+        }
+
+
+        // We cannot use recursion here, as we need to handle the precedence of the operators
+        // We need to use a loop to parse the binary expressions.
+
+        let mut current_token = token_from_option!(self.get_next()?).clone();
 
         // first, make sure the previous expression supports binary expressions
         match previous {
             Expression::BinaryExpression(_) // 1 + 2 + 3
             | Expression::InvocationExpression(_) // add() + 3
             | Expression::PriorityExpression(_) // (1 + 2) + 3
-            | Expression::Literal(_) // 1 + 2
+            | Expression::Literal(Literal::Number(_)) // 1 + 2 (no addition of strings)
             | Expression::Variable(_) // x + 2
             | Expression::Negation(_) // -1 + 2
-             => {} 
+             => {}
             _ => {
                 return Err(ParseError::InvalidSyntax {
                     token: current_token.clone(),
@@ -226,33 +273,125 @@ impl Parser {
             }
         }
 
-        // now check the operator. If we have certain operators, we need to wrap in a priority expression
-        // Example: subtraction and division. Order of operations is important
+        let mut expressions = vec![previous]; // 1, 2, 3
 
-        let operator = extract_token_data!(
-            current_token,
-            TokenType::Symbol(ref s),
-            s.clone()
-        );
+        // operators Vec should be `expressions.len() - 1`
+        let mut operators = Vec::<Symbol>::new(); // +, +
 
-        let expr = match operator {
-            Symbol::Plus => {
-                let right = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
-                Expression::BinaryExpression(BinaryExpression::Add(Box::new(previous), Box::new(right)))
-            },
-            Symbol::Minus => {
-                let right = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
-                Expression::PriorityExpression(Box::new(Expression::BinaryExpression(BinaryExpression::Subtract(Box::new(previous), Box::new(right)))))
-            },
-            _ => {
-                return Err(ParseError::InvalidSyntax {
-                    token: current_token.clone(),
-                    reason: "Invalid operator for binary operation".to_owned(),
-                })
+        // build the expressions and operators vectors
+        while token_matches!(current_token, TokenType::Symbol(s) if s.is_operator()) {
+            println!(
+                "Looped: expressions len: {}, operators len: {}",
+                expressions.len(),
+                operators.len()
+            );
+            // We are guaranteed to have an operator symbol here as we checked in the while loop
+            let operator = extract_token_data!(current_token, TokenType::Symbol(ref s), s.clone());
+            operators.push(operator);
+            self.assign_next()?;
+            expressions.push(self.get_binary_child_node()?);
+            current_token = token_from_option!(self.get_next()?).clone();
+        }
+
+        // validate the vectors and make sure operators.len() == expressions.len() - 1
+        if operators.len() != expressions.len() - 1 {
+            return Err(ParseError::InvalidSyntax {
+                token: current_token.clone(),
+                reason: "Invalid number of operators".to_owned(),
+            });
+        }
+
+        // Loop through operators, and build the binary expressions for exponential operators only
+        for (i, operator) in operators.iter().enumerate() {
+            if operator == &Symbol::Caret {
+                let left = expressions.remove(min!(i, expressions.len() - 1));
+                let right = expressions.remove(min!(i, expressions.len() - 1));
+                expressions.insert(
+                    min!(i, expressions.len()),
+                    Expression::BinaryExpression(BinaryExpression::Exponent(
+                        Box::new(left),
+                        Box::new(right),
+                    )),
+                );
             }
-        };
+        }
 
-        Ok(expr)
+        // remove all the exponential operators from the operators vector
+        operators.retain(|symbol| symbol != &Symbol::Caret);
+
+        // Loop through operators, and build the binary expressions for multiplication and division operators
+        for (i, operator) in operators.iter().enumerate() {
+            if operator == &Symbol::Asterisk || operator == &Symbol::Slash {
+                let left = expressions.remove(min!(i, expressions.len() - 1));
+                let right = expressions.remove(min!(i, expressions.len() - 1));
+
+                match operator {
+                    Symbol::Asterisk => expressions.insert(
+                        min!(i, expressions.len()),
+                        Expression::BinaryExpression(BinaryExpression::Multiply(
+                            Box::new(left),
+                            Box::new(right),
+                        )),
+                    ),
+                    Symbol::Slash => expressions.insert(
+                        min!(i, expressions.len()),
+                        Expression::BinaryExpression(BinaryExpression::Divide(
+                            Box::new(left),
+                            Box::new(right),
+                        )),
+                    ),
+                    // safety: we have already checked for the operator
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        // remove all the multiplication and division operators from the operators vector
+        operators.retain(|symbol| symbol != &Symbol::Asterisk && symbol != &Symbol::Slash);
+
+        // Loop through operators, and build the binary expressions for addition and subtraction operators
+        for (i, operator) in operators.iter().enumerate() {
+            if operator == &Symbol::Plus || operator == &Symbol::Minus {
+                let left = expressions.remove(i);
+                let right = expressions.remove(min!(i, expressions.len() - 1));
+
+                match operator {
+                    Symbol::Plus => expressions.insert(
+                        min!(i, expressions.len()),
+                        Expression::BinaryExpression(BinaryExpression::Add(
+                            Box::new(left),
+                            Box::new(right),
+                        )),
+                    ),
+                    Symbol::Minus => expressions.insert(
+                        min!(i, expressions.len()),
+                        Expression::BinaryExpression(BinaryExpression::Subtract(
+                            Box::new(left),
+                            Box::new(right),
+                        )),
+                    ),
+                    // safety: we have already checked for the operator
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        // remove all the addition and subtraction operators from the operators vector
+        operators.retain(|symbol| symbol != &Symbol::Plus && symbol != &Symbol::Minus);
+
+        // Ensure there is only one expression left in the expressions vector, and no operators left
+        if expressions.len() != 1 || !operators.is_empty() {
+            return Err(ParseError::InvalidSyntax {
+                token: current_token.clone(),
+                reason: "Invalid number of operators".to_owned(),
+            });
+        }
+
+        // Ensure the last expression is a binary expression
+        match expressions.pop().unwrap() {
+            Expression::BinaryExpression(binary) => Ok(binary),
+            _ => unreachable!(),
+        }
     }
 
     fn priority(&mut self) -> Result<Box<Expression>, ParseError> {
@@ -490,6 +629,32 @@ mod tests {
     use super::*;
     use anyhow::Result;
 
+    macro_rules! parser {
+        ($input:expr) => {
+            Parser::new(Tokenizer::from($input.to_owned()))
+        };
+    }
+
+    #[test]
+    fn test_unsupported_keywords() -> Result<()> {
+        let mut parser = parser!("import x;");
+        assert!(parser.parse().is_err());
+
+        let mut parser = parser!("export x;");
+        assert!(parser.parse().is_err());
+
+        let mut parser = parser!("enum x;");
+        assert!(parser.parse().is_err());
+
+        let mut parser = parser!("if x {}");
+        assert!(parser.parse().is_err());
+
+        let mut parser = parser!("else {}");
+        assert!(parser.parse().is_err());
+
+        Ok(())
+    }
+
     #[test]
     fn test_declarations() -> Result<()> {
         let input = r#"
@@ -583,17 +748,13 @@ mod tests {
 
     #[test]
     fn test_binary() -> Result<()> {
-        let input = r#"
-            let x = 1 + 2;
-        "#;
+        let expr = parser!("1 + 3 ^ 5").parse()?.unwrap();
+        assert_eq!("(1 + (3 ^ 5))", expr.to_string());
 
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
+        let expr = parser!("12 - 1 + 3 * 5").parse()?.unwrap();
 
-        let expression = parser.parse()?.unwrap();
+        assert_eq!("((12 - 1) + (3 * 5))", expr.to_string());
 
-        assert_eq!("(let x = (1 + 2))", expression.to_string());
-        
         Ok(())
     }
 }
