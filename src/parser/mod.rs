@@ -1,10 +1,13 @@
 mod tree_node;
 
 use crate::tokenizer::{
-    token::{Keyword, Symbol, Token, TokenType},
+    token::{self, Keyword, Symbol, Token, TokenType},
     Tokenizer, TokenizerBuffer, TokenizerError,
 };
-use std::io::{Read, Seek};
+use std::{
+    collections::HashSet,
+    io::{Read, Seek},
+};
 use thiserror::Error;
 use tree_node::*;
 
@@ -14,6 +17,8 @@ pub enum ParseError {
     TokenizerError(#[from] TokenizerError),
     #[error("Unexpected token\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
     UnexpectedToken { token: Token },
+    #[error("Duplicated Identifer\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
+    DuplicateIdentifier { token: Token },
     #[error("Unexpected EOF")]
     UnexpectedEOF,
     #[error("An unknown error has occurred")]
@@ -130,6 +135,9 @@ where
             // match functions with a `fn` keyword
             TokenType::Keyword(Keyword::Fn) => Expression::FunctionExpression(self.function()?),
 
+            // match block expressions with a `{` symbol
+            TokenType::Symbol(Symbol::LBrace) => Expression::BlockExpression(self.block()?),
+
             // match literal expressions with a semi-colon afterwards
             TokenType::Number(_) | TokenType::String(_)
                 if self_matches_peek!(self, TokenType::Symbol(Symbol::Semicolon)) =>
@@ -145,6 +153,28 @@ where
         });
 
         Ok(to_return)
+    }
+
+    fn block(&mut self) -> Result<BlockExpression, ParseError> {
+        let mut expressions = Vec::<Expression>::new();
+        let current_token = token_from_option!(self.current_token);
+
+        // sanity check: make sure the current token is a left brace
+        if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
+            return Err(ParseError::UnexpectedToken {
+                token: current_token.clone(),
+            });
+        }
+
+        while !token_matches!(
+            token_from_option!(self.get_next()?),
+            TokenType::Symbol(Symbol::RBrace)
+        ) {
+            let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+            expressions.push(expression);
+        }
+
+        Ok(BlockExpression(expressions))
     }
 
     fn declaration(&mut self) -> Result<Expression, ParseError> {
@@ -200,7 +230,79 @@ where
     }
 
     fn function(&mut self) -> Result<FunctionExpression, ParseError> {
-        todo!("Implement function parsing")
+        let current_token = token_from_option!(self.current_token);
+        // Sanify check that the current token is a `fn` keyword
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::Fn)) {
+            return Err(ParseError::UnexpectedToken {
+                token: current_token.clone(),
+            });
+        }
+
+        let fn_ident = extract_token_data!(
+            token_from_option!(self.get_next()?),
+            TokenType::Identifier(ref id),
+            id.clone()
+        );
+
+        // make sure next token is a left parenthesis
+        let current_token = token_from_option!(self.get_next()?);
+        if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
+            return Err(ParseError::UnexpectedToken {
+                token: current_token.clone(),
+            });
+        }
+
+        let mut arguments = HashSet::<String>::new();
+
+        // iterate through the arguments. While expression while increment the current token
+        // with the `token_from_option!(self.get_next()?)` macro
+        while !token_matches!(
+            token_from_option!(self.get_next()?),
+            TokenType::Symbol(Symbol::RParen)
+        ) {
+            let current_token = token_from_option!(self.current_token);
+            let argument =
+                extract_token_data!(current_token, TokenType::Identifier(ref id), id.clone());
+
+            if arguments.contains(&argument) {
+                return Err(ParseError::DuplicateIdentifier {
+                    token: current_token.clone(),
+                });
+            }
+
+            arguments.insert(argument);
+
+            // make sure the next token is a comma or right parenthesis
+            if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
+                && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
+            {
+                return Err(ParseError::UnexpectedToken {
+                    token: token_from_option!(self.get_next()?).clone(),
+                });
+            }
+
+            // edge case: if the next token is not a right parenthesis, increment the current token
+            //
+            // This will allow the loop to break on a right parenthesis with the next iteration
+            // which is incremented by the loop
+            if !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen)) {
+                self.assign_next()?;
+            }
+        }
+
+        // make sure the next token is a left brace
+        let current_token = token_from_option!(self.get_next()?);
+        if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
+            return Err(ParseError::UnexpectedToken {
+                token: current_token.clone(),
+            });
+        };
+
+        Ok(FunctionExpression {
+            name: fn_ident,
+            arguments,
+            body: self.block()?,
+        })
     }
 }
 
@@ -224,6 +326,46 @@ mod tests {
         assert_eq!("(let x = 5)", expression.to_string());
 
         assert!(parser.parse().is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_block() -> Result<()> {
+        let input = r#"
+        {
+            let x = 5;
+            let y = 10;
+        }
+        "#;
+        let tokenizer = Tokenizer::from(input.to_owned());
+        let mut parser = Parser::new(tokenizer);
+
+        let expression = parser.parse()?.unwrap();
+
+        assert_eq!("{ (let x = 5); (let y = 10); }", expression.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_function_expression() -> Result<()> {
+        let input = r#"
+            // This is a function. The parser is starting to get more complex
+            fn add(x, y) {
+                let z = 5;
+            }
+        "#;
+
+        let tokenizer = Tokenizer::from(input.to_owned());
+        let mut parser = Parser::new(tokenizer);
+
+        let expression = parser.parse()?.unwrap();
+
+        assert_eq!(
+            "(fn add(x, y) { { (let z = 5); } })",
+            expression.to_string()
+        );
 
         Ok(())
     }

@@ -81,7 +81,7 @@ impl std::fmt::Display for AssignmentExpression {
 pub struct FunctionExpression {
     pub name: String,
     pub arguments: HashSet<String>,
-    pub body: Box<Expression>,
+    pub body: BlockExpression,
 }
 
 impl std::fmt::Display for FunctionExpression {
@@ -101,14 +101,55 @@ impl std::fmt::Display for FunctionExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct BlockExpression(pub Vec<Expression>);
+
+impl std::fmt::Display for BlockExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ {}; }}",
+            self.0
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>()
+                .join("; ")
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct InvocationExpression {
+    pub name: String,
+    pub arguments: Vec<Expression>,
+}
+
+impl std::fmt::Display for InvocationExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.name,
+            self.arguments
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     Literal(Literal),
+    Variable(String),
     Negation(Box<Expression>),
     BinaryExpression(BinaryExpression),
     LogicalExpression(LogicalExpression),
     AssignmentExpression(AssignmentExpression),
     DeclarationExpression(String, Box<Expression>),
     FunctionExpression(FunctionExpression),
+    BlockExpression(BlockExpression),
+    InvocationExpression(InvocationExpression),
 }
 
 impl std::fmt::Display for Expression {
@@ -121,6 +162,9 @@ impl std::fmt::Display for Expression {
             Expression::AssignmentExpression(e) => write!(f, "{}", e),
             Expression::DeclarationExpression(id, e) => write!(f, "(let {} = {})", id, e),
             Expression::FunctionExpression(e) => write!(f, "{}", e),
+            Expression::BlockExpression(e) => write!(f, "{}", e),
+            Expression::InvocationExpression(e) => write!(f, "{}", e),
+            Expression::Variable(id) => write!(f, "{}", id),
         }
     }
 }
