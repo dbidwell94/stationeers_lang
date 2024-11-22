@@ -4,6 +4,7 @@ use crate::tokenizer::{
     token::{Keyword, Symbol, Token, TokenType},
     Tokenizer, TokenizerBuffer, TokenizerError,
 };
+use std::io::SeekFrom;
 use thiserror::Error;
 use tree_node::*;
 
@@ -250,7 +251,6 @@ impl Parser {
             };
         }
 
-
         // We cannot use recursion here, as we need to handle the precedence of the operators
         // We need to use a loop to parse the binary expressions.
 
@@ -280,11 +280,6 @@ impl Parser {
 
         // build the expressions and operators vectors
         while token_matches!(current_token, TokenType::Symbol(s) if s.is_operator()) {
-            println!(
-                "Looped: expressions len: {}, operators len: {}",
-                expressions.len(),
-                operators.len()
-            );
             // We are guaranteed to have an operator symbol here as we checked in the while loop
             let operator = extract_token_data!(current_token, TokenType::Symbol(ref s), s.clone());
             operators.push(operator);
@@ -352,7 +347,7 @@ impl Parser {
         // Loop through operators, and build the binary expressions for addition and subtraction operators
         for (i, operator) in operators.iter().enumerate() {
             if operator == &Symbol::Plus || operator == &Symbol::Minus {
-                let left = expressions.remove(i);
+                let left = expressions.remove(min!(i, expressions.len() - 1));
                 let right = expressions.remove(min!(i, expressions.len() - 1));
 
                 match operator {
@@ -385,6 +380,11 @@ impl Parser {
                 token: current_token.clone(),
                 reason: "Invalid number of operators".to_owned(),
             });
+        }
+
+        // Edge case. If the current token is a semi-colon, we need to set current token to the previous token
+        if token_matches!(current_token, TokenType::Symbol(Symbol::Semicolon)) {
+            self.tokenizer.seek(SeekFrom::Current(-1))?;
         }
 
         // Ensure the last expression is a binary expression
@@ -750,6 +750,11 @@ mod tests {
     fn test_binary() -> Result<()> {
         let expr = parser!("1 + 3 ^ 5").parse()?.unwrap();
         assert_eq!("(1 + (3 ^ 5))", expr.to_string());
+
+        let input = "4 ^ 2 + 3 ^ 2";
+
+        let expr = parser!(input).parse()?.unwrap();
+        println!("Original: {}\nTranscribed: {}", input, expr.to_string());
 
         let expr = parser!("12 - 1 + 3 * 5").parse()?.unwrap();
 
