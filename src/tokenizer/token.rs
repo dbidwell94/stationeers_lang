@@ -148,13 +148,6 @@ impl Symbol {
             _ => false,
         }
     }
-
-    pub fn is_assignment(&self) -> bool {
-        match self {
-            Symbol::Assign => true,
-            _ => false,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]

@@ -164,11 +164,12 @@ impl Parser {
             TokenType::Symbol(Symbol::LBrace) => Expression::BlockExpression(self.block()?),
 
             // match literal expressions with a semi-colon afterwards
-            TokenType::Number(_) | TokenType::String(_)
-                if !self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()) =>
-            {
+            TokenType::Number(_) | TokenType::String(_) if !self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()) => {
                 Expression::Literal(self.literal()?)
             }
+
+            // match priority expressions with a left parenthesis
+            TokenType::Symbol(Symbol::LParen) => Expression::PriorityExpression(self.priority()?), 
 
             _ => {
                 return Err(ParseError::UnexpectedToken {
@@ -180,8 +181,25 @@ impl Parser {
         Ok(to_return)
     }
 
-    fn binary(&mut self) -> Result<BinaryExpression, ParseError> {
-        todo!()
+    fn priority(&mut self) -> Result<Box<Expression>, ParseError> {
+        let current_token = token_from_option!(self.current_token);
+        if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
+            return Err(ParseError::UnexpectedToken {
+                token: current_token.clone(),
+            });
+        }
+
+        let expression = self.parse()?.ok_or(ParseError::UnexpectedEOF)?;
+
+        // make sure the next token is a right parenthesis
+        let current_token = token_from_option!(self.get_next()?);
+        if !token_matches!(current_token, TokenType::Symbol(Symbol::RParen)) {
+            return Err(ParseError::UnexpectedToken {
+                token: current_token.clone(),
+            });
+        }
+
+        Ok(Box::new(expression))
     }
 
     fn invocation(&mut self) -> Result<InvocationExpression, ParseError> {
@@ -469,6 +487,23 @@ mod tests {
         let expression = parser.parse()?.unwrap();
 
         assert_eq!("add()", expression.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_priority_expression() -> Result<()> {
+        let input = r#"
+            let x = (4);
+        "#;
+
+        let tokenizer = Tokenizer::from(input.to_owned());
+        let mut parser = Parser::new(tokenizer);
+
+        let expression = parser.parse()?.unwrap();
+
+        assert_eq!("(let x = (4))", expression.to_string());
+
 
         Ok(())
     }

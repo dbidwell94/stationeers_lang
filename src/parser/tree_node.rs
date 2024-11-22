@@ -150,6 +150,7 @@ pub enum Expression {
     FunctionExpression(FunctionExpression),
     BlockExpression(BlockExpression),
     InvocationExpression(InvocationExpression),
+    PriorityExpression(Box<Expression>),
 }
 
 impl std::fmt::Display for Expression {
@@ -165,6 +166,7 @@ impl std::fmt::Display for Expression {
             Expression::BlockExpression(e) => write!(f, "{}", e),
             Expression::InvocationExpression(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),
+            Expression::PriorityExpression(e) => write!(f, "({})", e),
         }
     }
 }
