@@ -80,7 +80,7 @@ impl std::fmt::Display for AssignmentExpression {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FunctionExpression {
     pub name: String,
-    pub arguments: HashSet<String>,
+    pub arguments: Vec<String>,
     pub body: BlockExpression,
 }
 

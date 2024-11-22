@@ -1,10 +1,9 @@
 mod parser;
 mod tokenizer;
 
-use std::io::{Read, Seek};
-
 use clap::Parser;
 use parser::Parser as ASTParser;
+use std::io::Read;
 use tokenizer::{Tokenizer, TokenizerError};
 
 #[derive(Debug, thiserror::Error)]
@@ -53,7 +52,7 @@ fn run_logic() -> Result<(), StationlangError> {
 
     let mut parser = ASTParser::new(tokenizer);
 
-    let ast = parser.parse()?;
+    let ast = parser.parse_all()?;
 
     if let Some(ast) = ast {
         println!("{}", ast);
@@ -64,6 +63,6 @@ fn run_logic() -> Result<(), StationlangError> {
 
 fn main() {
     if let Err(e) = run_logic() {
-        eprintln!("\n\n{}", e);
+        eprintln!("\n{}", e);
     }
 }
