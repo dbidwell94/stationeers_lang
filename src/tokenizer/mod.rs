@@ -21,6 +21,8 @@ pub enum TokenizerError {
     UnknownKeywordOrIdentifierError(String, usize, usize),
 }
 
+pub trait Tokenize: Read + Seek {}
+
 pub(crate) struct Tokenizer<T>
 where
     T: Read + Seek,

@@ -135,6 +135,8 @@ where
             // match functions with a `fn` keyword
             TokenType::Keyword(Keyword::Fn) => Expression::FunctionExpression(self.function()?),
 
+            TokenType::Identifier(ref id) => Expression::Variable(id.clone()),
+
             // match block expressions with a `{` symbol
             TokenType::Symbol(Symbol::LBrace) => Expression::BlockExpression(self.block()?),
 
@@ -353,7 +355,7 @@ mod tests {
         let input = r#"
             // This is a function. The parser is starting to get more complex
             fn add(x, y) {
-                let z = 5;
+                let z = x;
             }
         "#;
 
