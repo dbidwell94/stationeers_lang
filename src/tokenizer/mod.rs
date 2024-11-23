@@ -209,7 +209,7 @@ impl Tokenizer {
             '+' => symbol!(Plus),
             '-' => symbol!(Minus),
             '/' => symbol!(Slash),
-            '*' => symbol!(Asterisk),
+
             '.' => symbol!(Dot),
             '^' => symbol!(Caret),
 
@@ -238,6 +238,12 @@ impl Tokenizer {
             }
             '!' => symbol!(LogicalNot),
 
+            '*' if self.peek_next_char()? == Some('*') => {
+                self.next_char()?;
+                symbol!(Exp)
+            }
+            '*' => symbol!(Asterisk),
+
             '&' if self.peek_next_char()? == Some('&') => {
                 self.next_char()?;
                 symbol!(LogicalAnd)
@@ -246,6 +252,7 @@ impl Tokenizer {
                 self.next_char()?;
                 symbol!(LogicalOr)
             }
+
             _ => Err(TokenizerError::UnknownSymbolError(
                 first_symbol,
                 self.line,
@@ -674,7 +681,7 @@ This is a skippable line"#,
     #[test]
     fn test_symbol_parse() -> Result<()> {
         let mut tokenizer = Tokenizer::from(String::from(
-            "^ ! () [] {} , . ; : + - * / < > = != && || >= <=",
+            "^ ! () [] {} , . ; : + - * / < > = != && || >= <=**",
         ));
 
         let expected_tokens = vec![
@@ -702,6 +709,7 @@ This is a skippable line"#,
             TokenType::Symbol(Symbol::LogicalOr),
             TokenType::Symbol(Symbol::GreaterThanOrEqual),
             TokenType::Symbol(Symbol::LessThanOrEqual),
+            TokenType::Symbol(Symbol::Exp),
         ];
 
         for expected_token in expected_tokens {

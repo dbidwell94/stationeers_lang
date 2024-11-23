@@ -1,3 +1,5 @@
+#![feature(error_generic_member_access)]
+
 mod parser;
 mod tokenizer;
 
@@ -19,13 +21,13 @@ enum StationlangError {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// What file should be compiled. If not set, input will be read from stdin
+    /// What file should be compiled. If not set, input will be read from stdin.
     #[arg(short, long)]
     input_file: Option<String>,
-    /// The default stack size for the program
+    /// The stack size for the compiled program. Compilation will fail if the compiler detects that the program will exceed this stack size.
     #[arg(short, long, default_value_t = 512)]
     stack_size: usize,
-    /// The output file for the compiled program. If not set, output will go to stdout
+    /// The output file for the compiled program. If not set, output will go to stdout.
     #[arg(short, long)]
     output_file: Option<String>,
 }

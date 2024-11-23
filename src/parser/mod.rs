@@ -4,7 +4,10 @@ use crate::tokenizer::{
     token::{Keyword, Symbol, Token, TokenType},
     Tokenizer, TokenizerBuffer, TokenizerError,
 };
-use std::io::SeekFrom;
+use std::{
+    backtrace::{self, Backtrace},
+    io::SeekFrom,
+};
 use thiserror::Error;
 use tree_node::*;
 
@@ -13,7 +16,11 @@ pub enum ParseError {
     #[error(transparent)]
     TokenizerError(#[from] TokenizerError),
     #[error("Unexpected token\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
-    UnexpectedToken { token: Token },
+    UnexpectedToken {
+        token: Token,
+        #[backtrace]
+        backtrace: std::backtrace::Backtrace,
+    },
     #[error("Duplicated Identifer\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
     DuplicateIdentifier { token: Token },
     #[error("Invalid Syntax\n\nLine: {0}, Column: {1}\nReason: {reason}", token.line, token.column)]
@@ -49,6 +56,7 @@ macro_rules! extract_token_data {
             _ => {
                 return Err(ParseError::UnexpectedToken {
                     token: $token.clone(),
+                    backtrace: std::backtrace::Backtrace::capture(),
                 })
             }
         }
@@ -59,6 +67,7 @@ macro_rules! extract_token_data {
             _ => {
                 return Err(ParseError::UnexpectedToken {
                     token: $token.clone(),
+                    backtrace: std::backtrace::Backtrace::capture(),
                 })
             }
         }
@@ -194,6 +203,7 @@ impl Parser {
             _ => {
                 return Err(ParseError::UnexpectedToken {
                     token: current_token.clone(),
+                    backtrace: std::backtrace::Backtrace::capture(),
                 })
             }
         });
@@ -202,11 +212,16 @@ impl Parser {
             return Ok(None);
         };
 
+        // check if the next or current token is an operator
         if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
             return Ok(Some(Expression::BinaryExpression(self.binary(expr)?)));
         }
-
-        // step 2: check if the next token is an operator and if we should parse a binary expression with the previous expression
+        // This is an edge case. We need to move back one token if the current token is an operator
+        // so the binary expression can pick up the operator
+        else if self_matches_current!(self, TokenType::Symbol(s) if s.is_operator()) {
+            self.tokenizer.seek(SeekFrom::Current(-1))?;
+            return Ok(Some(Expression::BinaryExpression(self.binary(expr)?)));
+        }
 
         Ok(Some(expr))
     }
@@ -235,22 +250,13 @@ impl Parser {
             }
             _ => Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: std::backtrace::Backtrace::capture(),
             }),
         }
     }
 
     /// Handles mathmatical expressions in the explicit order of PEMDAS
     fn binary(&mut self, previous: Expression) -> Result<BinaryExpression, ParseError> {
-        macro_rules! min {
-            ($a:expr, $b:expr) => {
-                if $a < $b {
-                    $a
-                } else {
-                    $b
-                }
-            };
-        }
-
         // We cannot use recursion here, as we need to handle the precedence of the operators
         // We need to use a loop to parse the binary expressions.
 
@@ -285,6 +291,7 @@ impl Parser {
             operators.push(operator);
             self.assign_next()?;
             expressions.push(self.get_binary_child_node()?);
+
             current_token = token_from_option!(self.get_next()?).clone();
         }
 
@@ -296,40 +303,49 @@ impl Parser {
             });
         }
 
+        // Every time we find a valid operator, we pop 2 off the expressions and add one back.
+        // This means that we need to keep track of the current iteration to ensure we are
+        // removing the correct expressions from the vector
+        let mut current_iteration = 0;
+
         // Loop through operators, and build the binary expressions for exponential operators only
         for (i, operator) in operators.iter().enumerate() {
-            if operator == &Symbol::Caret {
-                let left = expressions.remove(min!(i, expressions.len() - 1));
-                let right = expressions.remove(min!(i, expressions.len() - 1));
+            if operator == &Symbol::Exp {
+                let index = i - current_iteration;
+                let left = expressions.remove(index);
+                let right = expressions.remove(index);
                 expressions.insert(
-                    min!(i, expressions.len()),
+                    index,
                     Expression::BinaryExpression(BinaryExpression::Exponent(
                         Box::new(left),
                         Box::new(right),
                     )),
                 );
+                current_iteration += 1;
             }
         }
 
         // remove all the exponential operators from the operators vector
-        operators.retain(|symbol| symbol != &Symbol::Caret);
+        operators.retain(|symbol| symbol != &Symbol::Exp);
+        current_iteration = 0;
 
         // Loop through operators, and build the binary expressions for multiplication and division operators
         for (i, operator) in operators.iter().enumerate() {
             if operator == &Symbol::Asterisk || operator == &Symbol::Slash {
-                let left = expressions.remove(min!(i, expressions.len() - 1));
-                let right = expressions.remove(min!(i, expressions.len() - 1));
+                let index = i - current_iteration;
+                let left = expressions.remove(index);
+                let right = expressions.remove(index);
 
                 match operator {
                     Symbol::Asterisk => expressions.insert(
-                        min!(i, expressions.len()),
+                        index,
                         Expression::BinaryExpression(BinaryExpression::Multiply(
                             Box::new(left),
                             Box::new(right),
                         )),
                     ),
                     Symbol::Slash => expressions.insert(
-                        min!(i, expressions.len()),
+                        index,
                         Expression::BinaryExpression(BinaryExpression::Divide(
                             Box::new(left),
                             Box::new(right),
@@ -338,28 +354,31 @@ impl Parser {
                     // safety: we have already checked for the operator
                     _ => unreachable!(),
                 }
+                current_iteration += 1;
             }
         }
 
         // remove all the multiplication and division operators from the operators vector
         operators.retain(|symbol| symbol != &Symbol::Asterisk && symbol != &Symbol::Slash);
+        current_iteration = 0;
 
         // Loop through operators, and build the binary expressions for addition and subtraction operators
         for (i, operator) in operators.iter().enumerate() {
             if operator == &Symbol::Plus || operator == &Symbol::Minus {
-                let left = expressions.remove(min!(i, expressions.len() - 1));
-                let right = expressions.remove(min!(i, expressions.len() - 1));
+                let index = i - current_iteration;
+                let left = expressions.remove(index);
+                let right = expressions.remove(index);
 
                 match operator {
                     Symbol::Plus => expressions.insert(
-                        min!(i, expressions.len()),
+                        index,
                         Expression::BinaryExpression(BinaryExpression::Add(
                             Box::new(left),
                             Box::new(right),
                         )),
                     ),
                     Symbol::Minus => expressions.insert(
-                        min!(i, expressions.len()),
+                        index,
                         Expression::BinaryExpression(BinaryExpression::Subtract(
                             Box::new(left),
                             Box::new(right),
@@ -368,6 +387,7 @@ impl Parser {
                     // safety: we have already checked for the operator
                     _ => unreachable!(),
                 }
+                current_iteration += 1;
             }
         }
 
@@ -382,8 +402,11 @@ impl Parser {
             });
         }
 
-        // Edge case. If the current token is a semi-colon, we need to set current token to the previous token
-        if token_matches!(current_token, TokenType::Symbol(Symbol::Semicolon)) {
+        // Edge case. If the current token is a semi-colon, RParen, we need to set current token to the previous token
+        if token_matches!(
+            current_token,
+            TokenType::Symbol(Symbol::Semicolon) | TokenType::Symbol(Symbol::RParen)
+        ) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
         }
 
@@ -399,16 +422,17 @@ impl Parser {
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: std::backtrace::Backtrace::capture(),
             });
         }
 
         let expression = self.parse()?.ok_or(ParseError::UnexpectedEOF)?;
 
-        // make sure the next token is a right parenthesis
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::RParen)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: std::backtrace::Backtrace::capture(),
             });
         }
 
@@ -427,6 +451,7 @@ impl Parser {
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: std::backtrace::Backtrace::capture(),
             });
         }
 
@@ -455,6 +480,7 @@ impl Parser {
             {
                 return Err(ParseError::UnexpectedToken {
                     token: token_from_option!(self.get_next()?).clone(),
+                    backtrace: backtrace::Backtrace::capture(),
                 });
             }
 
@@ -481,6 +507,7 @@ impl Parser {
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: backtrace::Backtrace::capture(),
             });
         }
 
@@ -500,6 +527,7 @@ impl Parser {
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Let)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: backtrace::Backtrace::capture(),
             });
         }
         let identifier = extract_token_data!(
@@ -513,6 +541,7 @@ impl Parser {
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token,
+                backtrace: backtrace::Backtrace::capture(),
             });
         }
 
@@ -523,6 +552,7 @@ impl Parser {
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Semicolon)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: backtrace::Backtrace::capture(),
             });
         }
 
@@ -540,6 +570,7 @@ impl Parser {
             _ => {
                 return Err(ParseError::UnexpectedToken {
                     token: current_token.clone(),
+                    backtrace: backtrace::Backtrace::capture(),
                 })
             }
         };
@@ -553,6 +584,7 @@ impl Parser {
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Fn)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: Backtrace::capture(),
             });
         }
 
@@ -567,6 +599,7 @@ impl Parser {
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: Backtrace::capture(),
             });
         }
 
@@ -596,6 +629,7 @@ impl Parser {
             {
                 return Err(ParseError::UnexpectedToken {
                     token: token_from_option!(self.get_next()?).clone(),
+                    backtrace: Backtrace::capture(),
                 });
             }
 
@@ -613,6 +647,7 @@ impl Parser {
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
             return Err(ParseError::UnexpectedToken {
                 token: current_token.clone(),
+                backtrace: Backtrace::capture(),
             });
         };
 
@@ -747,18 +782,15 @@ mod tests {
     }
 
     #[test]
-    fn test_binary() -> Result<()> {
-        let expr = parser!("1 + 3 ^ 5").parse()?.unwrap();
-        assert_eq!("(1 + (3 ^ 5))", expr.to_string());
+    fn test_binary_expression() -> Result<()> {
+        let expr = parser!("4 ** 2 + 5 ** 2").parse()?.unwrap();
+        assert_eq!("((4 ** 2) + (5 ** 2))", expr.to_string());
 
-        let input = "4 ^ 2 + 3 ^ 2";
+        let expr = parser!("45 * 2 - 15 / 5 + 5 ** 2").parse()?.unwrap();
+        assert_eq!("(((45 * 2) - (15 / 5)) + (5 ** 2))", expr.to_string());
 
-        let expr = parser!(input).parse()?.unwrap();
-        println!("Original: {}\nTranscribed: {}", input, expr.to_string());
-
-        let expr = parser!("12 - 1 + 3 * 5").parse()?.unwrap();
-
-        assert_eq!("((12 - 1) + (3 * 5))", expr.to_string());
+        let expr = parser!("(5 - 2) * 10").parse()?.unwrap();
+        assert_eq!("(((5 - 2)) * 10)", expr.to_string());
 
         Ok(())
     }

@@ -31,7 +31,7 @@ impl std::fmt::Display for BinaryExpression {
             BinaryExpression::Multiply(l, r) => write!(f, "({} * {})", l, r),
             BinaryExpression::Divide(l, r) => write!(f, "({} / {})", l, r),
             BinaryExpression::Subtract(l, r) => write!(f, "({} - {})", l, r),
-            BinaryExpression::Exponent(l, r) => write!(f, "({} ^ {})", l, r),
+            BinaryExpression::Exponent(l, r) => write!(f, "({} ** {})", l, r),
         }
     }
 }
@@ -139,6 +139,18 @@ impl std::fmt::Display for InvocationExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct PropertyAccessorExpression {
+    pub object: Box<Expression>,
+    pub property: String,
+}
+
+impl std::fmt::Display for PropertyAccessorExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.object, self.property)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     Literal(Literal),
     Variable(String),
@@ -151,6 +163,7 @@ pub enum Expression {
     BlockExpression(BlockExpression),
     InvocationExpression(InvocationExpression),
     PriorityExpression(Box<Expression>),
+    PropertyAccessorExpression(PropertyAccessorExpression)
 }
 
 impl std::fmt::Display for Expression {
@@ -167,6 +180,7 @@ impl std::fmt::Display for Expression {
             Expression::InvocationExpression(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),
             Expression::PriorityExpression(e) => write!(f, "({})", e),
+            Expression::PropertyAccessorExpression(e) => write!(f, "{}", e),
         }
     }
 }

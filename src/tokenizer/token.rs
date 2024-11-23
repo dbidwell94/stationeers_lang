@@ -122,12 +122,14 @@ pub enum Symbol {
     LessThanOrEqual,
     /// Represents the `>=` symbol
     GreaterThanOrEqual,
+    /// Represents the `**` symbol
+    Exp,
 }
 
 impl Symbol {
     pub fn is_operator(&self) -> bool {
         match self {
-            Symbol::Plus | Symbol::Minus | Symbol::Asterisk | Symbol::Slash | Symbol::Caret => true,
+            Symbol::Plus | Symbol::Minus | Symbol::Asterisk | Symbol::Slash | Symbol::Exp => true,
             _ => false,
         }
     }

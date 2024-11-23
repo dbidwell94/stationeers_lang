@@ -11,4 +11,4 @@ clap = { version = "^4.5", features = ["derive"] }
 thiserror = { version = "^2.0" }
 
 [dev-dependencies]
-anyhow = { version = "^1.0" }
+anyhow = { version = "^1.0", features = ["backtrace"] }
