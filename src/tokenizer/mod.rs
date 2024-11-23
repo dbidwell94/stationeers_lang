@@ -3,7 +3,6 @@ pub mod token;
 use std::{
     cmp::Ordering,
     collections::VecDeque,
-    fs::File,
     io::{BufReader, Cursor, Read, Seek, SeekFrom},
     path::PathBuf,
 };
