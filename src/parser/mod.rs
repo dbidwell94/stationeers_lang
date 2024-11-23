@@ -1,7 +1,7 @@
 mod tree_node;
 
 use crate::tokenizer::{
-    token::{self, Keyword, Symbol, Token, TokenType},
+    token::{Keyword, Symbol, Token, TokenType},
     Tokenizer, TokenizerBuffer, TokenizerError,
 };
 use std::{
@@ -194,6 +194,13 @@ impl Parser {
                 Expression::InvocationExpression(self.invocation()?)
             }
 
+            // match a variable expression with an assignment
+            TokenType::Identifier(_)
+                if self_matches_peek!(self, TokenType::Symbol(Symbol::Assign)) =>
+            {
+                Expression::AssignmentExpression(self.assignment()?)
+            }
+
             // match variable expressions with an identifier
             TokenType::Identifier(ref id) => Expression::Variable(id.clone()),
 
@@ -259,6 +266,30 @@ impl Parser {
                 backtrace: std::backtrace::Backtrace::capture(),
             }),
         }
+    }
+
+    fn assignment(&mut self) -> Result<AssignmentExpression, ParseError> {
+        let identifier = extract_token_data!(
+            token_from_option!(self.current_token),
+            TokenType::Identifier(ref id),
+            id.clone()
+        );
+
+        let current_token = token_from_option!(self.get_next()?).clone();
+        if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
+            return Err(ParseError::UnexpectedToken {
+                token: current_token.clone(),
+                backtrace: Backtrace::capture(),
+            });
+        }
+        self.assign_next()?;
+
+        let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+
+        Ok(AssignmentExpression {
+            identifier,
+            expression: Box::new(expression),
+        })
     }
 
     /// Handles mathmatical expressions in the explicit order of PEMDAS

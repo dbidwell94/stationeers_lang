@@ -3,5 +3,10 @@ fn doStuff() {
         return 234.5;
     };
 
-    return i;
+    i = 5;
+
+    // This comment is going to be ignored.
+    return i; // we returned here
 }
+
+doStuff();
