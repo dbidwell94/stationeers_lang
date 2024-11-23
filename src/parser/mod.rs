@@ -1,7 +1,7 @@
 mod tree_node;
 
 use crate::tokenizer::{
-    token::{Keyword, Symbol, Token, TokenType},
+    token::{self, Keyword, Symbol, Token, TokenType},
     Tokenizer, TokenizerBuffer, TokenizerError,
 };
 use std::{
@@ -518,9 +518,23 @@ impl Parser {
             });
         }
 
-        while !self_matches_peek!(self, TokenType::Symbol(Symbol::RBrace)) {
+        while !self_matches_peek!(
+            self,
+            TokenType::Symbol(Symbol::RBrace) | TokenType::Keyword(Keyword::Return)
+        ) {
             let expression = self.parse()?.ok_or(ParseError::UnexpectedEOF)?;
             expressions.push(expression);
+        }
+
+        // print the current token for debugging
+        let current_token = token_from_option!(self.get_next()?);
+
+        if token_matches!(current_token, TokenType::Keyword(Keyword::Return)) {
+            self.assign_next()?;
+            let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+            let return_expr = Expression::ReturnExpression(Box::new(expression));
+            expressions.push(return_expr);
+            self.assign_next()?;
         }
 
         self.assign_next()?;

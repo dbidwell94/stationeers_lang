@@ -139,31 +139,19 @@ impl std::fmt::Display for InvocationExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct PropertyAccessorExpression {
-    pub object: Box<Expression>,
-    pub property: String,
-}
-
-impl std::fmt::Display for PropertyAccessorExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}", self.object, self.property)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
-    Literal(Literal),
-    Variable(String),
-    Negation(Box<Expression>),
-    BinaryExpression(BinaryExpression),
-    LogicalExpression(LogicalExpression),
     AssignmentExpression(AssignmentExpression),
+    BinaryExpression(BinaryExpression),
+    BlockExpression(BlockExpression),
     DeclarationExpression(String, Box<Expression>),
     FunctionExpression(FunctionExpression),
-    BlockExpression(BlockExpression),
     InvocationExpression(InvocationExpression),
+    Literal(Literal),
+    LogicalExpression(LogicalExpression),
+    Negation(Box<Expression>),
     PriorityExpression(Box<Expression>),
-    PropertyAccessorExpression(PropertyAccessorExpression)
+    ReturnExpression(Box<Expression>),
+    Variable(String),
 }
 
 impl std::fmt::Display for Expression {
@@ -180,7 +168,7 @@ impl std::fmt::Display for Expression {
             Expression::InvocationExpression(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),
             Expression::PriorityExpression(e) => write!(f, "({})", e),
-            Expression::PropertyAccessorExpression(e) => write!(f, "{}", e),
+            Expression::ReturnExpression(e) => write!(f, "(return {})", e),
         }
     }
 }

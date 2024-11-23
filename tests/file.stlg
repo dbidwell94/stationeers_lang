@@ -1,14 +1,7 @@
-fn myPowerItem(arg) {
-    
-}
+fn doStuff() {
+    let i = {
+        return 234.5;
+    };
 
-fn doThings(x, y, z) {
-    let item = myPowerItem((12.45 + 5 * 123) ** 2);
-
-    let item2 = 5 + 2 - 5 + 123.24323 / 234 ** 21 - (15 / 2);
-}
-
-
-fn main() {
-    doThings(1, 2, 3);
+    return i;
 }
