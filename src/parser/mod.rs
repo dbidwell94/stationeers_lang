@@ -128,7 +128,13 @@ impl Parser {
     /// Parses the input from the tokenizer buffer and returns the resulting expression
     pub fn parse(&mut self) -> Result<Option<tree_node::Expression>, ParseError> {
         self.assign_next()?;
-        self.expression()
+        let expr = self.expression()?;
+
+        if self_matches_peek!(self, TokenType::Symbol(Symbol::Semicolon)) {
+            self.assign_next()?;
+        }
+
+        Ok(expr)
     }
 
     /// Assigns the next token in the tokenizer buffer to the current token
@@ -426,7 +432,8 @@ impl Parser {
             });
         }
 
-        let expression = self.parse()?.ok_or(ParseError::UnexpectedEOF)?;
+        self.assign_next()?;
+        let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
 
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::RParen)) {
@@ -511,13 +518,12 @@ impl Parser {
             });
         }
 
-        while !token_matches!(
-            token_from_option!(self.get_next()?),
-            TokenType::Symbol(Symbol::RBrace)
-        ) {
-            let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+        while !self_matches_peek!(self, TokenType::Symbol(Symbol::RBrace)) {
+            let expression = self.parse()?.ok_or(ParseError::UnexpectedEOF)?;
             expressions.push(expression);
         }
+
+        self.assign_next()?;
 
         Ok(BlockExpression(expressions))
     }
@@ -545,7 +551,8 @@ impl Parser {
             });
         }
 
-        let assignment_expression = self.parse()?.ok_or(ParseError::UnexpectedEOF)?;
+        self.assign_next()?;
+        let assignment_expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
 
         // make sure the next token is a semi-colon
         let current_token = token_from_option!(self.get_next()?);

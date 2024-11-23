@@ -10,5 +10,5 @@ fn doThings(x, y, z) {
 
 
 fn main() {
-    doThings(1, 2, 3)
+    doThings(1, 2, 3);
 }
