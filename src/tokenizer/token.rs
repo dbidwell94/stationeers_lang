@@ -1,3 +1,5 @@
+use rust_decimal::Decimal;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token {
     /// The type of the token
@@ -53,16 +55,16 @@ impl std::fmt::Display for TokenType {
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Number {
     /// Represents an integer number
-    Integer(u64),
+    Integer(u128),
     /// Represents a decimal type number with a precision of 64 bits
-    Decimal(u64, u64),
+    Decimal(Decimal),
 }
 
 impl std::fmt::Display for Number {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Number::Integer(i) => write!(f, "{}", i),
-            Number::Decimal(i, d) => write!(f, "{}.{}", i, d),
+            Number::Decimal(d) => write!(f, "{}", d.to_string()),
         }
     }
 }

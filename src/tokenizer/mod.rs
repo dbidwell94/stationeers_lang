@@ -1,5 +1,6 @@
 pub mod token;
 
+use rust_decimal::Decimal;
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -15,6 +16,8 @@ pub enum TokenizerError {
     IOError(#[from] std::io::Error),
     #[error("Number Parse Error \"{0}\"\nLine: {1}, Column: {2}")]
     NumberParseError(std::num::ParseIntError, usize, usize),
+    #[error("Decimal Parse Error \"{0}\"\nLine: {1}, Column: {2}")]
+    DecimalParseError(rust_decimal::Error, usize, usize),
     #[error("Unknown Symbol \"{0}\"\nLine: {1}, Column: {2}")]
     UnknownSymbolError(char, usize, usize),
     #[error("Unknown Keyword or Identifier \"{0}\"\nLine: {1}, Column: {2}")]
@@ -282,6 +285,12 @@ impl Tokenizer {
                 continue;
             }
 
+            // support underscores in numbers for readability
+            if next_char == '_' {
+                self.next_char()?;
+                continue;
+            }
+
             // This is for the times when we have a number followed by a symbol (like a semicolon or =)
             if !next_char.is_numeric() {
                 break;
@@ -296,14 +305,14 @@ impl Tokenizer {
         }
 
         if let Some(decimal) = decimal {
+            let decimal_scale = decimal.len() as u32;
+            let number = format!("{}{}", primary, decimal)
+                .parse::<i128>()
+                .map_err(|e| TokenizerError::NumberParseError(e, self.line, self.column))?;
             Ok(Token::new(
                 TokenType::Number(Number::Decimal(
-                    primary
-                        .parse()
-                        .map_err(|e| TokenizerError::NumberParseError(e, line, column))?,
-                    decimal
-                        .parse()
-                        .map_err(|e| TokenizerError::NumberParseError(e, line, column))?,
+                    Decimal::try_from_i128_with_scale(number, decimal_scale)
+                        .map_err(|e| TokenizerError::DecimalParseError(e, line, column))?,
                 )),
                 line,
                 column,
@@ -516,6 +525,7 @@ impl TokenizerBuffer {
 mod tests {
     use super::*;
     use anyhow::Result;
+    use rust_decimal::Decimal;
 
     const TEST_FILE: &str = "tests/file.stlg";
 
@@ -629,12 +639,33 @@ This is a skippable line"#,
     }
 
     #[test]
+    fn test_parse_integer_with_underscore() -> Result<()> {
+        let mut tokenizer = Tokenizer::from(String::from("1_000"));
+
+        let token = tokenizer.next_token()?.unwrap();
+
+        assert_eq!(token.token_type, TokenType::Number(Number::Integer(1000)));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_parse_decimal() -> Result<()> {
         let mut tokenizer = Tokenizer::from(String::from("10.5"));
 
         let token = tokenizer.next_token()?.unwrap();
 
-        assert_eq!(token.token_type, TokenType::Number(Number::Decimal(10, 5)));
+        assert_eq!(
+            token.token_type,
+            TokenType::Number(Number::Decimal(Decimal::new(105, 1))) // 10.5
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_decimal_with_underscore() -> Result<()> {
+        let mut tokenizer = Tokenizer::from(String::from("1_000.000_6"));
 
         Ok(())
     }
