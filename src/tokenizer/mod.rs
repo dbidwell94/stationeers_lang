@@ -667,6 +667,13 @@ This is a skippable line"#,
     fn test_parse_decimal_with_underscore() -> Result<()> {
         let mut tokenizer = Tokenizer::from(String::from("1_000.000_6"));
 
+        let token = tokenizer.next_token()?.unwrap();
+
+        assert_eq!(
+            token.token_type,
+            TokenType::Number(Number::Decimal(Decimal::new(10000006, 4))) // 1000.0006
+        );
+
         Ok(())
     }
 
