@@ -1,4 +1,5 @@
-mod tree_node;
+pub mod tree_node;
+pub mod sys_call;
 
 use crate::tokenizer::{
     token::{Keyword, Symbol, Token, TokenType},

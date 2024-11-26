@@ -139,6 +139,13 @@ impl std::fmt::Display for InvocationExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum LiteralOrVariable {
+    Literal(Literal),
+    Variable(String),
+}
+
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     AssignmentExpression(AssignmentExpression),
     BinaryExpression(BinaryExpression),

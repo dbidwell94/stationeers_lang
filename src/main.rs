@@ -1,5 +1,6 @@
 #![feature(error_generic_member_access)]
 
+mod compiler;
 mod parser;
 mod tokenizer;
 
@@ -14,6 +15,8 @@ enum StationlangError {
     TokenizerError(#[from] TokenizerError),
     #[error(transparent)]
     ParserError(#[from] parser::ParseError),
+    #[error(transparent)]
+    CompileError(#[from] compiler::CompileError),
     #[error(transparent)]
     IoError(#[from] std::io::Error),
 }
@@ -54,11 +57,10 @@ fn run_logic() -> Result<(), StationlangError> {
 
     let mut parser = ASTParser::new(tokenizer);
 
-    let ast = parser.parse_all()?;
+    let compiler = compiler::Compiler::new(parser, args.stack_size);
 
-    if let Some(ast) = ast {
-        println!("{}", ast);
-    }
+    let output = compiler.compile()?;
+    println!("{}", output);
 
     Ok(())
 }
