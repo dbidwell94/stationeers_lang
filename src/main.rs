@@ -88,13 +88,13 @@ fn run_logic() -> Result<(), StationlangError> {
     let compiler = Compiler::new(parser, args.stack_size, &mut writer);
 
     compiler.compile()?;
-
     writer.flush()?;
+
     Ok(())
 }
 
-fn main() {
-    if let Err(e) = run_logic() {
-        eprintln!("\n{}", e);
-    }
+fn main() -> Result<(), StationlangError> {
+    run_logic()?;
+
+    Ok(())
 }
