@@ -1,5 +1,3 @@
-use thiserror::Error;
-
 use crate::parser::tree_node::*;
 use crate::parser::Parser as ASTParser;
 use std::collections::HashMap;
@@ -9,14 +7,21 @@ use std::io::Write;
 /// Represents the return keyword. Used as a variable name for the register.
 const RETURN: &'static str = "ret";
 
-#[derive(Error, Debug)]
-pub enum CompileError {
-    #[error(transparent)]
-    ParseError(#[from] crate::parser::ParseError),
-    #[error("A fatal error has occurred with the compiler. Scope could not be found.")]
-    ScopeError,
-    #[error(transparent)]
-    WriteError(#[from] std::io::Error),
+quick_error! {
+    #[derive(Debug)]
+    pub enum CompileError {
+        ParseError(err: crate::parser::ParseError) {
+            from()
+            display("Parse error: {}", err)
+        }
+        ScopeError {
+            display("A fatal error has occurred with the compiler. Scope could not be found.")
+        }
+        WriteError(err: std::io::Error) {
+            from()
+            display("Write error: {}", err)
+        }
+    }
 }
 
 pub struct Compiler<'a> {

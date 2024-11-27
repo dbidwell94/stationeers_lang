@@ -1,5 +1,6 @@
 pub mod token;
 
+use crate::boxed;
 use rust_decimal::Decimal;
 use std::{
     cmp::Ordering,
@@ -7,23 +8,31 @@ use std::{
     io::{BufReader, Cursor, Read, Seek, SeekFrom},
     path::PathBuf,
 };
-use thiserror::Error;
 use token::{Keyword, Number, Symbol, Token, TokenType};
 
-use crate::boxed;
-
-#[derive(Error, Debug)]
-pub enum TokenizerError {
-    #[error("IO Error: {0}")]
-    IOError(#[from] std::io::Error),
-    #[error("Number Parse Error \"{0}\"\nLine: {1}, Column: {2}")]
-    NumberParseError(std::num::ParseIntError, usize, usize),
-    #[error("Decimal Parse Error \"{0}\"\nLine: {1}, Column: {2}")]
-    DecimalParseError(rust_decimal::Error, usize, usize),
-    #[error("Unknown Symbol \"{0}\"\nLine: {1}, Column: {2}")]
-    UnknownSymbolError(char, usize, usize),
-    #[error("Unknown Keyword or Identifier \"{0}\"\nLine: {1}, Column: {2}")]
-    UnknownKeywordOrIdentifierError(String, usize, usize),
+quick_error! {
+    #[derive(Debug)]
+    pub enum TokenizerError {
+        IOError(err: std::io::Error) {
+            from()
+            display("IO Error: {}", err)
+            source(err)
+        }
+        NumberParseError(err: std::num::ParseIntError, line: usize, column: usize) {
+            display("Number Parse Error: {}\nLine: {}, Column: {}", err, line, column)
+            source(err)
+        }
+        DecimalParseError(err: rust_decimal::Error, line: usize, column: usize) {
+            display("Decimal Parse Error: {}\nLine: {}, Column: {}", err, line, column)
+            source(err)
+        }
+        UnknownSymbolError(char: char, line: usize, column: usize) {
+            display("Unknown Symbol: {}\nLine: {}, Column: {}", char, line, column)
+        }
+        UnknownKeywordOrIdentifierError(val: String, line: usize, column: usize) {
+            display("Unknown Keyword or Identifier: {}\nLine: {}, Column: {}", val, line, column)
+        }
+    }
 }
 
 pub trait Tokenize: Read + Seek {}

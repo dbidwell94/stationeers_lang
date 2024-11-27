@@ -1,4 +1,5 @@
-#![feature(error_generic_member_access)]
+#[macro_use]
+extern crate quick_error;
 
 mod compiler;
 mod parser;
@@ -21,16 +22,26 @@ macro_rules! boxed {
     };
 }
 
-#[derive(Debug, thiserror::Error)]
-enum StationlangError {
-    #[error(transparent)]
-    TokenizerError(#[from] TokenizerError),
-    #[error(transparent)]
-    ParserError(#[from] parser::ParseError),
-    #[error(transparent)]
-    CompileError(#[from] compiler::CompileError),
-    #[error(transparent)]
-    IoError(#[from] std::io::Error),
+quick_error! {
+    #[derive(Debug)]
+    enum StationlangError {
+        TokenizerError(err: TokenizerError) {
+            from()
+            display("Tokenizer error: {}", err)
+        }
+        ParserError(err: parser::ParseError) {
+            from()
+            display("Parser error: {}", err)
+        }
+        CompileError(err: compiler::CompileError) {
+            from()
+            display("Compile error: {}", err)
+        }
+        IoError(err: std::io::Error) {
+            from()
+            display("IO error: {}", err)
+        }
+    }
 }
 
 #[derive(Parser, Debug)]

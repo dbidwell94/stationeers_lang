@@ -8,31 +8,33 @@ use crate::{
         Tokenizer, TokenizerBuffer, TokenizerError,
     },
 };
-use std::{
-    backtrace::{self, Backtrace},
-    io::SeekFrom,
-};
-use thiserror::Error;
+use std::io::SeekFrom;
 use tree_node::*;
 
-#[derive(Debug, Error)]
-pub enum ParseError {
-    #[error(transparent)]
-    TokenizerError(#[from] TokenizerError),
-    #[error("Unexpected token\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
-    UnexpectedToken {
-        token: Token,
-        #[backtrace]
-        backtrace: std::backtrace::Backtrace,
-    },
-    #[error("Duplicated Identifer\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
-    DuplicateIdentifier { token: Token },
-    #[error("Invalid Syntax\n\nLine: {0}, Column: {1}\nReason: {reason}", token.line, token.column)]
-    InvalidSyntax { token: Token, reason: String },
-    #[error("This keyword is not yet implemented\n\nLine: {0}, Column: {1}\nToken: {2}\n", token.line, token.column, token.token_type)]
-    UnsupportedKeyword { token: Token },
-    #[error("Unexpected EOF")]
-    UnexpectedEOF,
+quick_error! {
+    #[derive(Debug)]
+    pub enum ParseError {
+        TokenizerError(err: TokenizerError) {
+            from()
+            display("Tokenizer Error: {}", err)
+            source(err)
+        }
+        UnexpectedToken(token: Token) {
+            display("Unexpected token: {:?}", token)
+        }
+        DuplicateIdentifier(token: Token) {
+            display("Duplicate identifier: {:?}", token)
+        }
+        InvalidSyntax(token: Token, reason: String) {
+            display("Invalid syntax: {:?}, Reason: {}", token, reason)
+        }
+        UnsupportedKeyword(token: Token) {
+            display("Unsupported keyword: {:?}", token)
+        }
+        UnexpectedEOF {
+            display("Unexpected EOF")
+        }
+    }
 }
 
 macro_rules! self_matches_peek {
@@ -57,22 +59,14 @@ macro_rules! extract_token_data {
     ($token:ident, $pattern:pat, $extraction:expr) => {
         match $token.token_type {
             $pattern => $extraction,
-            _ => {
-                return Err(ParseError::UnexpectedToken {
-                    token: $token.clone(),
-                    backtrace: std::backtrace::Backtrace::capture(),
-                })
-            }
+            _ => return Err(ParseError::UnexpectedToken($token.clone())),
         }
     };
     ($token:expr, $pattern:pat, $extraction:expr) => {
         match $token.token_type {
             $pattern => $extraction,
             _ => {
-                return Err(ParseError::UnexpectedToken {
-                    token: $token.clone(),
-                    backtrace: std::backtrace::Backtrace::capture(),
-                })
+                return Err(ParseError::UnexpectedToken($token.clone()));
             }
         }
     };
@@ -180,9 +174,7 @@ impl Parser {
                     Keyword::Else
                 ) =>
             {
-                return Err(ParseError::UnsupportedKeyword {
-                    token: current_token.clone(),
-                })
+                return Err(ParseError::UnsupportedKeyword(current_token.clone()))
             }
 
             // match declarations with a `let` keyword
@@ -218,10 +210,7 @@ impl Parser {
             TokenType::Symbol(Symbol::LParen) => Expression::PriorityExpression(self.priority()?),
 
             _ => {
-                return Err(ParseError::UnexpectedToken {
-                    token: current_token.clone(),
-                    backtrace: std::backtrace::Backtrace::capture(),
-                })
+                return Err(ParseError::UnexpectedToken(current_token.clone()));
             }
         });
 
@@ -265,10 +254,7 @@ impl Parser {
             {
                 self.invocation().map(Expression::InvocationExpression)
             }
-            _ => Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: std::backtrace::Backtrace::capture(),
-            }),
+            _ => Err(ParseError::UnexpectedToken(current_token.clone())),
         }
     }
 
@@ -281,10 +267,7 @@ impl Parser {
 
         let current_token = token_from_option!(self.get_next()?).clone();
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token));
         }
         self.assign_next()?;
 
@@ -313,10 +296,7 @@ impl Parser {
             | Expression::Negation(_) // -1 + 2
              => {}
             _ => {
-                return Err(ParseError::InvalidSyntax {
-                    token: current_token.clone(),
-                    reason: "Invalid expression for binary operation".to_owned(),
-                })
+                return Err(ParseError::InvalidSyntax(current_token.clone(), String::from("Invalid expression for binary operation")))
             }
         }
 
@@ -338,10 +318,10 @@ impl Parser {
 
         // validate the vectors and make sure operators.len() == expressions.len() - 1
         if operators.len() != expressions.len() - 1 {
-            return Err(ParseError::InvalidSyntax {
-                token: current_token.clone(),
-                reason: "Invalid number of operators".to_owned(),
-            });
+            return Err(ParseError::InvalidSyntax(
+                current_token.clone(),
+                String::from("Invalid number of operators"),
+            ));
         }
 
         // Every time we find a valid operator, we pop 2 off the expressions and add one back.
@@ -437,10 +417,10 @@ impl Parser {
 
         // Ensure there is only one expression left in the expressions vector, and no operators left
         if expressions.len() != 1 || !operators.is_empty() {
-            return Err(ParseError::InvalidSyntax {
-                token: current_token.clone(),
-                reason: "Invalid number of operators".to_owned(),
-            });
+            return Err(ParseError::InvalidSyntax(
+                current_token.clone(),
+                String::from("Invalid number of operators"),
+            ));
         }
 
         // Edge case. If the current token is a semi-colon, RParen, we need to set current token to the previous token
@@ -461,10 +441,7 @@ impl Parser {
     fn priority(&mut self) -> Result<Box<Expression>, ParseError> {
         let current_token = token_from_option!(self.current_token);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: std::backtrace::Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
         self.assign_next()?;
@@ -472,10 +449,7 @@ impl Parser {
 
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::RParen)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: std::backtrace::Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
         Ok(boxed!(expression))
@@ -491,10 +465,7 @@ impl Parser {
         // Ensure the next token is a left parenthesis
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: std::backtrace::Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
         let mut arguments = Vec::<Expression>::new();
@@ -508,10 +479,10 @@ impl Parser {
             let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
 
             if let Expression::BlockExpression(_) = expression {
-                return Err(ParseError::InvalidSyntax {
-                    token: current_token,
-                    reason: "Block expressions are not allowed in function invocations".to_owned(),
-                });
+                return Err(ParseError::InvalidSyntax(
+                    current_token,
+                    String::from("Block expressions are not allowed in function invocations"),
+                ));
             }
 
             arguments.push(expression);
@@ -520,10 +491,9 @@ impl Parser {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                return Err(ParseError::UnexpectedToken {
-                    token: token_from_option!(self.get_next()?).clone(),
-                    backtrace: backtrace::Backtrace::capture(),
-                });
+                return Err(ParseError::UnexpectedToken(
+                    token_from_option!(self.get_next()?).clone(),
+                ));
             }
 
             // edge case: if the next token is not a right parenthesis, increment the current token
@@ -547,10 +517,7 @@ impl Parser {
 
         // sanity check: make sure the current token is a left brace
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: backtrace::Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
         while !self_matches_peek!(
@@ -580,10 +547,7 @@ impl Parser {
     fn declaration(&mut self) -> Result<Expression, ParseError> {
         let current_token = token_from_option!(self.current_token);
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Let)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: backtrace::Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
         let identifier = extract_token_data!(
             token_from_option!(self.get_next()?),
@@ -594,10 +558,7 @@ impl Parser {
         let current_token = token_from_option!(self.get_next()?).clone();
 
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token,
-                backtrace: backtrace::Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
         self.assign_next()?;
@@ -606,10 +567,7 @@ impl Parser {
         // make sure the next token is a semi-colon
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Semicolon)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: backtrace::Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
         Ok(Expression::DeclarationExpression(
@@ -623,12 +581,7 @@ impl Parser {
         let literal = match current_token.token_type {
             TokenType::Number(ref num) => Literal::Number(num.clone()),
             TokenType::String(ref string) => Literal::String(string.clone()),
-            _ => {
-                return Err(ParseError::UnexpectedToken {
-                    token: current_token.clone(),
-                    backtrace: backtrace::Backtrace::capture(),
-                })
-            }
+            _ => return Err(ParseError::UnexpectedToken(current_token.clone())),
         };
 
         Ok(literal)
@@ -638,10 +591,7 @@ impl Parser {
         let current_token = token_from_option!(self.current_token);
         // Sanify check that the current token is a `fn` keyword
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Fn)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
         let fn_ident = extract_token_data!(
@@ -653,10 +603,7 @@ impl Parser {
         // make sure next token is a left parenthesis
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
         let mut arguments = Vec::<String>::new();
@@ -672,9 +619,7 @@ impl Parser {
                 extract_token_data!(current_token, TokenType::Identifier(ref id), id.clone());
 
             if arguments.contains(&argument) {
-                return Err(ParseError::DuplicateIdentifier {
-                    token: current_token.clone(),
-                });
+                return Err(ParseError::DuplicateIdentifier(current_token.clone()));
             }
 
             arguments.push(argument);
@@ -683,10 +628,9 @@ impl Parser {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                return Err(ParseError::UnexpectedToken {
-                    token: token_from_option!(self.get_next()?).clone(),
-                    backtrace: Backtrace::capture(),
-                });
+                return Err(ParseError::UnexpectedToken(
+                    token_from_option!(self.get_next()?).clone(),
+                ));
             }
 
             // edge case: if the next token is not a right parenthesis, increment the current token
@@ -701,10 +645,7 @@ impl Parser {
         // make sure the next token is a left brace
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
-            return Err(ParseError::UnexpectedToken {
-                token: current_token.clone(),
-                backtrace: Backtrace::capture(),
-            });
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
         };
 
         Ok(FunctionExpression {
