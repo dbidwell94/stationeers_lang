@@ -5,9 +5,21 @@ mod parser;
 mod tokenizer;
 
 use clap::Parser;
+use compiler::Compiler;
 use parser::Parser as ASTParser;
-use std::io::Read;
+use std::{
+    fs::File,
+    io::{BufWriter, Read, Write},
+};
 use tokenizer::{Tokenizer, TokenizerError};
+
+#[macro_export]
+/// A macro to create a boxed value.
+macro_rules! boxed {
+    ($e:expr) => {
+        Box::new($e)
+    };
+}
 
 #[derive(Debug, thiserror::Error)]
 enum StationlangError {
@@ -55,13 +67,18 @@ fn run_logic() -> Result<(), StationlangError> {
         }
     };
 
-    let mut parser = ASTParser::new(tokenizer);
+    let parser = ASTParser::new(tokenizer);
 
-    let compiler = compiler::Compiler::new(parser, args.stack_size);
+    let mut writer: BufWriter<Box<dyn Write>> = match args.output_file {
+        Some(output_file) => BufWriter::new(boxed!(File::create(output_file)?)),
+        None => BufWriter::new(boxed!(std::io::stdout())),
+    };
 
-    let output = compiler.compile()?;
-    println!("{}", output);
+    let compiler = Compiler::new(parser, args.stack_size, &mut writer);
 
+    compiler.compile()?;
+
+    writer.flush()?;
     Ok(())
 }
 

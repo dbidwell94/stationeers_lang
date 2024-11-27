@@ -3,6 +3,8 @@ use thiserror::Error;
 use crate::parser::tree_node::*;
 use crate::parser::Parser as ASTParser;
 use std::collections::HashMap;
+use std::io::BufWriter;
+use std::io::Write;
 
 /// Represents the return keyword. Used as a variable name for the register.
 const RETURN: &'static str = "ret";
@@ -13,14 +15,15 @@ pub enum CompileError {
     ParseError(#[from] crate::parser::ParseError),
     #[error("A fatal error has occurred with the compiler. Scope could not be found.")]
     ScopeError,
+    #[error(transparent)]
+    WriteError(#[from] std::io::Error),
 }
 
-pub struct Compiler {
+pub struct Compiler<'a> {
     parser: ASTParser,
     /// Max stack size for the program is by default 512.
     variable_scope: Vec<HashMap<String, usize>>,
-    function_scope: Vec<HashMap<String, usize>>,
-    output: String,
+    output: &'a mut BufWriter<Box<dyn Write>>,
     stack_pointer: usize,
     /// A map of variable names to register numbers. 0-15 are reserved for variables, 16 is the stack pointer, 17 is the return address
     register: HashMap<String, u8>,
@@ -28,13 +31,16 @@ pub struct Compiler {
     current_line: usize,
 }
 
-impl Compiler {
-    pub fn new(parser: ASTParser, max_stack_size: usize) -> Self {
+impl<'a> Compiler<'a> {
+    pub fn new(
+        parser: ASTParser,
+        max_stack_size: usize,
+        writer: &'a mut BufWriter<Box<dyn Write>>,
+    ) -> Self {
         Self {
             parser,
             variable_scope: Vec::new(),
-            function_scope: Vec::new(),
-            output: String::new(),
+            output: writer,
             stack_pointer: 0,
             register: HashMap::new(),
             max_stack_size,
@@ -42,16 +48,16 @@ impl Compiler {
         }
     }
 
-    pub fn compile(mut self) -> Result<String, CompileError> {
+    pub fn compile(mut self) -> Result<(), CompileError> {
         let ast = self.parser.parse_all()?;
 
         let Some(ast) = ast else {
-            return Ok(String::new());
+            return Ok(());
         };
 
         self.expression(ast)?;
 
-        Ok(self.output)
+        Ok(())
     }
 
     fn expression(&mut self, expression: Expression) -> Result<(), CompileError> {
@@ -61,16 +67,35 @@ impl Compiler {
                 self.declaration_expression(name, expr)?
             }
             Expression::ReturnExpression(expr) => self.return_expression(*expr)?,
-            _ => todo!(),
+            Expression::FunctionExpression(func) => self.function_expression(func)?,
+            _ => todo!("{:?}", expression),
         };
 
         todo!()
     }
 
+    fn function_expression(&mut self, func: FunctionExpression) -> Result<(), CompileError> {
+        for arg in func.arguments {
+            self.variable_scope
+                .last_mut()
+                .ok_or(CompileError::ScopeError)?
+                .insert(arg, self.stack_pointer);
+            self.stack_pointer += 1;
+        }
+
+        for expr in func.body.0 {
+            self.expression(expr)?;
+        }
+
+        Ok(())
+    }
+
     fn return_expression(&mut self, expression: Expression) -> Result<(), CompileError> {
         // pop last var off the stack and push it into the first available register
         let register = self.register.len() as u8;
-        self.output.push_str(&format!("pop r{}\n", register));
+        self.output
+            .write(&format!("pop r{}\n", register).as_bytes())?;
+
         self.stack_pointer
             .checked_sub(1)
             .ok_or(CompileError::ScopeError)?;

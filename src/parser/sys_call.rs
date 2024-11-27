@@ -2,6 +2,22 @@ use super::{Literal, LiteralOrVariable};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Math {
+    /// Returns the angle in radians whose cosine is the specified number.
+    /// ## In Game
+    /// `acos r? a(r?|num)`
+    Acos(LiteralOrVariable),
+    /// Returns the angle in radians whose sine is the specified number.
+    /// ## In Game
+    /// `asin r? a(r?|num)`
+    Asin(LiteralOrVariable),
+    /// Returns the angle in radians whose tangent is the specified number.
+    /// ## In Game
+    /// `atan r? a(r?|num)`
+    Atan(LiteralOrVariable),
+    /// Returns the angle in radians whose tangent is the quotient of the specified numbers.
+    /// ## In Game
+    /// `atan2 r? a(r?|num) b(r?|num)`
+    Atan2(LiteralOrVariable, LiteralOrVariable),
     /// Gets the absolute value of a number.
     /// ## In Game
     /// `abs r? a(r?|num)`
@@ -10,6 +26,10 @@ pub enum Math {
     /// ## In Game
     /// `ceil r? a(r?|num)`
     Ceil(LiteralOrVariable),
+    /// Returns the cosine of the specified angle in radians.
+    /// ## In Game
+    /// cos r? a(r?|num)
+    Cos(LiteralOrVariable),
     /// Rounds a number down to the nearest whole number.
     /// ## In Game
     /// `floor r? a(r?|num)`
@@ -26,53 +46,26 @@ pub enum Math {
     /// ## In Game
     /// `min r? a(r?|num) b(r?|num)`
     Min(LiteralOrVariable, LiteralOrVariable),
-    /// Computes the square root of a number.
-    /// ## In Game
-    /// `sqrt r? a(r?|num)`
-    Sqrt(LiteralOrVariable),
     /// Gets a random number between 0 and 1.
     /// ## In Game
     /// `rand r?`
     Rand,
-    /// Truncates a number by removing the decimal portion.
-    /// ## In Game
-    /// `trunc r? a(r?|num)`
-    Trunc(LiteralOrVariable),
-
-    /// Returns the angle in radians whose cosine is the specified number.
-    /// ## In Game
-    /// `acos r? a(r?|num)`
-    Acos(LiteralOrVariable),
-
-    /// Returns the angle in radians whose sine is the specified number.
-    /// ## In Game
-    /// `asin r? a(r?|num)`
-    Asin(LiteralOrVariable),
-
-    /// Returns the angle in radians whose tangent is the specified number.
-    /// ## In Game
-    /// `atan r? a(r?|num)`
-    Atan(LiteralOrVariable),
-
-    /// Returns the angle in radians whose tangent is the quotient of the specified numbers.
-    /// ## In Game
-    /// `atan2 r? a(r?|num) b(r?|num)`
-    Atan2(LiteralOrVariable, LiteralOrVariable),
-
-    /// Returns the cosine of the specified angle in radians.
-    /// ## In Game
-    /// cos r? a(r?|num)
-    Cos(LiteralOrVariable),
-
     /// Returns the sine of the specified angle in radians.
     /// ## In Game
     /// `sin r? a(r?|num)`
     Sin(LiteralOrVariable),
-
+    /// Computes the square root of a number.
+    /// ## In Game
+    /// `sqrt r? a(r?|num)`
+    Sqrt(LiteralOrVariable),
     /// Returns the tangent of the specified angle in radians.
     /// ## In Game
     /// `tan r? a(r?|num)`
     Tan(LiteralOrVariable),
+    /// Truncates a number by removing the decimal portion.
+    /// ## In Game
+    /// `trunc r? a(r?|num)`
+    Trunc(LiteralOrVariable),
 }
 
 #[derive(Debug, PartialEq, Eq)]

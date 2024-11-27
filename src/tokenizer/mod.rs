@@ -10,6 +10,8 @@ use std::{
 use thiserror::Error;
 use token::{Keyword, Number, Symbol, Token, TokenType};
 
+use crate::boxed;
+
 #[derive(Error, Debug)]
 pub enum TokenizerError {
     #[error("IO Error: {0}")]
@@ -39,7 +41,7 @@ pub(crate) struct Tokenizer {
 impl Tokenizer {
     pub fn from_path(input_file: impl Into<PathBuf>) -> Result<Self, TokenizerError> {
         let file = std::fs::File::open(input_file.into())?;
-        let reader = BufReader::new(Box::new(file) as Box<dyn Tokenize>);
+        let reader = BufReader::new(boxed!(file) as Box<dyn Tokenize>);
 
         Ok(Self {
             reader,
@@ -53,7 +55,7 @@ impl Tokenizer {
 
 impl From<String> for Tokenizer {
     fn from(input: String) -> Self {
-        let reader = BufReader::new(Box::new(Cursor::new(input)) as Box<dyn Tokenize>);
+        let reader = BufReader::new(boxed!(Cursor::new(input)) as Box<dyn Tokenize>);
 
         Self {
             reader,

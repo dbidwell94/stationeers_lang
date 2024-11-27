@@ -1,9 +1,12 @@
-pub mod tree_node;
 pub mod sys_call;
+pub mod tree_node;
 
-use crate::tokenizer::{
-    token::{Keyword, Symbol, Token, TokenType},
-    Tokenizer, TokenizerBuffer, TokenizerError,
+use crate::{
+    boxed,
+    tokenizer::{
+        token::{Keyword, Symbol, Token, TokenType},
+        Tokenizer, TokenizerBuffer, TokenizerError,
+    },
 };
 use std::{
     backtrace::{self, Backtrace},
@@ -289,7 +292,7 @@ impl Parser {
 
         Ok(AssignmentExpression {
             identifier,
-            expression: Box::new(expression),
+            expression: boxed!(expression),
         })
     }
 
@@ -355,8 +358,8 @@ impl Parser {
                 expressions.insert(
                     index,
                     Expression::BinaryExpression(BinaryExpression::Exponent(
-                        Box::new(left),
-                        Box::new(right),
+                        boxed!(left),
+                        boxed!(right),
                     )),
                 );
                 current_iteration += 1;
@@ -378,15 +381,15 @@ impl Parser {
                     Symbol::Asterisk => expressions.insert(
                         index,
                         Expression::BinaryExpression(BinaryExpression::Multiply(
-                            Box::new(left),
-                            Box::new(right),
+                            boxed!(left),
+                            boxed!(right),
                         )),
                     ),
                     Symbol::Slash => expressions.insert(
                         index,
                         Expression::BinaryExpression(BinaryExpression::Divide(
-                            Box::new(left),
-                            Box::new(right),
+                            boxed!(left),
+                            boxed!(right),
                         )),
                     ),
                     // safety: we have already checked for the operator
@@ -411,15 +414,15 @@ impl Parser {
                     Symbol::Plus => expressions.insert(
                         index,
                         Expression::BinaryExpression(BinaryExpression::Add(
-                            Box::new(left),
-                            Box::new(right),
+                            boxed!(left),
+                            boxed!(right),
                         )),
                     ),
                     Symbol::Minus => expressions.insert(
                         index,
                         Expression::BinaryExpression(BinaryExpression::Subtract(
-                            Box::new(left),
-                            Box::new(right),
+                            boxed!(left),
+                            boxed!(right),
                         )),
                     ),
                     // safety: we have already checked for the operator
@@ -475,7 +478,7 @@ impl Parser {
             });
         }
 
-        Ok(Box::new(expression))
+        Ok(boxed!(expression))
     }
 
     fn invocation(&mut self) -> Result<InvocationExpression, ParseError> {
@@ -564,7 +567,7 @@ impl Parser {
         if token_matches!(current_token, TokenType::Keyword(Keyword::Return)) {
             self.assign_next()?;
             let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
-            let return_expr = Expression::ReturnExpression(Box::new(expression));
+            let return_expr = Expression::ReturnExpression(boxed!(expression));
             expressions.push(return_expr);
             self.assign_next()?;
         }
@@ -611,7 +614,7 @@ impl Parser {
 
         Ok(Expression::DeclarationExpression(
             identifier,
-            Box::new(assignment_expression),
+            boxed!(assignment_expression),
         ))
     }
 
