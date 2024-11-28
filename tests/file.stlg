@@ -1,12 +1,5 @@
-fn doStuff() {
-    let i = {
-        return 234.5;
-    };
+let i = 234 + 432;
 
-    i = 5;
+let y = i / 432.54;
 
-    // This comment is going to be ignored.
-    return i; // we returned here
-}
-
-doStuff();
+let z = i / y;
