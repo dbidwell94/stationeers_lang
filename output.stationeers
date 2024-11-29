@@ -7,12 +7,14 @@ push 1
 push 2
 push 3
 j 1
-sub sp sp 3
+sub sp sp 0
+pop ra
+j ra
+push 14
+j 4
+sub sp sp 0
 pop ra
 j ra
 main:
-push 19
-push 1
-push 2
-push 3
-j 4
+push 20
+j 12

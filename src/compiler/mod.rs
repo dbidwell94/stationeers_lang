@@ -172,7 +172,7 @@ impl<'a> Compiler<'a> {
         let return_addr = self.current_line + to_write.lines().count() + 2;
         self.write_output(format!("push {return_addr}"))?;
         self.output.write(to_write.as_bytes())?;
-        self.current_line = return_addr;
+        self.current_line = return_addr - 1;
 
         self.write_output(format!("j {function_line}"))?;
 
