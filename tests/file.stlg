@@ -1,5 +1,9 @@
-let i = 234 + 432;
+fn test(a, b, c) {
+    
+};
 
-let y = i / 432.54;
+fn test2(x, y, z) {
+    test(1, 2, 3);
+};
 
-let z = i / y;
+test2(1, 2, 3);
