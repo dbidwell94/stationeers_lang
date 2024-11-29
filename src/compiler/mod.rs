@@ -1,11 +1,8 @@
 use crate::parser::tree_node::*;
 use crate::parser::Parser as ASTParser;
 use std::cmp::Ordering;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::{BufWriter, Write};
-
-/// Represents the return keyword. Used as a variable name for the register.
-const RETURN: &'static str = "ret";
 
 quick_error! {
     #[derive(Debug)]
@@ -39,8 +36,6 @@ pub struct Compiler<'a> {
     variable_scope: Vec<HashMap<String, i32>>,
     function_locations: HashMap<String, usize>,
     output: &'a mut BufWriter<Box<dyn Write>>,
-    /// A map of variable names to register numbers. 0-15 are reserved for variables, 16 is the stack pointer, 17 is the return address
-    register: VecDeque<u8>,
     current_line: usize,
     declared_main: bool,
 }
@@ -52,7 +47,6 @@ impl<'a> Compiler<'a> {
             variable_scope: Vec::new(),
             function_locations: HashMap::new(),
             output: writer,
-            register: VecDeque::new(),
             current_line: 0,
             declared_main: false,
         }
@@ -113,7 +107,7 @@ impl<'a> Compiler<'a> {
         };
 
         // Jump directly to the main block. This will avoid executing functions before the main block.
-        self.write_output(format!("j main"))?;
+        self.write_output("j main")?;
 
         self.expression(ast)?;
         Ok(())
@@ -125,14 +119,104 @@ impl<'a> Compiler<'a> {
             Expression::BlockExpression(expr) => self.block_expression(expr)?,
             Expression::InvocationExpression(expr) => self.invocation_expression(expr)?,
             Expression::BinaryExpression(expr) => self.binary_expression(expr)?,
+            Expression::DeclarationExpression(var_name, expr) => {
+                self.declaration_expression(&var_name, *expr)?
+            }
             _ => todo!("{:?}", expression),
         };
 
         Ok(())
     }
 
+    fn declaration_expression(
+        &mut self,
+        var_name: &str,
+        expr: Expression,
+    ) -> Result<(), CompileError> {
+        match expr {
+            Expression::Literal(Literal::Number(num)) => {
+                self.push_stack(var_name)?;
+                self.write_output(format!("push {num}"))?;
+            }
+            Expression::BinaryExpression(expr) => {
+                self.binary_expression(expr)?;
+                self.push_stack(var_name)?;
+            }
+            _ => todo!(),
+        }
+
+        Ok(())
+    }
+
     fn binary_expression(&mut self, expr: BinaryExpression) -> Result<(), CompileError> {
-        todo!()
+        self.variable_scope.push(HashMap::new());
+
+        fn perform_operation(
+            compiler: &mut Compiler,
+            op: &str,
+            left: Expression,
+            right: Expression,
+        ) -> Result<(), CompileError> {
+            match left {
+                Expression::Literal(Literal::Number(num)) => {
+                    compiler.write_output(format!("push {num}"))?;
+                }
+                Expression::Variable(var_name) => {
+                    let var_offset = compiler.get_variable_index(&var_name)?;
+                    compiler.write_output(format!("sub sp sp {var_offset}"))?;
+                    compiler.write_output("peek r0")?;
+                    compiler.write_output(format!("add sp sp {var_offset}"))?;
+                    compiler.write_output("push r0")?;
+                }
+                Expression::BinaryExpression(expr) => {
+                    compiler.binary_expression(expr)?;
+                }
+                _ => todo!(),
+            };
+
+            match right {
+                Expression::Literal(Literal::Number(num)) => {
+                    compiler.write_output(format!("push {num}"))?;
+                }
+                Expression::Variable(var_name) => {
+                    let var_offset = compiler.get_variable_index(&var_name)?;
+                    compiler.write_output(format!("sub sp sp {}", var_offset + 1))?;
+                    compiler.write_output("peek r0")?;
+                    compiler.write_output(format!("add sp sp {}", var_offset + 1))?;
+                    compiler.write_output("push r0")?;
+                }
+                Expression::BinaryExpression(expr) => {
+                    compiler.binary_expression(expr)?;
+                }
+                _ => todo!(),
+            };
+
+            compiler.write_output("pop r1")?;
+            compiler.write_output("pop r0")?;
+            compiler.write_output(format!("{op} r0 r0 r1"))?;
+            compiler.write_output("push r0")?;
+
+            Ok(())
+        }
+
+        match expr {
+            BinaryExpression::Add(left, right) => {
+                perform_operation(self, "add", *left, *right)?;
+            }
+            BinaryExpression::Subtract(left, right) => {
+                perform_operation(self, "sub", *left, *right)?;
+            }
+            BinaryExpression::Multiply(left, right) => {
+                perform_operation(self, "mul", *left, *right)?;
+            }
+            BinaryExpression::Divide(left, right) => {
+                perform_operation(self, "div", *left, *right)?;
+            }
+            _ => todo!("Operation not currently supported"),
+        }
+        self.variable_scope.pop();
+
+        Ok(())
     }
 
     fn invocation_expression(&mut self, expr: InvocationExpression) -> Result<(), CompileError> {
@@ -154,16 +238,19 @@ impl<'a> Compiler<'a> {
                 }
                 Expression::Variable(var_name) => {
                     let index = self.get_variable_index(&var_name)?;
-                    to_write.push_str(&format!("sub r0 sp {index}\n"));
-                    to_write.push_str("get r0 db r0\n");
+
+                    to_write.push_str(&format!("sub sp sp {index}\n"));
+                    to_write.push_str("peek r0\n");
+                    to_write.push_str(&format!("add sp sp {index}\n"));
                     to_write.push_str("push r0\n");
-                    self.push_stack(&format!("{function_name}{iter_index}"))?;
                 }
                 Expression::BinaryExpression(expr) => {
                     self.binary_expression(expr)?;
+                    to_write.push_str("push r0\n");
                 }
                 _ => todo!("something is up with the arguments"),
             }
+            self.push_stack(&format!("{function_name}{iter_index}"))?;
 
             iter_index += 1;
         }
@@ -186,7 +273,7 @@ impl<'a> Compiler<'a> {
 
         self.function_locations.insert(func_name, self.current_line);
 
-        for arg in expression.arguments {
+        for arg in expression.arguments.iter().rev() {
             self.push_stack(&arg)?;
         }
 
