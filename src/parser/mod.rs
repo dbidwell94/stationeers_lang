@@ -180,6 +180,10 @@ impl Parser {
             // match declarations with a `let` keyword
             TokenType::Keyword(Keyword::Let) => self.declaration()?,
 
+            TokenType::Keyword(Keyword::Device) => {
+                Expression::DeviceDeclarationExpression(self.device()?)
+            }
+
             // match functions with a `fn` keyword
             TokenType::Keyword(Keyword::Fn) => Expression::FunctionExpression(self.function()?),
 
@@ -256,6 +260,37 @@ impl Parser {
             }
             _ => Err(ParseError::UnexpectedToken(current_token.clone())),
         }
+    }
+
+    fn device(&mut self) -> Result<DeviceDeclarationExpression, ParseError> {
+        // sanity check, make sure current token is a `device` keyword
+
+        let current_token = token_from_option!(self.current_token);
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::Device)) {
+            return Err(ParseError::UnexpectedToken(current_token.clone()));
+        }
+
+        let identifier = extract_token_data!(
+            token_from_option!(self.get_next()?),
+            TokenType::Identifier(ref id),
+            id.clone()
+        );
+
+        let current_token = token_from_option!(self.get_next()?).clone();
+        if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
+            return Err(ParseError::UnexpectedToken(current_token));
+        }
+
+        let device = extract_token_data!(
+            token_from_option!(self.get_next()?),
+            TokenType::String(ref id),
+            id.clone()
+        );
+
+        Ok(DeviceDeclarationExpression {
+            name: identifier,
+            device,
+        })
     }
 
     fn assignment(&mut self) -> Result<AssignmentExpression, ParseError> {

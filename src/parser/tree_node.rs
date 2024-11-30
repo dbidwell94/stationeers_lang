@@ -144,6 +144,20 @@ pub enum LiteralOrVariable {
     Variable(String),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct DeviceDeclarationExpression {
+    /// any variable-like name 
+    pub name: String,
+    /// The device port, ex. (db, d0, d1, d2, d3, d4, d5)
+    pub device: String,
+}
+
+impl std::fmt::Display for DeviceDeclarationExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(device {} = {})", self.name, self.device)
+    }
+}
+
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
@@ -159,6 +173,7 @@ pub enum Expression {
     PriorityExpression(Box<Expression>),
     ReturnExpression(Box<Expression>),
     Variable(String),
+    DeviceDeclarationExpression(DeviceDeclarationExpression),
 }
 
 impl std::fmt::Display for Expression {
@@ -176,6 +191,7 @@ impl std::fmt::Display for Expression {
             Expression::Variable(id) => write!(f, "{}", id),
             Expression::PriorityExpression(e) => write!(f, "({})", e),
             Expression::ReturnExpression(e) => write!(f, "(return {})", e),
+            Expression::DeviceDeclarationExpression(e) => write!(f, "{}", e),
         }
     }
 }

@@ -1,3 +1,5 @@
+device self = "db";
+
 fn doStuff(x, y, z) {
     let i = x + y + z;
 };

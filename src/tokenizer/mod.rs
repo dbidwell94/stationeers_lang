@@ -406,6 +406,7 @@ impl Tokenizer {
                 "enum" if next_ws!() => keyword!(Enum),
                 "import" if next_ws!() => keyword!(Import),
                 "export" if next_ws!() => keyword!(Export),
+                "device" if next_ws!() => keyword!(Device),
 
                 // boolean literals
                 "true" if next_ws!() => {

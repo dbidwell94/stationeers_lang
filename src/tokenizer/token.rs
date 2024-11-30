@@ -164,6 +164,8 @@ pub enum Keyword {
     Fn,
     /// Represents the `if` keyword
     If,
+    /// Represents the `device` keyword. Useful for defining a device at a specific address (ex. d0, d1, d2, etc.)
+    Device,
     /// Represents the `else` keyword
     Else,
     /// Represents the `return` keyword

@@ -35,6 +35,7 @@ pub struct Compiler<'a> {
     /// Max stack size for the program is by default 512.
     variable_scope: Vec<HashMap<String, i32>>,
     function_locations: HashMap<String, usize>,
+    devices: HashMap<String, String>,
     output: &'a mut BufWriter<Box<dyn Write>>,
     current_line: usize,
     declared_main: bool,
@@ -46,6 +47,7 @@ impl<'a> Compiler<'a> {
             parser,
             variable_scope: Vec::new(),
             function_locations: HashMap::new(),
+            devices: HashMap::new(),
             output: writer,
             current_line: 0,
             declared_main: false,
@@ -121,6 +123,12 @@ impl<'a> Compiler<'a> {
             Expression::BinaryExpression(expr) => self.binary_expression(expr)?,
             Expression::DeclarationExpression(var_name, expr) => {
                 self.declaration_expression(&var_name, *expr)?
+            }
+            Expression::DeviceDeclarationExpression(DeviceDeclarationExpression {
+                name,
+                device,
+            }) => {
+                self.devices.insert(name, device);
             }
             _ => todo!("{:?}", expression),
         };
@@ -250,7 +258,7 @@ impl<'a> Compiler<'a> {
                 }
                 _ => todo!("something is up with the arguments"),
             }
-            self.push_stack(&format!("{function_name}{iter_index}"))?;
+            self.push_stack(&format!("{function_name}Invocation{iter_index}"))?;
 
             iter_index += 1;
         }
