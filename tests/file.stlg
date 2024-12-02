@@ -1,15 +1,9 @@
+device self = "db";
 device airConditioner = "d1";
 device roomTemperatureSensor = "d2";
 
-loop {
+let roomTemperatureMin = 20c;
+let roomTemperatureMax = 30c;
 
-    let currentTemperature = loadFromDevice(roomTemperatureSensor, "Temperature");
 
-    if (currentTemperature > 25c) {
-        setOnDevice(airConditioner, "Mode", "On");
-    } else if (currentTemperature <= 20c) {
-        setOnDevice(airConditioner, "Mode", "Off");
-    };
-
-};
-
+let averageTemperature = (roomTemperatureMax + roomTemperatureMin) / 2;

@@ -117,7 +117,7 @@ pub enum System {
     /// `s d? logicType r?`
     /// ## Example
     /// `s d0 Setting r0`
-    SetOnDevice(LiteralOrVariable, String, String),
+    SetOnDevice(LiteralOrVariable, String, LiteralOrVariable),
 }
 
 impl std::fmt::Display for System {

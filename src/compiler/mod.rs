@@ -1,3 +1,4 @@
+use crate::parser::sys_call::SysCall;
 use crate::parser::tree_node::*;
 use crate::parser::Parser as ASTParser;
 use std::cmp::Ordering;
@@ -26,6 +27,12 @@ quick_error! {
         }
         MissingFunction(name: String) {
             display("Function {} was not found in the function table.", name)
+        }
+        MissingDevice(name: String) {
+            display("Device {} was not found in the device table.", name)
+        }
+        InvalidSyscall(syscall: SysCall) {
+            display("Syscall {} is not valid.", syscall)
         }
     }
 }
@@ -57,14 +64,10 @@ impl<'a> Compiler<'a> {
     fn get_variable_index(&self, var_name: &str) -> Result<i32, CompileError> {
         let mut offset = 0;
 
-        println!("Variable Scope: {:?}", self.variable_scope);
-
         for scope in &self.variable_scope {
             let scope_size = scope.len() as i32;
             if let Some(index) = scope.get(var_name) {
                 let index = (scope_size - *index) + offset;
-
-                println!("Found variable {} at index {}", var_name, index);
 
                 return Ok(index);
             }
@@ -157,7 +160,32 @@ impl<'a> Compiler<'a> {
                 self.binary_expression(expr)?;
                 self.push_stack(var_name)?;
             }
+            Expression::SyscallExpression(expr) => {
+                self.syscall_declaration_expression(expr)?;
+                self.push_stack(var_name)?;
+            }
             _ => todo!(),
+        }
+
+        Ok(())
+    }
+
+    fn syscall_declaration_expression(&mut self, expr: SysCall) -> Result<(), CompileError> {
+        use crate::parser::sys_call::System;
+        match expr {
+            SysCall::System(ref sys) => match sys {
+                System::LoadFromDevice(LiteralOrVariable::Variable(device), value) => {
+                    let device = self
+                        .devices
+                        .get(device)
+                        .ok_or(CompileError::MissingDevice(device.clone()))?;
+
+                    self.write_output(format!("l r15 {device} {value}"))?;
+                    self.write_output("push r15")?;
+                }
+                _ => return Err(CompileError::InvalidSyscall(expr)),
+            },
+            _ => return Err(CompileError::InvalidSyscall(expr)),
         }
 
         Ok(())
@@ -186,10 +214,12 @@ impl<'a> Compiler<'a> {
                 }
                 Expression::BinaryExpression(expr) => {
                     compiler.binary_expression(expr)?;
+                    compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                 }
                 Expression::PriorityExpression(expr) => match *expr {
                     Expression::BinaryExpression(expr) => {
                         compiler.binary_expression(expr)?;
+                        compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                     }
                     _ => todo!(),
                 },
@@ -210,10 +240,12 @@ impl<'a> Compiler<'a> {
                 }
                 Expression::BinaryExpression(expr) => {
                     compiler.binary_expression(expr)?;
+                    compiler.push_stack(&format!("{op}ExpressionRight"))?;
                 }
                 Expression::PriorityExpression(expr) => match *expr {
                     Expression::BinaryExpression(expr) => {
                         compiler.binary_expression(expr)?;
+                        compiler.push_stack(&format!("{op}ExpressionRight"))?;
                     }
                     _ => todo!(),
                 },

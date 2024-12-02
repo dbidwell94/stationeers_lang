@@ -1,4 +1,3 @@
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 
 #[derive(Debug, PartialEq, Eq, Clone)]

@@ -754,10 +754,15 @@ impl Parser {
 
                 let device = literal_or_variable!(args.next());
 
-                let variable = get_arg!(Variable, literal_or_variable!(args.next()));
+                let Some(Expression::Literal(Literal::String(variable))) = args.next() else {
+                    return Err(ParseError::UnexpectedToken(
+                        token_from_option!(self.current_token).clone(),
+                    ));
+                };
 
                 return Ok(SysCall::System(sys_call::System::LoadFromDevice(
-                    device, variable,
+                    device,
+                    variable.clone(),
                 )));
             }
             "setOnDevice" => {
@@ -766,12 +771,18 @@ impl Parser {
 
                 let device = literal_or_variable!(args.next());
 
-                let logic_type = get_arg!(Variable, literal_or_variable!(args.next()));
+                let Literal::String(logic_type) =
+                    get_arg!(Literal, literal_or_variable!(args.next()))
+                else {
+                    return Err(ParseError::UnexpectedToken(
+                        token_from_option!(self.current_token).clone(),
+                    ));
+                };
 
-                let register = get_arg!(Variable, literal_or_variable!(args.next()));
+                let variable = literal_or_variable!(args.next());
 
                 return Ok(SysCall::System(sys_call::System::SetOnDevice(
-                    device, logic_type, register,
+                    device, logic_type, variable,
                 )));
             }
             // math calls
