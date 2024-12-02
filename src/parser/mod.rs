@@ -690,7 +690,178 @@ impl Parser {
     }
 
     fn syscall(&mut self) -> Result<SysCall, ParseError> {
-        todo!("Syscalls are not implemented yet.")
+        /// Checks the length of the arguments and returns an error if the length is not equal to the expected length
+        fn check_length(
+            parser: &Parser,
+            arguments: &[Expression],
+            length: usize,
+        ) -> Result<(), ParseError> {
+            if arguments.len() != length {
+                return Err(ParseError::InvalidSyntax(
+                    token_from_option!(parser.current_token).clone(),
+                    format!("Expected {} arguments", length),
+                ));
+            }
+            Ok(())
+        }
+        /// Converts an expression to "literal or variable" expression
+        macro_rules! literal_or_variable {
+            ($iter:expr) => {
+                match $iter {
+                    Some(Expression::Literal(literal)) => {
+                        LiteralOrVariable::Literal(literal.clone())
+                    }
+                    Some(Expression::Variable(ident)) => LiteralOrVariable::Variable(ident.clone()),
+                    _ => {
+                        return Err(ParseError::UnexpectedToken(
+                            token_from_option!(self.current_token).clone(),
+                        ))
+                    }
+                }
+            };
+        }
+
+        /// Gets the argument from the expression and returns an error if the expression does not match the expected pattern
+        macro_rules! get_arg {
+            ($matcher: ident, $arg: expr) => {
+                match $arg {
+                    LiteralOrVariable::$matcher(i) => i,
+                    _ => {
+                        return Err(ParseError::InvalidSyntax(
+                            token_from_option!(self.current_token).clone(),
+                            String::from("Expected a variable"),
+                        ))
+                    }
+                }
+            };
+        }
+
+        // A syscall is essentially an invocation expression with a syscall identifier. So we can reuse the invocation function
+        let invocation = self.invocation()?;
+
+        match invocation.name.as_str() {
+            // system calls
+            "yield" => return Ok(SysCall::System(sys_call::System::Yield)),
+            "sleep" => {
+                check_length(self, &invocation.arguments, 1)?;
+                let mut arg = invocation.arguments.iter();
+                let argument = literal_or_variable!(arg.next());
+                return Ok(SysCall::System(sys_call::System::Sleep(argument)));
+            }
+            "loadFromDevice" => {
+                check_length(&self, &invocation.arguments, 2)?;
+                let mut args = invocation.arguments.iter();
+
+                let device = literal_or_variable!(args.next());
+
+                let variable = get_arg!(Variable, literal_or_variable!(args.next()));
+
+                return Ok(SysCall::System(sys_call::System::LoadFromDevice(
+                    device, variable,
+                )));
+            }
+            "setOnDevice" => {
+                check_length(&self, &invocation.arguments, 3)?;
+                let mut args = invocation.arguments.iter();
+
+                let device = literal_or_variable!(args.next());
+
+                let logic_type = get_arg!(Variable, literal_or_variable!(args.next()));
+
+                let register = get_arg!(Variable, literal_or_variable!(args.next()));
+
+                return Ok(SysCall::System(sys_call::System::SetOnDevice(
+                    device, logic_type, register,
+                )));
+            }
+            // math calls
+            "acos" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Acos(arg)));
+            }
+            "asin" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Asin(arg)));
+            }
+            "atan" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Atan(arg)));
+            }
+            "atan2" => {
+                check_length(&self, &invocation.arguments, 2)?;
+                let mut args = invocation.arguments.iter();
+                let arg1 = literal_or_variable!(args.next());
+                let arg2 = literal_or_variable!(args.next());
+                return Ok(SysCall::Math(sys_call::Math::Atan2(arg1, arg2)));
+            }
+            "abs" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Abs(arg)));
+            }
+            "ceil" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Ceil(arg)));
+            }
+            "cos" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Cos(arg)));
+            }
+            "floor" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Floor(arg)));
+            }
+            "log" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Log(arg)));
+            }
+            "max" => {
+                check_length(&self, &invocation.arguments, 2)?;
+                let mut args = invocation.arguments.iter();
+                let arg1 = literal_or_variable!(args.next());
+                let arg2 = literal_or_variable!(args.next());
+                return Ok(SysCall::Math(sys_call::Math::Max(arg1, arg2)));
+            }
+            "min" => {
+                check_length(&self, &invocation.arguments, 2)?;
+                let mut args = invocation.arguments.iter();
+                let arg1 = literal_or_variable!(args.next());
+                let arg2 = literal_or_variable!(args.next());
+                return Ok(SysCall::Math(sys_call::Math::Min(arg1, arg2)));
+            }
+            "rand" => {
+                check_length(&self, &invocation.arguments, 0)?;
+                return Ok(SysCall::Math(sys_call::Math::Rand));
+            }
+            "sin" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Sin(arg)));
+            }
+            "sqrt" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Sqrt(arg)));
+            }
+            "tan" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Tan(arg)));
+            }
+            "trunc" => {
+                check_length(&self, &invocation.arguments, 1)?;
+                let arg = literal_or_variable!(invocation.arguments.first());
+                return Ok(SysCall::Math(sys_call::Math::Trunc(arg)));
+            }
+            _ => todo!(),
+        }
     }
 }
 

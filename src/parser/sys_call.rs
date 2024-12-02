@@ -71,22 +71,22 @@ pub enum Math {
 impl std::fmt::Display for Math {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Math::Acos(a) => write!(f, "acos {}", a),
-            Math::Asin(a) => write!(f, "asin {}", a),
-            Math::Atan(a) => write!(f, "atan {}", a),
-            Math::Atan2(a, b) => write!(f, "atan2 {} {}", a, b),
-            Math::Abs(a) => write!(f, "abs {}", a),
-            Math::Ceil(a) => write!(f, "ceil {}", a),
-            Math::Cos(a) => write!(f, "cos {}", a),
-            Math::Floor(a) => write!(f, "floor {}", a),
-            Math::Log(a) => write!(f, "log {}", a),
-            Math::Max(a, b) => write!(f, "max {} {}", a, b),
-            Math::Min(a, b) => write!(f, "min {} {}", a, b),
-            Math::Rand => write!(f, "rand"),
-            Math::Sin(a) => write!(f, "sin {}", a),
-            Math::Sqrt(a) => write!(f, "sqrt {}", a),
-            Math::Tan(a) => write!(f, "tan {}", a),
-            Math::Trunc(a) => write!(f, "trunc {}", a),
+            Math::Acos(a) => write!(f, "acos({})", a),
+            Math::Asin(a) => write!(f, "asin({})", a),
+            Math::Atan(a) => write!(f, "atan({})", a),
+            Math::Atan2(a, b) => write!(f, "atan2({}, {})", a, b),
+            Math::Abs(a) => write!(f, "abs({})", a),
+            Math::Ceil(a) => write!(f, "ceil({})", a),
+            Math::Cos(a) => write!(f, "cos({})", a),
+            Math::Floor(a) => write!(f, "floor({})", a),
+            Math::Log(a) => write!(f, "log({})", a),
+            Math::Max(a, b) => write!(f, "max({}, {})", a, b),
+            Math::Min(a, b) => write!(f, "min({}, {})", a, b),
+            Math::Rand => write!(f, "rand()"),
+            Math::Sin(a) => write!(f, "sin({})", a),
+            Math::Sqrt(a) => write!(f, "sqrt({})", a),
+            Math::Tan(a) => write!(f, "tan({})", a),
+            Math::Trunc(a) => write!(f, "trunc({})", a),
         }
     }
 }
@@ -111,23 +111,23 @@ pub enum System {
     /// ## Examples
     /// `l r0 d0 Setting`
     /// `l r1 d5 Pressure`
-    Load(String, LiteralOrVariable),
+    LoadFromDevice(LiteralOrVariable, String),
     /// Represents a function which stores a setting into a specific device.
     /// ## In Game
     /// `s d? logicType r?`
     /// ## Example
     /// `s d0 Setting r0`
-    Store(String, LiteralOrVariable, LiteralOrVariable),
+    SetOnDevice(LiteralOrVariable, String, String),
 }
 
 impl std::fmt::Display for System {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            System::Yield => write!(f, "yield"),
-            System::Sleep(a) => write!(f, "sleep {}", a),
+            System::Yield => write!(f, "yield()"),
+            System::Sleep(a) => write!(f, "sleep({})", a),
             System::Hash(a) => write!(f, "HASH({})", a),
-            System::Load(a, b) => write!(f, "l {} {}", a, b),
-            System::Store(a, b, c) => write!(f, "s {} {} {}", a, b, c),
+            System::LoadFromDevice(a, b) => write!(f, "loadFromDevice({}, {})", a, b),
+            System::SetOnDevice(a, b, c) => write!(f, "setOnDevice({}, {}, {})", a, b, c),
         }
     }
 }

@@ -217,4 +217,6 @@ pub enum Keyword {
     Enum,
     /// Represents the `loop` keyword
     Loop,
+    /// Represents the `break` keyword
+    Break,
 }

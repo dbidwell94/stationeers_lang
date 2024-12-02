@@ -413,6 +413,8 @@ impl Tokenizer {
                 "return" if next_ws!() => keyword!(Return),
                 "enum" if next_ws!() => keyword!(Enum),
                 "device" if next_ws!() => keyword!(Device),
+                "loop" if next_ws!() => keyword!(Loop),
+                "break" if next_ws!() => keyword!(Break),
 
                 // boolean literals
                 "true" if next_ws!() => {

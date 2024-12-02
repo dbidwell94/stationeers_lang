@@ -2,7 +2,7 @@ use crate::tokenizer::token::Number;
 
 use super::sys_call::SysCall;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Literal {
     Number(Number),
     String(String),
@@ -157,7 +157,7 @@ impl std::fmt::Display for LiteralOrVariable {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeviceDeclarationExpression {
-    /// any variable-like name 
+    /// any variable-like name
     pub name: String,
     /// The device port, ex. (db, d0, d1, d2, d3, d4, d5)
     pub device: String,
@@ -168,7 +168,6 @@ impl std::fmt::Display for DeviceDeclarationExpression {
         write!(f, "(device {} = {})", self.name, self.device)
     }
 }
-
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expression {

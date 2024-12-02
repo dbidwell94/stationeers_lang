@@ -6,9 +6,9 @@ loop {
     let currentTemperature = loadFromDevice(roomTemperatureSensor, "Temperature");
 
     if (currentTemperature > 25c) {
-        setOnDevice(airConditioner, "On", true);
+        setOnDevice(airConditioner, "Mode", "On");
     } else if (currentTemperature <= 20c) {
-        setOnDevice(airConditioner, "On", false);
+        setOnDevice(airConditioner, "Mode", "Off");
     };
 
 };
