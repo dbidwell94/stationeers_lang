@@ -57,12 +57,19 @@ impl<'a> Compiler<'a> {
     fn get_variable_index(&self, var_name: &str) -> Result<i32, CompileError> {
         let mut offset = 0;
 
+        println!("Variable Scope: {:?}", self.variable_scope);
+
         for scope in &self.variable_scope {
+            let scope_size = scope.len() as i32;
             if let Some(index) = scope.get(var_name) {
-                return Ok(*index + offset);
+                let index = (scope_size - *index) + offset;
+
+                println!("Found variable {} at index {}", var_name, index);
+
+                return Ok(index);
             }
 
-            offset += scope.len() as i32;
+            offset += scope_size;
         }
 
         Err(CompileError::VariableNotFound(var_name.to_owned()))
@@ -168,34 +175,48 @@ impl<'a> Compiler<'a> {
             match left {
                 Expression::Literal(Literal::Number(num)) => {
                     compiler.write_output(format!("push {num}"))?;
+                    compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                 }
                 Expression::Variable(var_name) => {
                     let var_offset = compiler.get_variable_index(&var_name)?;
-                    compiler.write_output(format!("sub sp sp {var_offset}"))?;
-                    compiler.write_output("peek r0")?;
-                    compiler.write_output(format!("add sp sp {var_offset}"))?;
-                    compiler.write_output("push r0")?;
+                    compiler.write_output(format!("sub r15 sp {var_offset}"))?;
+                    compiler.write_output("get r15 db r15")?;
+                    compiler.write_output("push r15")?;
+                    compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                 }
                 Expression::BinaryExpression(expr) => {
                     compiler.binary_expression(expr)?;
                 }
+                Expression::PriorityExpression(expr) => match *expr {
+                    Expression::BinaryExpression(expr) => {
+                        compiler.binary_expression(expr)?;
+                    }
+                    _ => todo!(),
+                },
                 _ => todo!(),
             };
 
             match right {
                 Expression::Literal(Literal::Number(num)) => {
                     compiler.write_output(format!("push {num}"))?;
+                    compiler.push_stack(&format!("{op}ExpressionRight"))?;
                 }
                 Expression::Variable(var_name) => {
                     let var_offset = compiler.get_variable_index(&var_name)?;
-                    compiler.write_output(format!("sub sp sp {}", var_offset + 1))?;
-                    compiler.write_output("peek r0")?;
-                    compiler.write_output(format!("add sp sp {}", var_offset + 1))?;
-                    compiler.write_output("push r0")?;
+                    compiler.write_output(format!("sub r15 sp {}", var_offset))?;
+                    compiler.write_output("get r15 db r15")?;
+                    compiler.write_output("push r15")?;
+                    compiler.push_stack(&format!("{op}ExpressionRight"))?;
                 }
                 Expression::BinaryExpression(expr) => {
                     compiler.binary_expression(expr)?;
                 }
+                Expression::PriorityExpression(expr) => match *expr {
+                    Expression::BinaryExpression(expr) => {
+                        compiler.binary_expression(expr)?;
+                    }
+                    _ => todo!(),
+                },
                 _ => todo!(),
             };
 
@@ -238,6 +259,8 @@ impl<'a> Compiler<'a> {
 
         let mut to_write = String::new();
 
+        self.push_stack(&format!("{function_name}ReturnAddress"))?;
+
         let mut iter_index = 0;
         for arg in expr.arguments {
             match arg {
@@ -247,10 +270,9 @@ impl<'a> Compiler<'a> {
                 Expression::Variable(var_name) => {
                     let index = self.get_variable_index(&var_name)?;
 
-                    to_write.push_str(&format!("sub sp sp {index}\n"));
-                    to_write.push_str("peek r0\n");
-                    to_write.push_str(&format!("add sp sp {index}\n"));
-                    to_write.push_str("push r0\n");
+                    to_write.push_str(&format!("sub r15 sp {index}\n"));
+                    to_write.push_str("get r15 db r15\n");
+                    to_write.push_str("push r15\n");
                 }
                 Expression::BinaryExpression(expr) => {
                     self.binary_expression(expr)?;

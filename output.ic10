@@ -1,0 +1,14 @@
+j main
+sub sp sp 1
+pop ra
+j ra
+main:
+push 25
+push 2
+pop r1
+pop r0
+mul r0 r0 r1
+push r0
+push 14
+push r0
+j 1
