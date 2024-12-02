@@ -1,4 +1,4 @@
-use super::{Literal, LiteralOrVariable};
+use super::LiteralOrVariable;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Math {
@@ -68,6 +68,29 @@ pub enum Math {
     Trunc(LiteralOrVariable),
 }
 
+impl std::fmt::Display for Math {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Math::Acos(a) => write!(f, "acos {}", a),
+            Math::Asin(a) => write!(f, "asin {}", a),
+            Math::Atan(a) => write!(f, "atan {}", a),
+            Math::Atan2(a, b) => write!(f, "atan2 {} {}", a, b),
+            Math::Abs(a) => write!(f, "abs {}", a),
+            Math::Ceil(a) => write!(f, "ceil {}", a),
+            Math::Cos(a) => write!(f, "cos {}", a),
+            Math::Floor(a) => write!(f, "floor {}", a),
+            Math::Log(a) => write!(f, "log {}", a),
+            Math::Max(a, b) => write!(f, "max {} {}", a, b),
+            Math::Min(a, b) => write!(f, "min {} {}", a, b),
+            Math::Rand => write!(f, "rand"),
+            Math::Sin(a) => write!(f, "sin {}", a),
+            Math::Sqrt(a) => write!(f, "sqrt {}", a),
+            Math::Tan(a) => write!(f, "tan {}", a),
+            Math::Trunc(a) => write!(f, "trunc {}", a),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum System {
     /// Pauses execution for exactly 1 tick and then resumes.
@@ -78,22 +101,10 @@ pub enum System {
     /// ## In Game
     /// `sleep a(r?|num)`
     Sleep(LiteralOrVariable),
-    /// Represents a function that can be called to load a variable from a device into a register.
-    /// ## In Game
-    /// `l r? d? logicType`
-    LoadVar(Literal, Literal),
     /// Gets the in-game hash for a specific prefab name.
     /// ## In Game
     /// `HASH("prefabName")`
     Hash(LiteralOrVariable),
-    /// Represents a function which will clear the stack for a provided device.
-    /// ## In Game
-    /// `clr d?`
-    StackClear(Literal),
-    /// Represents a function which reads a value from a device at a specific address and stores it in a register.
-    /// ## In Game
-    /// `get r? d? address(r?|num)`
-    Get(Literal, LiteralOrVariable),
     /// Represents a function which loads a device variable into a register.
     /// ## In Game
     /// `l r? d? var`
@@ -109,10 +120,42 @@ pub enum System {
     Store(String, LiteralOrVariable, LiteralOrVariable),
 }
 
+impl std::fmt::Display for System {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            System::Yield => write!(f, "yield"),
+            System::Sleep(a) => write!(f, "sleep {}", a),
+            System::Hash(a) => write!(f, "HASH({})", a),
+            System::Load(a, b) => write!(f, "l {} {}", a, b),
+            System::Store(a, b, c) => write!(f, "s {} {} {}", a, b, c),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 /// This represents built in functions that cannot be overwritten, but can be invoked by the user as functions.
 pub enum SysCall {
     System(System),
     /// Represents any mathmatical function that can be called.
     Math(Math),
+}
+
+impl std::fmt::Display for SysCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SysCall::System(s) => write!(f, "{}", s),
+            SysCall::Math(m) => write!(f, "{}", m),
+        }
+    }
+}
+
+impl SysCall {
+    pub fn is_syscall(identifier: &str) -> bool {
+        match identifier {
+            "yield" | "sleep" | "HASH" | "loadFromDevice" | "setOnDevice" => true,
+            "acos" | "asin" | "atan" | "atan2" | "abs" | "ceil" | "cos" | "floor" | "log"
+            | "max" | "min" | "rand" | "sin" | "sqrt" | "tan" | "trunc" => true,
+            _ => false,
+        }
+    }
 }

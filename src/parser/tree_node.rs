@@ -1,5 +1,7 @@
 use crate::tokenizer::token::Number;
 
+use super::sys_call::SysCall;
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum Literal {
     Number(Number),
@@ -144,6 +146,15 @@ pub enum LiteralOrVariable {
     Variable(String),
 }
 
+impl std::fmt::Display for LiteralOrVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LiteralOrVariable::Literal(l) => write!(f, "{}", l),
+            LiteralOrVariable::Variable(v) => write!(f, "{}", v),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeviceDeclarationExpression {
     /// any variable-like name 
@@ -174,6 +185,7 @@ pub enum Expression {
     ReturnExpression(Box<Expression>),
     Variable(String),
     DeviceDeclarationExpression(DeviceDeclarationExpression),
+    SyscallExpression(SysCall),
 }
 
 impl std::fmt::Display for Expression {
@@ -192,6 +204,7 @@ impl std::fmt::Display for Expression {
             Expression::PriorityExpression(e) => write!(f, "({})", e),
             Expression::ReturnExpression(e) => write!(f, "(return {})", e),
             Expression::DeviceDeclarationExpression(e) => write!(f, "{}", e),
+            Expression::SyscallExpression(e) => write!(f, "{}", e),
         }
     }
 }

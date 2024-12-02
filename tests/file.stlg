@@ -1,5 +1,15 @@
-fn doStuff(i) {
+device airConditioner = "d1";
+device roomTemperatureSensor = "d2";
+
+loop {
+
+    let currentTemperature = loadFromDevice(roomTemperatureSensor, "Temperature");
+
+    if (currentTemperature > 25c) {
+        setOnDevice(airConditioner, "On", true);
+    } else if (currentTemperature <= 20c) {
+        setOnDevice(airConditioner, "On", false);
+    };
 
 };
 
-doStuff(25 * 2);

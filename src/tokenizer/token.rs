@@ -21,6 +21,23 @@ impl Token {
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
+pub enum Temperature {
+    Celsius(Number),
+    Fahrenheit(Number),
+    Kelvin(Number),
+}
+
+impl std::fmt::Display for Temperature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Temperature::Celsius(n) => write!(f, "{}°C", n),
+            Temperature::Fahrenheit(n) => write!(f, "{}°F", n),
+            Temperature::Kelvin(n) => write!(f, "{}K", n),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub enum TokenType {
     /// Represents a string token
     String(String),
@@ -34,6 +51,7 @@ pub enum TokenType {
     Identifier(String),
     /// Represents a symbol token
     Symbol(Symbol),
+    Temperature(Temperature),
     /// Represents an end of file token
     EOF,
 }
@@ -47,6 +65,7 @@ impl std::fmt::Display for TokenType {
             TokenType::Keyword(k) => write!(f, "{:?}", k),
             TokenType::Identifier(i) => write!(f, "{}", i),
             TokenType::Symbol(s) => write!(f, "{:?}", s),
+            TokenType::Temperature(t) => write!(f, "{}", t),
             TokenType::EOF => write!(f, "EOF"),
         }
     }
@@ -172,8 +191,6 @@ pub enum Keyword {
     Return,
     /// Represents the `enum` keyword
     Enum,
-    /// Represents an import keyword
-    Import,
-    /// Represents an export keyword
-    Export,
+    /// Represents the `loop` keyword
+    Loop,
 }

@@ -9,6 +9,7 @@ use crate::{
     },
 };
 use std::io::SeekFrom;
+use sys_call::SysCall;
 use tree_node::*;
 
 quick_error! {
@@ -165,14 +166,7 @@ impl Parser {
         let expr = Some(match current_token.token_type {
             // match unsupported keywords
             TokenType::Keyword(e)
-                if matches_keyword!(
-                    e,
-                    Keyword::Import,
-                    Keyword::Export,
-                    Keyword::Enum,
-                    Keyword::If,
-                    Keyword::Else
-                ) =>
+                if matches_keyword!(e, Keyword::Enum, Keyword::If, Keyword::Else) =>
             {
                 return Err(ParseError::UnsupportedKeyword(current_token.clone()))
             }
@@ -186,6 +180,11 @@ impl Parser {
 
             // match functions with a `fn` keyword
             TokenType::Keyword(Keyword::Fn) => Expression::FunctionExpression(self.function()?),
+
+            // match syscalls with a `syscall` keyword
+            TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
+                Expression::SyscallExpression(self.syscall()?)
+            }
 
             // match a variable expression with opening parenthesis
             TokenType::Identifier(_)
@@ -689,6 +688,10 @@ impl Parser {
             body: self.block()?,
         })
     }
+
+    fn syscall(&mut self) -> Result<SysCall, ParseError> {
+        todo!("Syscalls are not implemented yet.")
+    }
 }
 
 #[cfg(test)]
@@ -704,12 +707,6 @@ mod tests {
 
     #[test]
     fn test_unsupported_keywords() -> Result<()> {
-        let mut parser = parser!("import x;");
-        assert!(parser.parse().is_err());
-
-        let mut parser = parser!("export x;");
-        assert!(parser.parse().is_err());
-
         let mut parser = parser!("enum x;");
         assert!(parser.parse().is_err());
 

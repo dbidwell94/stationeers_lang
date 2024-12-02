@@ -8,7 +8,7 @@ use std::{
     io::{BufReader, Cursor, Read, Seek, SeekFrom},
     path::PathBuf,
 };
-use token::{Keyword, Number, Symbol, Token, TokenType};
+use token::{Keyword, Number, Symbol, Temperature, Token, TokenType};
 
 quick_error! {
     #[derive(Debug)]
@@ -274,7 +274,7 @@ impl Tokenizer {
         }
     }
 
-    /// Tokenizes a number literal
+    /// Tokenizes a number literal. Also handles temperatures with a suffix of `c`, `f`, or `k`.
     fn tokenize_number(&mut self, first_char: char) -> Result<Token, TokenizerError> {
         let mut primary = String::with_capacity(16);
         let mut decimal: Option<String> = None;
@@ -315,29 +315,40 @@ impl Tokenizer {
             self.next_char()?;
         }
 
-        if let Some(decimal) = decimal {
+        let number: Number = if let Some(decimal) = decimal {
             let decimal_scale = decimal.len() as u32;
             let number = format!("{}{}", primary, decimal)
                 .parse::<i128>()
                 .map_err(|e| TokenizerError::NumberParseError(e, self.line, self.column))?;
+            Number::Decimal(
+                Decimal::try_from_i128_with_scale(number, decimal_scale)
+                    .map_err(|e| TokenizerError::DecimalParseError(e, line, column))?,
+            )
+        } else {
+            Number::Integer(
+                primary
+                    .parse()
+                    .map_err(|e| TokenizerError::NumberParseError(e, line, column))?,
+            )
+        };
+
+        // check if the next char is a temperature suffix
+        if let Some(next_char) = self.peek_next_char()? {
+            let temperature = match next_char {
+                'c' => Temperature::Celsius(number),
+                'f' => Temperature::Fahrenheit(number),
+                'k' => Temperature::Kelvin(number),
+                _ => return Ok(Token::new(TokenType::Number(number), line, column)),
+            };
+
+            self.next_char()?;
             Ok(Token::new(
-                TokenType::Number(Number::Decimal(
-                    Decimal::try_from_i128_with_scale(number, decimal_scale)
-                        .map_err(|e| TokenizerError::DecimalParseError(e, line, column))?,
-                )),
+                TokenType::Temperature(temperature),
                 line,
                 column,
             ))
         } else {
-            Ok(Token::new(
-                TokenType::Number(Number::Integer(
-                    primary
-                        .parse()
-                        .map_err(|e| TokenizerError::NumberParseError(e, line, column))?,
-                )),
-                line,
-                column,
-            ))
+            Ok(Token::new(TokenType::Number(number), line, column))
         }
     }
 
@@ -404,8 +415,6 @@ impl Tokenizer {
                 "else" if next_ws!() => keyword!(Else),
                 "return" if next_ws!() => keyword!(Return),
                 "enum" if next_ws!() => keyword!(Enum),
-                "import" if next_ws!() => keyword!(Import),
-                "export" if next_ws!() => keyword!(Export),
                 "device" if next_ws!() => keyword!(Device),
 
                 // boolean literals
@@ -622,19 +631,29 @@ mod tests {
     }
 
     #[test]
-    fn test_skip_line() -> Result<()> {
-        let mut tokenizer = Tokenizer::from(String::from(
-            r#"
-This is a skippable line"#,
-        ));
+    fn test_temperature_unit() -> Result<()> {
+        let mut tokenizer = Tokenizer::from(String::from("10c 10f 10k"));
 
-        tokenizer.skip_line()?;
+        let token = tokenizer.next_token()?.unwrap();
 
-        assert_eq!(tokenizer.line, 2);
-        assert_eq!(tokenizer.column, 1);
+        assert_eq!(
+            token.token_type,
+            TokenType::Temperature(Temperature::Celsius(Number::Integer(10)))
+        );
 
-        let next_char = tokenizer.next_char()?;
-        assert_eq!(next_char, Some('T'));
+        let token = tokenizer.next_token()?.unwrap();
+
+        assert_eq!(
+            token.token_type,
+            TokenType::Temperature(Temperature::Fahrenheit(Number::Integer(10)))
+        );
+
+        let token = tokenizer.next_token()?.unwrap();
+
+        assert_eq!(
+            token.token_type,
+            TokenType::Temperature(Temperature::Kelvin(Number::Integer(10)))
+        );
 
         Ok(())
     }
@@ -772,8 +791,7 @@ This is a skippable line"#,
 
     #[test]
     fn test_keyword_parse() -> Result<()> {
-        let mut tokenizer =
-            Tokenizer::from(String::from("let fn if else return enum import export"));
+        let mut tokenizer = Tokenizer::from(String::from("let fn if else return enum"));
 
         let expected_tokens = vec![
             TokenType::Keyword(Keyword::Let),
@@ -782,8 +800,6 @@ This is a skippable line"#,
             TokenType::Keyword(Keyword::Else),
             TokenType::Keyword(Keyword::Return),
             TokenType::Keyword(Keyword::Enum),
-            TokenType::Keyword(Keyword::Import),
-            TokenType::Keyword(Keyword::Export),
         ];
 
         for expected_token in expected_tokens {
