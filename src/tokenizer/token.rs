@@ -1,3 +1,4 @@
+use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -37,6 +38,31 @@ impl std::fmt::Display for Temperature {
     }
 }
 
+impl Temperature {
+    pub fn to_kelvin(self) -> Number {
+        match self {
+            Temperature::Celsius(n) => {
+                let n = match n {
+                    Number::Integer(i) => Decimal::new(i as i64, 0),
+                    Number::Decimal(d) => d,
+                };
+                Number::Decimal(n + Decimal::new(27315, 2))
+            }
+            Temperature::Fahrenheit(n) => {
+                let n = match n {
+                    Number::Integer(i) => Decimal::new(i as i64, 0),
+                    Number::Decimal(d) => d,
+                };
+
+                let a = n - Decimal::new(32, 0);
+                let b = Decimal::new(5, 0) / Decimal::new(9, 0);
+                Number::Decimal(a * b + Decimal::new(27315, 2))
+            }
+            Temperature::Kelvin(n) => n,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub enum TokenType {
     /// Represents a string token
@@ -51,7 +77,6 @@ pub enum TokenType {
     Identifier(String),
     /// Represents a symbol token
     Symbol(Symbol),
-    Temperature(Temperature),
     /// Represents an end of file token
     EOF,
 }
@@ -65,7 +90,6 @@ impl std::fmt::Display for TokenType {
             TokenType::Keyword(k) => write!(f, "{:?}", k),
             TokenType::Identifier(i) => write!(f, "{}", i),
             TokenType::Symbol(s) => write!(f, "{:?}", s),
-            TokenType::Temperature(t) => write!(f, "{}", t),
             TokenType::EOF => write!(f, "EOF"),
         }
     }

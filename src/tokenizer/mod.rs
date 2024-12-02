@@ -339,14 +339,11 @@ impl Tokenizer {
                 'f' => Temperature::Fahrenheit(number),
                 'k' => Temperature::Kelvin(number),
                 _ => return Ok(Token::new(TokenType::Number(number), line, column)),
-            };
+            }
+            .to_kelvin();
 
             self.next_char()?;
-            Ok(Token::new(
-                TokenType::Temperature(temperature),
-                line,
-                column,
-            ))
+            Ok(Token::new(TokenType::Number(temperature), line, column))
         } else {
             Ok(Token::new(TokenType::Number(number), line, column))
         }
@@ -632,28 +629,25 @@ mod tests {
 
     #[test]
     fn test_temperature_unit() -> Result<()> {
-        let mut tokenizer = Tokenizer::from(String::from("10c 10f 10k"));
+        let mut tokenizer = Tokenizer::from(String::from("10c 14f 10k"));
 
         let token = tokenizer.next_token()?.unwrap();
 
         assert_eq!(
             token.token_type,
-            TokenType::Temperature(Temperature::Celsius(Number::Integer(10)))
+            TokenType::Number(Number::Decimal(Decimal::new(28315, 2)))
         );
 
         let token = tokenizer.next_token()?.unwrap();
 
         assert_eq!(
             token.token_type,
-            TokenType::Temperature(Temperature::Fahrenheit(Number::Integer(10)))
+            TokenType::Number(Number::Decimal(Decimal::new(26315, 2)))
         );
 
         let token = tokenizer.next_token()?.unwrap();
 
-        assert_eq!(
-            token.token_type,
-            TokenType::Temperature(Temperature::Kelvin(Number::Integer(10)))
-        );
+        assert_eq!(token.token_type, TokenType::Number(Number::Integer(10)));
 
         Ok(())
     }
