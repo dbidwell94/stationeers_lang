@@ -104,8 +104,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn write_output(&mut self, output: impl Into<String>) -> Result<(), CompileError> {
-        self.output.write(output.into().as_bytes())?;
-        self.output.write(b"\n")?;
+        self.output.write_all(output.into().as_bytes())?;
+        self.output.write_all(b"\n")?;
         self.current_line += 1;
 
         Ok(())
@@ -206,7 +206,7 @@ impl<'a> Compiler<'a> {
                     compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                 }
                 Expression::Variable(var_name) => {
-                    let var_offset = compiler.get_variable_index(&var_name)?;
+                    let var_offset = compiler.get_variable_index(&var_name)? + 1;
                     compiler.write_output(format!("sub r15 sp {var_offset}"))?;
                     compiler.write_output("get r15 db r15")?;
                     compiler.write_output("push r15")?;
@@ -232,7 +232,7 @@ impl<'a> Compiler<'a> {
                     compiler.push_stack(&format!("{op}ExpressionRight"))?;
                 }
                 Expression::Variable(var_name) => {
-                    let var_offset = compiler.get_variable_index(&var_name)?;
+                    let var_offset = compiler.get_variable_index(&var_name)? + 1;
                     compiler.write_output(format!("sub r15 sp {}", var_offset))?;
                     compiler.write_output("get r15 db r15")?;
                     compiler.write_output("push r15")?;
@@ -283,18 +283,16 @@ impl<'a> Compiler<'a> {
     fn invocation_expression(&mut self, expr: InvocationExpression) -> Result<(), CompileError> {
         let function_name = expr.name;
 
-        let function_line = self
+        let function_line = *self
             .function_locations
             .get(&function_name)
-            .ok_or(CompileError::MissingFunction(function_name.clone()))?
-            .clone();
+            .ok_or(CompileError::MissingFunction(function_name.clone()))?;
 
         let mut to_write = String::new();
 
         self.push_stack(&format!("{function_name}ReturnAddress"))?;
 
-        let mut iter_index = 0;
-        for arg in expr.arguments {
+        for (iter_index, arg) in expr.arguments.into_iter().enumerate() {
             match arg {
                 Expression::Literal(Literal::Number(num)) => {
                     to_write.push_str(&format!("push {}\n", num));
@@ -313,14 +311,12 @@ impl<'a> Compiler<'a> {
                 _ => todo!("something is up with the arguments"),
             }
             self.push_stack(&format!("{function_name}Invocation{iter_index}"))?;
-
-            iter_index += 1;
         }
 
         // push the return address onto the stack. Current + to write + pushing the return address
         let return_addr = self.current_line + to_write.lines().count() + 2;
         self.write_output(format!("push {return_addr}"))?;
-        self.output.write(to_write.as_bytes())?;
+        self.output.write_all(to_write.as_bytes())?;
         self.current_line = return_addr - 1;
 
         self.write_output(format!("j {function_line}"))?;
@@ -336,7 +332,7 @@ impl<'a> Compiler<'a> {
         self.function_locations.insert(func_name, self.current_line);
 
         for arg in expression.arguments.iter().rev() {
-            self.push_stack(&arg)?;
+            self.push_stack(arg)?;
         }
 
         for expr in expression.body.0 {
