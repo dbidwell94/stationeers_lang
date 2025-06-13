@@ -127,17 +127,14 @@ impl<'a> Compiler<'a> {
 
     fn expression(&mut self, expression: Expression) -> Result<(), CompileError> {
         match expression {
-            Expression::FunctionExpression(expr) => self.function_expression(expr)?,
-            Expression::BlockExpression(expr) => self.block_expression(expr)?,
-            Expression::InvocationExpression(expr) => self.invocation_expression(expr)?,
-            Expression::BinaryExpression(expr) => self.binary_expression(expr)?,
-            Expression::DeclarationExpression(var_name, expr) => {
+            Expression::Function(expr) => self.function_expression(expr)?,
+            Expression::Block(expr) => self.block_expression(expr)?,
+            Expression::Invocation(expr) => self.invocation_expression(expr)?,
+            Expression::Binary(expr) => self.binary_expression(expr)?,
+            Expression::Declaration(var_name, expr) => {
                 self.declaration_expression(&var_name, *expr)?
             }
-            Expression::DeviceDeclarationExpression(DeviceDeclarationExpression {
-                name,
-                device,
-            }) => {
+            Expression::DeviceDeclaration(DeviceDeclarationExpression { name, device }) => {
                 self.devices.insert(name, device);
             }
             _ => todo!("{:?}", expression),
@@ -156,11 +153,11 @@ impl<'a> Compiler<'a> {
                 self.push_stack(var_name)?;
                 self.write_output(format!("push {num}"))?;
             }
-            Expression::BinaryExpression(expr) => {
+            Expression::Binary(expr) => {
                 self.binary_expression(expr)?;
                 self.push_stack(var_name)?;
             }
-            Expression::SyscallExpression(expr) => {
+            Expression::Syscall(expr) => {
                 self.syscall_declaration_expression(expr)?;
                 self.push_stack(var_name)?;
             }
@@ -172,6 +169,7 @@ impl<'a> Compiler<'a> {
 
     fn syscall_declaration_expression(&mut self, expr: SysCall) -> Result<(), CompileError> {
         use crate::parser::sys_call::System;
+        #[allow(clippy::collapsible_match)]
         match expr {
             SysCall::System(ref sys) => match sys {
                 System::LoadFromDevice(LiteralOrVariable::Variable(device), value) => {
@@ -212,12 +210,12 @@ impl<'a> Compiler<'a> {
                     compiler.write_output("push r15")?;
                     compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                 }
-                Expression::BinaryExpression(expr) => {
+                Expression::Binary(expr) => {
                     compiler.binary_expression(expr)?;
                     compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                 }
-                Expression::PriorityExpression(expr) => match *expr {
-                    Expression::BinaryExpression(expr) => {
+                Expression::Priority(expr) => match *expr {
+                    Expression::Binary(expr) => {
                         compiler.binary_expression(expr)?;
                         compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                     }
@@ -238,12 +236,12 @@ impl<'a> Compiler<'a> {
                     compiler.write_output("push r15")?;
                     compiler.push_stack(&format!("{op}ExpressionRight"))?;
                 }
-                Expression::BinaryExpression(expr) => {
+                Expression::Binary(expr) => {
                     compiler.binary_expression(expr)?;
                     compiler.push_stack(&format!("{op}ExpressionRight"))?;
                 }
-                Expression::PriorityExpression(expr) => match *expr {
-                    Expression::BinaryExpression(expr) => {
+                Expression::Priority(expr) => match *expr {
+                    Expression::Binary(expr) => {
                         compiler.binary_expression(expr)?;
                         compiler.push_stack(&format!("{op}ExpressionRight"))?;
                     }
@@ -304,7 +302,7 @@ impl<'a> Compiler<'a> {
                     to_write.push_str("get r15 db r15\n");
                     to_write.push_str("push r15\n");
                 }
-                Expression::BinaryExpression(expr) => {
+                Expression::Binary(expr) => {
                     self.binary_expression(expr)?;
                     to_write.push_str("push r0\n");
                 }
@@ -353,11 +351,9 @@ impl<'a> Compiler<'a> {
 
         // hoist functions to the top of the block
         expression.0.sort_by(|a, b| {
-            if matches!(a, Expression::FunctionExpression(_))
-                && matches!(b, Expression::FunctionExpression(_))
-            {
+            if matches!(a, Expression::Function(_)) && matches!(b, Expression::Function(_)) {
                 Ordering::Equal
-            } else if matches!(a, Expression::FunctionExpression(_)) {
+            } else if matches!(a, Expression::Function(_)) {
                 Ordering::Less
             } else {
                 Ordering::Greater
@@ -366,7 +362,7 @@ impl<'a> Compiler<'a> {
 
         for expr in expression.0 {
             // if we haven't declared main yet and we have already declared all the function expressions, declare main
-            if !self.declared_main && !matches!(expr, Expression::FunctionExpression(_)) {
+            if !self.declared_main && !matches!(expr, Expression::Function(_)) {
                 self.write_output("main:")?;
                 self.declared_main = true;
             }

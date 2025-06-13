@@ -602,6 +602,7 @@ dependencies = [
  "clap",
  "quick-error",
  "rust_decimal",
+ "tokenizer",
 ]
 
 [[package]]

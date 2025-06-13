@@ -3,7 +3,6 @@ extern crate quick_error;
 
 mod compiler;
 mod parser;
-mod tokenizer;
 
 use clap::Parser;
 use compiler::Compiler;
@@ -11,6 +10,7 @@ use parser::Parser as ASTParser;
 use std::{
     fs::File,
     io::{BufWriter, Read, Write},
+    path::PathBuf,
 };
 use tokenizer::{Tokenizer, TokenizerError};
 
@@ -49,10 +49,10 @@ quick_error! {
 struct Args {
     /// What file should be compiled. If not set, input will be read from stdin.
     #[arg(short, long)]
-    input_file: Option<String>,
+    input_file: Option<PathBuf>,
     /// The output file for the compiled program. If not set, output will go to stdout.
     #[arg(short, long)]
-    output_file: Option<String>,
+    output_file: Option<PathBuf>,
 }
 
 fn run_logic() -> Result<(), StationlangError> {

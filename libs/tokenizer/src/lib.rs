@@ -39,7 +39,7 @@ pub trait Tokenize: Read + Seek {}
 
 impl<T> Tokenize for T where T: Read + Seek {}
 
-pub(crate) struct Tokenizer {
+pub struct Tokenizer {
     reader: BufReader<Box<dyn Tokenize>>,
     char_buffer: [u8; 1],
     line: usize,
@@ -185,8 +185,8 @@ impl Tokenizer {
     /// If there are no more tokens in the stream, this function returns None
     pub fn peek_next(&mut self) -> Result<Option<Token>, TokenizerError> {
         let current_pos = self.reader.stream_position()?;
-        let column = self.column.clone();
-        let line = self.line.clone();
+        let column = self.column;
+        let line = self.line;
 
         let token = self.next_token()?;
         self.reader.seek(SeekFrom::Start(current_pos))?;
@@ -280,8 +280,8 @@ impl Tokenizer {
         let mut decimal: Option<String> = None;
         let mut reading_decimal = false;
 
-        let column = self.column.clone();
-        let line = self.line.clone();
+        let column = self.column;
+        let line = self.line;
 
         primary.push(first_char);
 
@@ -353,8 +353,8 @@ impl Tokenizer {
     fn tokenize_string(&mut self, beginning_quote: char) -> Result<Token, TokenizerError> {
         let mut buffer = String::with_capacity(16);
 
-        let column = self.column.clone();
-        let line = self.line.clone();
+        let column = self.column;
+        let line = self.line;
 
         while let Some(next_char) = self.next_char()? {
             if next_char == beginning_quote {
@@ -385,13 +385,13 @@ impl Tokenizer {
         /// Helper macro to check if the next character is whitespace or not alphanumeric
         macro_rules! next_ws {
             () => {
-                matches!(self.peek_next_char()?, Some(x) if x.is_whitespace() || !x.is_alphanumeric()) || matches!(self.peek_next_char()?, None)
+                matches!(self.peek_next_char()?, Some(x) if x.is_whitespace() || !x.is_alphanumeric()) || self.peek_next_char()?.is_none()
             };
         }
 
         let mut buffer = String::with_capacity(16);
-        let line = self.line.clone();
-        let column = self.column.clone();
+        let line = self.line;
+        let column = self.column;
 
         let mut looped_char = Some(first_char);
 
@@ -464,7 +464,7 @@ impl TokenizerBuffer {
 
     /// Reads the next token from the tokenizer, pushing the value to the back of the history
     /// and returning the token
-    pub fn next(&mut self) -> Result<Option<Token>, TokenizerError> {
+    pub fn next_token(&mut self) -> Result<Option<Token>, TokenizerError> {
         if let Some(token) = self.buffer.pop_front() {
             self.history.push_back(token.clone());
             return Ok(Some(token));
@@ -561,12 +561,12 @@ mod tests {
         let tokenizer = Tokenizer::from(TEST_STRING.to_owned());
         let mut buffer = TokenizerBuffer::new(tokenizer);
 
-        let token = buffer.next()?.unwrap();
+        let token = buffer.next_token()?.unwrap();
         assert_eq!(token.token_type, TokenType::Keyword(Keyword::Fn));
 
         buffer.seek(SeekFrom::Current(1))?;
 
-        let token = buffer.next()?.unwrap();
+        let token = buffer.next_token()?.unwrap();
 
         assert_eq!(token.token_type, TokenType::Symbol(Symbol::LParen));
 
@@ -870,8 +870,8 @@ mod tests {
     fn test_peek_next() -> Result<()> {
         let mut tokenizer = Tokenizer::from(TEST_STRING.to_owned());
 
-        let column = tokenizer.column.clone();
-        let line = tokenizer.line.clone();
+        let column = tokenizer.column;
+        let line = tokenizer.line;
 
         let peeked_token = tokenizer.peek_next()?;
 
@@ -894,4 +894,3 @@ mod tests {
         Ok(())
     }
 }
-
