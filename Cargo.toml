@@ -3,14 +3,21 @@ name = "stationlang"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["libs/*"]
+
+[workspace.dependencies]
+quick-error = "2"
+rust_decimal = "1"
+
 [[bin]]
 name = "slang"
 path = "src/main.rs"
 
 [dependencies]
 clap = { version = "^4.5", features = ["derive"] }
-quick-error = "2.0.1"
-rust_decimal = "1.36.0"
+quick-error = { workspace = true }
+rust_decimal = { workspace = true }
 
 [dev-dependencies]
 anyhow = { version = "^1.0", features = ["backtrace"] }

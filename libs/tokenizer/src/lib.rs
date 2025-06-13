@@ -1,5 +1,6 @@
 pub mod token;
 
+use quick_error::quick_error;
 use rust_decimal::Decimal;
 use std::{
     cmp::Ordering,
@@ -157,18 +158,18 @@ impl Tokenizer {
                 '"' | '\'' => return self.tokenize_string(next_char).map(Some),
                 // symbols excluding `"` and `'`
                 char if !char.is_alphanumeric() && char != '"' && char != '\'' => {
-                    return self.tokenize_symbol(next_char).map(Some)
+                    return self.tokenize_symbol(next_char).map(Some);
                 }
                 // keywords and identifiers
                 char if char.is_alphabetic() => {
-                    return self.tokenize_keyword_or_identifier(next_char).map(Some)
+                    return self.tokenize_keyword_or_identifier(next_char).map(Some);
                 }
                 _ => {
                     return Err(TokenizerError::UnknownSymbolError(
                         next_char,
                         self.line,
                         self.column,
-                    ))
+                    ));
                 }
             }
         }
@@ -417,14 +418,14 @@ impl Tokenizer {
 
                 // boolean literals
                 "true" if next_ws!() => {
-                    return Ok(Token::new(TokenType::Boolean(true), self.line, self.column))
+                    return Ok(Token::new(TokenType::Boolean(true), self.line, self.column));
                 }
                 "false" if next_ws!() => {
                     return Ok(Token::new(
                         TokenType::Boolean(false),
                         self.line,
                         self.column,
-                    ))
+                    ));
                 }
                 // if the next character is whitespace or not alphanumeric, then we have an identifier
                 // this is because keywords are checked first
@@ -893,3 +894,4 @@ mod tests {
         Ok(())
     }
 }
+
