@@ -1,9 +1,6 @@
 #[macro_use]
 extern crate quick_error;
 
-mod compiler;
-mod parser;
-
 use clap::Parser;
 use compiler::Compiler;
 use parser::Parser as ASTParser;
@@ -13,14 +10,6 @@ use std::{
     path::PathBuf,
 };
 use tokenizer::{Tokenizer, TokenizerError};
-
-#[macro_export]
-/// A macro to create a boxed value.
-macro_rules! boxed {
-    ($e:expr) => {
-        Box::new($e)
-    };
-}
 
 quick_error! {
     #[derive(Debug)]
@@ -78,8 +67,8 @@ fn run_logic() -> Result<(), StationlangError> {
     let parser = ASTParser::new(tokenizer);
 
     let mut writer: BufWriter<Box<dyn Write>> = match args.output_file {
-        Some(output_file) => BufWriter::new(boxed!(File::create(output_file)?)),
-        None => BufWriter::new(boxed!(std::io::stdout())),
+        Some(output_file) => BufWriter::new(Box::new(File::create(output_file)?)),
+        None => BufWriter::new(Box::new(std::io::stdout())),
     };
 
     let compiler = Compiler::new(parser, &mut writer);

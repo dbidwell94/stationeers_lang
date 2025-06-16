@@ -1,6 +1,7 @@
-use crate::parser::sys_call::SysCall;
-use crate::parser::tree_node::*;
-use crate::parser::Parser as ASTParser;
+use parser::Parser as ASTParser;
+use parser::sys_call::SysCall;
+use parser::tree_node::*;
+use quick_error::quick_error;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
@@ -8,7 +9,7 @@ use std::io::{BufWriter, Write};
 quick_error! {
     #[derive(Debug)]
     pub enum CompileError {
-        ParseError(err: crate::parser::ParseError) {
+        ParseError(err: parser::ParseError) {
             from()
             display("Parse error: {}", err)
         }
@@ -168,7 +169,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn syscall_declaration_expression(&mut self, expr: SysCall) -> Result<(), CompileError> {
-        use crate::parser::sys_call::System;
+        use parser::sys_call::System;
         #[allow(clippy::collapsible_match)]
         match expr {
             SysCall::System(ref sys) => match sys {

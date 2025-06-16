@@ -19,6 +19,8 @@ clap = { version = "^4.5", features = ["derive"] }
 quick-error = { workspace = true }
 rust_decimal = { workspace = true }
 tokenizer = { path = "libs/tokenizer" }
+parser = { path = "libs/parser" }
+compiler = { path = "libs/compiler" }
 
 [dev-dependencies]
 anyhow = { version = "^1.0", features = ["backtrace"] }

@@ -1,0 +1,12 @@
+[package]
+name = "parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quick-error = { workspace = true }
+tokenizer = { path = "../tokenizer" }
+
+
+[dev-dependencies]
+anyhow = { version = "1" }

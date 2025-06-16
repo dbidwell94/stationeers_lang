@@ -1,14 +1,22 @@
 pub mod sys_call;
 pub mod tree_node;
 
-use crate::boxed;
+use quick_error::quick_error;
 use std::io::SeekFrom;
 use sys_call::SysCall;
 use tokenizer::{
-    token::{Keyword, Symbol, Token, TokenType},
     Tokenizer, TokenizerBuffer, TokenizerError,
+    token::{Keyword, Symbol, Token, TokenType},
 };
 use tree_node::*;
+
+#[macro_export]
+/// A macro to create a boxed value.
+macro_rules! boxed {
+    ($e:expr) => {
+        Box::new($e)
+    };
+}
 
 quick_error! {
     #[derive(Debug)]
@@ -164,7 +172,7 @@ impl Parser {
             TokenType::Keyword(e)
                 if matches_keyword!(e, Keyword::Enum, Keyword::If, Keyword::Else) =>
             {
-                return Err(ParseError::UnsupportedKeyword(current_token.clone()))
+                return Err(ParseError::UnsupportedKeyword(current_token.clone()));
             }
 
             // match declarations with a `let` keyword

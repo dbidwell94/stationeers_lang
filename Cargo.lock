@@ -242,6 +242,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "compiler"
+version = "0.1.0"
+dependencies = [
+ "parser",
+ "quick-error",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -379,6 +387,15 @@ name = "once_cell_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
+
+[[package]]
+name = "parser"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "quick-error",
+ "tokenizer",
+]
 
 [[package]]
 name = "ppv-lite86"
@@ -600,6 +617,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "compiler",
+ "parser",
  "quick-error",
  "rust_decimal",
  "tokenizer",
