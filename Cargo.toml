@@ -16,7 +16,7 @@ name = "slang"
 path = "src/main.rs"
 
 [lib]
-name = "slanglib"
+name = "slang"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 

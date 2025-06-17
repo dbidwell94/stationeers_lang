@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 use parser::Parser as ASTParser;
 use parser::sys_call::SysCall;
 use parser::tree_node::*;
@@ -102,6 +105,19 @@ impl<'a> Compiler<'a> {
             .insert(var_name.to_string(), scope_size as i32);
 
         Ok(())
+    }
+
+    /// Pop the given variable from the current stack. Errors if the variable is not found in the
+    /// current scope.
+    fn pop_current(&mut self, var_name: &str) -> Result<i32, CompileError> {
+        let last_scope = self
+            .variable_scope
+            .last_mut()
+            .ok_or(CompileError::ScopeError)?;
+
+        last_scope
+            .remove(var_name)
+            .ok_or(CompileError::VariableNotFound(var_name.to_string()))
     }
 
     fn write_output(&mut self, output: impl Into<String>) -> Result<(), CompileError> {
@@ -281,6 +297,7 @@ impl<'a> Compiler<'a> {
 
     fn invocation_expression(&mut self, expr: InvocationExpression) -> Result<(), CompileError> {
         let function_name = expr.name;
+        let args_count = expr.arguments.len();
 
         let function_line = *self
             .function_locations
@@ -307,7 +324,7 @@ impl<'a> Compiler<'a> {
                     self.binary_expression(expr)?;
                     to_write.push_str("push r0\n");
                 }
-                _ => todo!("something is up with the arguments"),
+                _ => todo!("something is up with the arguments: {arg:?}"),
             }
             self.push_stack(&format!("{function_name}Invocation{iter_index}"))?;
         }
@@ -319,6 +336,11 @@ impl<'a> Compiler<'a> {
         self.current_line = return_addr - 1;
 
         self.write_output(format!("j {function_line}"))?;
+
+        self.pop_current(&format!("{function_name}ReturnAddress"))?;
+        for i in 0..args_count {
+            self.pop_current(&format!("{function_name}Invocation{i}"))?;
+        }
 
         Ok(())
     }
