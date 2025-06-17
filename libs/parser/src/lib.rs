@@ -1,16 +1,22 @@
 pub mod sys_call;
 pub mod tree_node;
 
-use crate::{
-    boxed,
-    tokenizer::{
-        token::{Keyword, Symbol, Token, TokenType},
-        Tokenizer, TokenizerBuffer, TokenizerError,
-    },
-};
+use quick_error::quick_error;
 use std::io::SeekFrom;
 use sys_call::SysCall;
+use tokenizer::{
+    Tokenizer, TokenizerBuffer, TokenizerError,
+    token::{Keyword, Symbol, Token, TokenType},
+};
 use tree_node::*;
+
+#[macro_export]
+/// A macro to create a boxed value.
+macro_rules! boxed {
+    ($e:expr) => {
+        Box::new($e)
+    };
+}
 
 quick_error! {
     #[derive(Debug)]
@@ -119,9 +125,7 @@ impl Parser {
             expressions.push(expression);
         }
 
-        Ok(Some(Expression::BlockExpression(BlockExpression(
-            expressions,
-        ))))
+        Ok(Some(Expression::Block(BlockExpression(expressions))))
     }
 
     /// Parses the input from the tokenizer buffer and returns the resulting expression
@@ -138,7 +142,7 @@ impl Parser {
 
     /// Assigns the next token in the tokenizer buffer to the current token
     fn assign_next(&mut self) -> Result<(), ParseError> {
-        self.current_token = self.tokenizer.next()?;
+        self.current_token = self.tokenizer.next_token()?;
         Ok(())
     }
 
@@ -168,49 +172,47 @@ impl Parser {
             TokenType::Keyword(e)
                 if matches_keyword!(e, Keyword::Enum, Keyword::If, Keyword::Else) =>
             {
-                return Err(ParseError::UnsupportedKeyword(current_token.clone()))
+                return Err(ParseError::UnsupportedKeyword(current_token.clone()));
             }
 
             // match declarations with a `let` keyword
             TokenType::Keyword(Keyword::Let) => self.declaration()?,
 
-            TokenType::Keyword(Keyword::Device) => {
-                Expression::DeviceDeclarationExpression(self.device()?)
-            }
+            TokenType::Keyword(Keyword::Device) => Expression::DeviceDeclaration(self.device()?),
 
             // match functions with a `fn` keyword
-            TokenType::Keyword(Keyword::Fn) => Expression::FunctionExpression(self.function()?),
+            TokenType::Keyword(Keyword::Fn) => Expression::Function(self.function()?),
 
             // match syscalls with a `syscall` keyword
             TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
-                Expression::SyscallExpression(self.syscall()?)
+                Expression::Syscall(self.syscall()?)
             }
 
             // match a variable expression with opening parenthesis
             TokenType::Identifier(_)
                 if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
             {
-                Expression::InvocationExpression(self.invocation()?)
+                Expression::Invocation(self.invocation()?)
             }
 
             // match a variable expression with an assignment
             TokenType::Identifier(_)
                 if self_matches_peek!(self, TokenType::Symbol(Symbol::Assign)) =>
             {
-                Expression::AssignmentExpression(self.assignment()?)
+                Expression::Assignment(self.assignment()?)
             }
 
             // match variable expressions with an identifier
             TokenType::Identifier(ref id) => Expression::Variable(id.clone()),
 
             // match block expressions with a `{` symbol
-            TokenType::Symbol(Symbol::LBrace) => Expression::BlockExpression(self.block()?),
+            TokenType::Symbol(Symbol::LBrace) => Expression::Block(self.block()?),
 
             // match literal expressions with a semi-colon afterwards
             TokenType::Number(_) | TokenType::String(_) => Expression::Literal(self.literal()?),
 
             // match priority expressions with a left parenthesis
-            TokenType::Symbol(Symbol::LParen) => Expression::PriorityExpression(self.priority()?),
+            TokenType::Symbol(Symbol::LParen) => Expression::Priority(self.priority()?),
 
             _ => {
                 return Err(ParseError::UnexpectedToken(current_token.clone()));
@@ -223,13 +225,13 @@ impl Parser {
 
         // check if the next or current token is an operator
         if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
-            return Ok(Some(Expression::BinaryExpression(self.binary(expr)?)));
+            return Ok(Some(Expression::Binary(self.binary(expr)?)));
         }
         // This is an edge case. We need to move back one token if the current token is an operator
         // so the binary expression can pick up the operator
         else if self_matches_current!(self, TokenType::Symbol(s) if s.is_operator()) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
-            return Ok(Some(Expression::BinaryExpression(self.binary(expr)?)));
+            return Ok(Some(Expression::Binary(self.binary(expr)?)));
         }
 
         Ok(Some(expr))
@@ -248,14 +250,12 @@ impl Parser {
                 Ok(Expression::Variable(ident))
             }
             // A priority expression ( -> (1 + 2) <- + 3 )
-            TokenType::Symbol(Symbol::LParen) => {
-                self.priority().map(Expression::PriorityExpression)
-            }
+            TokenType::Symbol(Symbol::LParen) => self.priority().map(Expression::Priority),
             // A function invocation
             TokenType::Identifier(_)
                 if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
             {
-                self.invocation().map(Expression::InvocationExpression)
+                self.invocation().map(Expression::Invocation)
             }
             _ => Err(ParseError::UnexpectedToken(current_token.clone())),
         }
@@ -322,9 +322,9 @@ impl Parser {
 
         // first, make sure the previous expression supports binary expressions
         match previous {
-            Expression::BinaryExpression(_) // 1 + 2 + 3
-            | Expression::InvocationExpression(_) // add() + 3
-            | Expression::PriorityExpression(_) // (1 + 2) + 3
+            Expression::Binary(_) // 1 + 2 + 3
+            | Expression::Invocation(_) // add() + 3
+            | Expression::Priority(_) // (1 + 2) + 3
             | Expression::Literal(Literal::Number(_)) // 1 + 2 (no addition of strings)
             | Expression::Variable(_) // x + 2
             | Expression::Negation(_) // -1 + 2
@@ -371,10 +371,7 @@ impl Parser {
                 let right = expressions.remove(index);
                 expressions.insert(
                     index,
-                    Expression::BinaryExpression(BinaryExpression::Exponent(
-                        boxed!(left),
-                        boxed!(right),
-                    )),
+                    Expression::Binary(BinaryExpression::Exponent(boxed!(left), boxed!(right))),
                 );
                 current_iteration += 1;
             }
@@ -394,17 +391,11 @@ impl Parser {
                 match operator {
                     Symbol::Asterisk => expressions.insert(
                         index,
-                        Expression::BinaryExpression(BinaryExpression::Multiply(
-                            boxed!(left),
-                            boxed!(right),
-                        )),
+                        Expression::Binary(BinaryExpression::Multiply(boxed!(left), boxed!(right))),
                     ),
                     Symbol::Slash => expressions.insert(
                         index,
-                        Expression::BinaryExpression(BinaryExpression::Divide(
-                            boxed!(left),
-                            boxed!(right),
-                        )),
+                        Expression::Binary(BinaryExpression::Divide(boxed!(left), boxed!(right))),
                     ),
                     // safety: we have already checked for the operator
                     _ => unreachable!(),
@@ -427,17 +418,11 @@ impl Parser {
                 match operator {
                     Symbol::Plus => expressions.insert(
                         index,
-                        Expression::BinaryExpression(BinaryExpression::Add(
-                            boxed!(left),
-                            boxed!(right),
-                        )),
+                        Expression::Binary(BinaryExpression::Add(boxed!(left), boxed!(right))),
                     ),
                     Symbol::Minus => expressions.insert(
                         index,
-                        Expression::BinaryExpression(BinaryExpression::Subtract(
-                            boxed!(left),
-                            boxed!(right),
-                        )),
+                        Expression::Binary(BinaryExpression::Subtract(boxed!(left), boxed!(right))),
                     ),
                     // safety: we have already checked for the operator
                     _ => unreachable!(),
@@ -467,7 +452,7 @@ impl Parser {
 
         // Ensure the last expression is a binary expression
         match expressions.pop().unwrap() {
-            Expression::BinaryExpression(binary) => Ok(binary),
+            Expression::Binary(binary) => Ok(binary),
             _ => unreachable!(),
         }
     }
@@ -512,7 +497,7 @@ impl Parser {
             let current_token = token_from_option!(self.current_token);
             let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
 
-            if let Expression::BlockExpression(_) = expression {
+            if let Expression::Block(_) = expression {
                 return Err(ParseError::InvalidSyntax(
                     current_token,
                     String::from("Block expressions are not allowed in function invocations"),
@@ -568,7 +553,7 @@ impl Parser {
         if token_matches!(current_token, TokenType::Keyword(Keyword::Return)) {
             self.assign_next()?;
             let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
-            let return_expr = Expression::ReturnExpression(boxed!(expression));
+            let return_expr = Expression::Return(boxed!(expression));
             expressions.push(return_expr);
             self.assign_next()?;
         }
@@ -604,7 +589,7 @@ impl Parser {
             return Err(ParseError::UnexpectedToken(current_token.clone()));
         }
 
-        Ok(Expression::DeclarationExpression(
+        Ok(Expression::Declaration(
             identifier,
             boxed!(assignment_expression),
         ))

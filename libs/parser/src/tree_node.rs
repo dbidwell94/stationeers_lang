@@ -1,6 +1,5 @@
-use crate::tokenizer::token::Number;
-
 use super::sys_call::SysCall;
+use tokenizer::token::Number;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Literal {
@@ -92,11 +91,7 @@ impl std::fmt::Display for FunctionExpression {
             f,
             "(fn {}({}) {{ {} }})",
             self.name,
-            self.arguments
-                .iter()
-                .cloned()
-                .collect::<Vec<String>>()
-                .join(", "),
+            self.arguments.to_vec().join(", "),
             self.body
         )
     }
@@ -171,20 +166,20 @@ impl std::fmt::Display for DeviceDeclarationExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
-    AssignmentExpression(AssignmentExpression),
-    BinaryExpression(BinaryExpression),
-    BlockExpression(BlockExpression),
-    DeclarationExpression(String, Box<Expression>),
-    FunctionExpression(FunctionExpression),
-    InvocationExpression(InvocationExpression),
+    Assignment(AssignmentExpression),
+    Binary(BinaryExpression),
+    Block(BlockExpression),
+    Declaration(String, Box<Expression>),
+    Function(FunctionExpression),
+    Invocation(InvocationExpression),
     Literal(Literal),
-    LogicalExpression(LogicalExpression),
+    Logical(LogicalExpression),
     Negation(Box<Expression>),
-    PriorityExpression(Box<Expression>),
-    ReturnExpression(Box<Expression>),
+    Priority(Box<Expression>),
+    Return(Box<Expression>),
     Variable(String),
-    DeviceDeclarationExpression(DeviceDeclarationExpression),
-    SyscallExpression(SysCall),
+    DeviceDeclaration(DeviceDeclarationExpression),
+    Syscall(SysCall),
 }
 
 impl std::fmt::Display for Expression {
@@ -192,18 +187,18 @@ impl std::fmt::Display for Expression {
         match self {
             Expression::Literal(l) => write!(f, "{}", l),
             Expression::Negation(e) => write!(f, "(-{})", e),
-            Expression::BinaryExpression(e) => write!(f, "{}", e),
-            Expression::LogicalExpression(e) => write!(f, "{}", e),
-            Expression::AssignmentExpression(e) => write!(f, "{}", e),
-            Expression::DeclarationExpression(id, e) => write!(f, "(let {} = {})", id, e),
-            Expression::FunctionExpression(e) => write!(f, "{}", e),
-            Expression::BlockExpression(e) => write!(f, "{}", e),
-            Expression::InvocationExpression(e) => write!(f, "{}", e),
+            Expression::Binary(e) => write!(f, "{}", e),
+            Expression::Logical(e) => write!(f, "{}", e),
+            Expression::Assignment(e) => write!(f, "{}", e),
+            Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
+            Expression::Function(e) => write!(f, "{}", e),
+            Expression::Block(e) => write!(f, "{}", e),
+            Expression::Invocation(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),
-            Expression::PriorityExpression(e) => write!(f, "({})", e),
-            Expression::ReturnExpression(e) => write!(f, "(return {})", e),
-            Expression::DeviceDeclarationExpression(e) => write!(f, "{}", e),
-            Expression::SyscallExpression(e) => write!(f, "{}", e),
+            Expression::Priority(e) => write!(f, "({})", e),
+            Expression::Return(e) => write!(f, "(return {})", e),
+            Expression::DeviceDeclaration(e) => write!(f, "{}", e),
+            Expression::Syscall(e) => write!(f, "{}", e),
         }
     }
 }

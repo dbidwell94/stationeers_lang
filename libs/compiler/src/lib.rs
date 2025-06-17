@@ -1,6 +1,10 @@
-use crate::parser::sys_call::SysCall;
-use crate::parser::tree_node::*;
-use crate::parser::Parser as ASTParser;
+#[cfg(test)]
+mod test;
+
+use parser::Parser as ASTParser;
+use parser::sys_call::SysCall;
+use parser::tree_node::*;
+use quick_error::quick_error;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
@@ -8,7 +12,7 @@ use std::io::{BufWriter, Write};
 quick_error! {
     #[derive(Debug)]
     pub enum CompileError {
-        ParseError(err: crate::parser::ParseError) {
+        ParseError(err: parser::ParseError) {
             from()
             display("Parse error: {}", err)
         }
@@ -103,6 +107,19 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    /// Pop the given variable from the current stack. Errors if the variable is not found in the
+    /// current scope.
+    fn pop_current(&mut self, var_name: &str) -> Result<i32, CompileError> {
+        let last_scope = self
+            .variable_scope
+            .last_mut()
+            .ok_or(CompileError::ScopeError)?;
+
+        last_scope
+            .remove(var_name)
+            .ok_or(CompileError::VariableNotFound(var_name.to_string()))
+    }
+
     fn write_output(&mut self, output: impl Into<String>) -> Result<(), CompileError> {
         self.output.write_all(output.into().as_bytes())?;
         self.output.write_all(b"\n")?;
@@ -127,17 +144,14 @@ impl<'a> Compiler<'a> {
 
     fn expression(&mut self, expression: Expression) -> Result<(), CompileError> {
         match expression {
-            Expression::FunctionExpression(expr) => self.function_expression(expr)?,
-            Expression::BlockExpression(expr) => self.block_expression(expr)?,
-            Expression::InvocationExpression(expr) => self.invocation_expression(expr)?,
-            Expression::BinaryExpression(expr) => self.binary_expression(expr)?,
-            Expression::DeclarationExpression(var_name, expr) => {
+            Expression::Function(expr) => self.function_expression(expr)?,
+            Expression::Block(expr) => self.block_expression(expr)?,
+            Expression::Invocation(expr) => self.invocation_expression(expr)?,
+            Expression::Binary(expr) => self.binary_expression(expr)?,
+            Expression::Declaration(var_name, expr) => {
                 self.declaration_expression(&var_name, *expr)?
             }
-            Expression::DeviceDeclarationExpression(DeviceDeclarationExpression {
-                name,
-                device,
-            }) => {
+            Expression::DeviceDeclaration(DeviceDeclarationExpression { name, device }) => {
                 self.devices.insert(name, device);
             }
             _ => todo!("{:?}", expression),
@@ -156,11 +170,11 @@ impl<'a> Compiler<'a> {
                 self.push_stack(var_name)?;
                 self.write_output(format!("push {num}"))?;
             }
-            Expression::BinaryExpression(expr) => {
+            Expression::Binary(expr) => {
                 self.binary_expression(expr)?;
                 self.push_stack(var_name)?;
             }
-            Expression::SyscallExpression(expr) => {
+            Expression::Syscall(expr) => {
                 self.syscall_declaration_expression(expr)?;
                 self.push_stack(var_name)?;
             }
@@ -171,7 +185,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn syscall_declaration_expression(&mut self, expr: SysCall) -> Result<(), CompileError> {
-        use crate::parser::sys_call::System;
+        use parser::sys_call::System;
+        #[allow(clippy::collapsible_match)]
         match expr {
             SysCall::System(ref sys) => match sys {
                 System::LoadFromDevice(LiteralOrVariable::Variable(device), value) => {
@@ -212,12 +227,12 @@ impl<'a> Compiler<'a> {
                     compiler.write_output("push r15")?;
                     compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                 }
-                Expression::BinaryExpression(expr) => {
+                Expression::Binary(expr) => {
                     compiler.binary_expression(expr)?;
                     compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                 }
-                Expression::PriorityExpression(expr) => match *expr {
-                    Expression::BinaryExpression(expr) => {
+                Expression::Priority(expr) => match *expr {
+                    Expression::Binary(expr) => {
                         compiler.binary_expression(expr)?;
                         compiler.push_stack(&format!("{op}ExpressionLeft"))?;
                     }
@@ -238,12 +253,12 @@ impl<'a> Compiler<'a> {
                     compiler.write_output("push r15")?;
                     compiler.push_stack(&format!("{op}ExpressionRight"))?;
                 }
-                Expression::BinaryExpression(expr) => {
+                Expression::Binary(expr) => {
                     compiler.binary_expression(expr)?;
                     compiler.push_stack(&format!("{op}ExpressionRight"))?;
                 }
-                Expression::PriorityExpression(expr) => match *expr {
-                    Expression::BinaryExpression(expr) => {
+                Expression::Priority(expr) => match *expr {
+                    Expression::Binary(expr) => {
                         compiler.binary_expression(expr)?;
                         compiler.push_stack(&format!("{op}ExpressionRight"))?;
                     }
@@ -282,6 +297,7 @@ impl<'a> Compiler<'a> {
 
     fn invocation_expression(&mut self, expr: InvocationExpression) -> Result<(), CompileError> {
         let function_name = expr.name;
+        let args_count = expr.arguments.len();
 
         let function_line = *self
             .function_locations
@@ -304,11 +320,11 @@ impl<'a> Compiler<'a> {
                     to_write.push_str("get r15 db r15\n");
                     to_write.push_str("push r15\n");
                 }
-                Expression::BinaryExpression(expr) => {
+                Expression::Binary(expr) => {
                     self.binary_expression(expr)?;
                     to_write.push_str("push r0\n");
                 }
-                _ => todo!("something is up with the arguments"),
+                _ => todo!("something is up with the arguments: {arg:?}"),
             }
             self.push_stack(&format!("{function_name}Invocation{iter_index}"))?;
         }
@@ -320,6 +336,11 @@ impl<'a> Compiler<'a> {
         self.current_line = return_addr - 1;
 
         self.write_output(format!("j {function_line}"))?;
+
+        self.pop_current(&format!("{function_name}ReturnAddress"))?;
+        for i in 0..args_count {
+            self.pop_current(&format!("{function_name}Invocation{i}"))?;
+        }
 
         Ok(())
     }
@@ -353,11 +374,9 @@ impl<'a> Compiler<'a> {
 
         // hoist functions to the top of the block
         expression.0.sort_by(|a, b| {
-            if matches!(a, Expression::FunctionExpression(_))
-                && matches!(b, Expression::FunctionExpression(_))
-            {
+            if matches!(a, Expression::Function(_)) && matches!(b, Expression::Function(_)) {
                 Ordering::Equal
-            } else if matches!(a, Expression::FunctionExpression(_)) {
+            } else if matches!(a, Expression::Function(_)) {
                 Ordering::Less
             } else {
                 Ordering::Greater
@@ -366,7 +385,7 @@ impl<'a> Compiler<'a> {
 
         for expr in expression.0 {
             // if we haven't declared main yet and we have already declared all the function expressions, declare main
-            if !self.declared_main && !matches!(expr, Expression::FunctionExpression(_)) {
+            if !self.declared_main && !matches!(expr, Expression::Function(_)) {
                 self.write_output("main:")?;
                 self.declared_main = true;
             }

@@ -151,11 +151,29 @@ impl std::fmt::Display for SysCall {
 
 impl SysCall {
     pub fn is_syscall(identifier: &str) -> bool {
-        match identifier {
-            "yield" | "sleep" | "HASH" | "loadFromDevice" | "setOnDevice" => true,
-            "acos" | "asin" | "atan" | "atan2" | "abs" | "ceil" | "cos" | "floor" | "log"
-            | "max" | "min" | "rand" | "sin" | "sqrt" | "tan" | "trunc" => true,
-            _ => false,
-        }
+        matches!(
+            identifier,
+            "yield"
+                | "sleep"
+                | "HASH"
+                | "loadFromDevice"
+                | "setOnDevice"
+                | "acos"
+                | "asin"
+                | "atan"
+                | "atan2"
+                | "abs"
+                | "ceil"
+                | "cos"
+                | "floor"
+                | "log"
+                | "max"
+                | "min"
+                | "rand"
+                | "sin"
+                | "sqrt"
+                | "tan"
+                | "trunc"
+        )
     }
 }

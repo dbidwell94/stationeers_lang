@@ -106,7 +106,7 @@ impl std::fmt::Display for Number {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Number::Integer(i) => write!(f, "{}", i),
-            Number::Decimal(d) => write!(f, "{}", d.to_string()),
+            Number::Decimal(d) => write!(f, "{}", d),
         }
     }
 }
@@ -172,29 +172,26 @@ pub enum Symbol {
 
 impl Symbol {
     pub fn is_operator(&self) -> bool {
-        match self {
-            Symbol::Plus | Symbol::Minus | Symbol::Asterisk | Symbol::Slash | Symbol::Exp => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Symbol::Plus | Symbol::Minus | Symbol::Asterisk | Symbol::Slash | Symbol::Exp
+        )
     }
 
     pub fn is_comparison(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Symbol::LessThan
-            | Symbol::GreaterThan
-            | Symbol::Equal
-            | Symbol::NotEqual
-            | Symbol::LessThanOrEqual
-            | Symbol::GreaterThanOrEqual => true,
-            _ => false,
-        }
+                | Symbol::GreaterThan
+                | Symbol::Equal
+                | Symbol::NotEqual
+                | Symbol::LessThanOrEqual
+                | Symbol::GreaterThanOrEqual,
+        )
     }
 
     pub fn is_logical(&self) -> bool {
-        match self {
-            Symbol::LogicalAnd | Symbol::LogicalOr => true,
-            _ => false,
-        }
+        matches!(self, Symbol::LogicalAnd | Symbol::LogicalOr)
     }
 }
 

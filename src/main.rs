@@ -1,26 +1,15 @@
 #[macro_use]
 extern crate quick_error;
 
-mod compiler;
-mod parser;
-mod tokenizer;
-
 use clap::Parser;
 use compiler::Compiler;
 use parser::Parser as ASTParser;
 use std::{
     fs::File,
     io::{BufWriter, Read, Write},
+    path::PathBuf,
 };
 use tokenizer::{Tokenizer, TokenizerError};
-
-#[macro_export]
-/// A macro to create a boxed value.
-macro_rules! boxed {
-    ($e:expr) => {
-        Box::new($e)
-    };
-}
 
 quick_error! {
     #[derive(Debug)]
@@ -49,10 +38,10 @@ quick_error! {
 struct Args {
     /// What file should be compiled. If not set, input will be read from stdin.
     #[arg(short, long)]
-    input_file: Option<String>,
+    input_file: Option<PathBuf>,
     /// The output file for the compiled program. If not set, output will go to stdout.
     #[arg(short, long)]
-    output_file: Option<String>,
+    output_file: Option<PathBuf>,
 }
 
 fn run_logic() -> Result<(), StationlangError> {
@@ -78,8 +67,8 @@ fn run_logic() -> Result<(), StationlangError> {
     let parser = ASTParser::new(tokenizer);
 
     let mut writer: BufWriter<Box<dyn Write>> = match args.output_file {
-        Some(output_file) => BufWriter::new(boxed!(File::create(output_file)?)),
-        None => BufWriter::new(boxed!(std::io::stdout())),
+        Some(output_file) => BufWriter::new(Box::new(File::create(output_file)?)),
+        None => BufWriter::new(Box::new(std::io::stdout())),
     };
 
     let compiler = Compiler::new(parser, &mut writer);
