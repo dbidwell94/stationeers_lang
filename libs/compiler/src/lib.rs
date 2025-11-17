@@ -41,19 +41,19 @@ quick_error! {
     }
 }
 
-pub struct Compiler<'a> {
+pub struct Compiler<'a, W: std::io::Write> {
     parser: ASTParser,
     /// Max stack size for the program is by default 512.
     variable_scope: Vec<HashMap<String, i32>>,
     function_locations: HashMap<String, usize>,
     devices: HashMap<String, String>,
-    output: &'a mut BufWriter<Box<dyn Write>>,
+    output: &'a mut BufWriter<W>,
     current_line: usize,
     declared_main: bool,
 }
 
-impl<'a> Compiler<'a> {
-    pub fn new(parser: ASTParser, writer: &'a mut BufWriter<Box<dyn Write>>) -> Self {
+impl<'a, W: std::io::Write> Compiler<'a, W> {
+    pub fn new(parser: ASTParser, writer: &'a mut BufWriter<W>) -> Self {
         Self {
             parser,
             variable_scope: Vec::new(),
@@ -209,8 +209,8 @@ impl<'a> Compiler<'a> {
     fn binary_expression(&mut self, expr: BinaryExpression) -> Result<(), CompileError> {
         self.variable_scope.push(HashMap::new());
 
-        fn perform_operation(
-            compiler: &mut Compiler,
+        fn perform_operation<W: std::io::Write>(
+            compiler: &mut Compiler<W>,
             op: &str,
             left: Expression,
             right: Expression,
