@@ -361,25 +361,22 @@ impl Parser {
         // Every time we find a valid operator, we pop 2 off the expressions and add one back.
         // This means that we need to keep track of the current iteration to ensure we are
         // removing the correct expressions from the vector
-        let mut current_iteration = 0;
 
         // Loop through operators, and build the binary expressions for exponential operators only
-        for (i, operator) in operators.iter().enumerate() {
+        for (i, operator) in operators.iter().enumerate().rev() {
             if operator == &Symbol::Exp {
-                let index = i - current_iteration;
-                let left = expressions.remove(index);
-                let right = expressions.remove(index);
+                let right = expressions.remove(i + 1);
+                let left = expressions.remove(i);
                 expressions.insert(
-                    index,
+                    i,
                     Expression::Binary(BinaryExpression::Exponent(boxed!(left), boxed!(right))),
                 );
-                current_iteration += 1;
             }
         }
 
         // remove all the exponential operators from the operators vector
         operators.retain(|symbol| symbol != &Symbol::Exp);
-        current_iteration = 0;
+        let mut current_iteration = 0;
 
         // Loop through operators, and build the binary expressions for multiplication and division operators
         for (i, operator) in operators.iter().enumerate() {
@@ -981,6 +978,9 @@ mod tests {
     fn test_binary_expression() -> Result<()> {
         let expr = parser!("4 ** 2 + 5 ** 2").parse()?.unwrap();
         assert_eq!("((4 ** 2) + (5 ** 2))", expr.to_string());
+
+        let expr = parser!("2 ** 3 ** 4").parse()?.unwrap();
+        assert_eq!("(2 ** (3 ** 4))", expr.to_string());
 
         let expr = parser!("45 * 2 - 15 / 5 + 5 ** 2").parse()?.unwrap();
         assert_eq!("(((45 * 2) - (15 / 5)) + (5 ** 2))", expr.to_string());

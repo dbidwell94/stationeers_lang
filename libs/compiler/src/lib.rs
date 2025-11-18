@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod test;
+mod v2;
+mod variable_manager;
 
 use parser::Parser as ASTParser;
 use parser::sys_call::SysCall;

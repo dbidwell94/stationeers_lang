@@ -6,3 +6,8 @@ edition = "2024"
 [dependencies]
 quick-error = { workspace = true }
 parser = { path = "../parser" }
+tokenizer = { path = "../tokenizer" }
+
+[dev-dependencies]
+anyhow = { version = "1.0" }
+indoc = { version = "2.0" }
