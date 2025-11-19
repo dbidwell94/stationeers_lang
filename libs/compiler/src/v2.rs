@@ -85,9 +85,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     ) -> Result<(), Error> {
         match expr {
             Expression::Function(expr_func) => self.expression_function(expr_func, scope)?,
-            Expression::Block(expr_block) => {
-                self.expression_block(expr_block, &mut VariableScope::scoped(&scope))?
-            }
+            Expression::Block(expr_block) => self.expression_block(expr_block, scope)?,
             _ => todo!(),
         };
 
@@ -111,7 +109,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         });
 
         for expr in expr.0 {
-            if !self.declared_main && !matches!(expr, Expression::Function(_)) {
+            if !self.declared_main
+                && !matches!(expr, Expression::Function(_))
+                && !scope.has_parent()
+            {
                 self.write_output("main:")?;
                 self.declared_main = true;
             }
@@ -192,11 +193,21 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         }
 
         self.write_output("push ra")?;
+        block_scope.add_variable(format!("{name}_ra"), LocationRequest::Stack)?;
+
         self.expression_block(body, &mut block_scope)?;
-        self.write_output("pop ra")?;
+        // Get the saved return address and save it back into `ra`
+        let VariableLocation::Stack(ra_stack_offset) =
+            block_scope.get_location_of(format!("{name}_ra"))?
+        else {
+            panic!("This shouldn't happen");
+        };
+
+        self.write_output(format!("sub r0 sp {ra_stack_offset}"))?;
+        self.write_output("get ra db r0")?;
 
         if block_scope.stack_offset() > 0 {
-            self.write_output(format!("sub sp {}", block_scope.stack_offset()))?;
+            self.write_output(format!("sub sp sp {}", block_scope.stack_offset()))?;
         }
 
         self.write_output("j ra")?;

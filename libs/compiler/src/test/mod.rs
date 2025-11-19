@@ -59,9 +59,11 @@ fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
             pop r14 #arg3
             pop r15 #arg2
             push ra
-            pop ra
-            sub sp 1
+            sub r0 sp 1
+            get ra db r0
+            sub sp sp 2
             j ra
+            main:
         "}
     );
 
@@ -84,8 +86,11 @@ fn test_function_declaration_with_register_params() -> anyhow::Result<()> {
             pop r8 #arg2
             pop r9 #arg1
             push ra
-            pop ra
+            sub r0 sp 1
+            get ra db r0
+            sub sp sp 1
             j ra
+            main:
         "}
     );
 

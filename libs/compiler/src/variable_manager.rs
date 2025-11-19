@@ -1,10 +1,11 @@
-// r0  - r7  : temporary variables
-// r8 - r15 : persistant variables
+// r0        : Return Value / Temp Stack Pointer
+// r1 - r7   : Temporary Variables
+// r8 - r15  : Persistant Variables
 
 use quick_error::quick_error;
 use std::collections::{HashMap, VecDeque};
 
-const TEMP: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+const TEMP: [u8; 7] = [1, 2, 3, 4, 5, 6, 7];
 const PERSIST: [u8; 8] = [8, 9, 10, 11, 12, 13, 14, 15];
 
 quick_error! {
@@ -137,10 +138,23 @@ impl<'a> VariableScope<'a> {
         var_name: impl Into<String>,
     ) -> Result<VariableLocation, Error> {
         let var_name = var_name.into();
-        self.var_lookup_table
+        let var = self
+            .var_lookup_table
             .get(var_name.as_str())
             .map(|v| v.clone())
-            .ok_or(Error::UnknownVariable(var_name))
+            .ok_or(Error::UnknownVariable(var_name))?;
+
+        if let VariableLocation::Stack(inserted_at_offset) = var {
+            Ok(VariableLocation::Stack(
+                self.stack_offset - inserted_at_offset,
+            ))
+        } else {
+            Ok(var)
+        }
+    }
+
+    pub fn has_parent(&self) -> bool {
+        self.parent.is_some()
     }
 
     pub fn free_temp(&mut self, var_name: impl Into<String>) -> Result<(), Error> {
