@@ -1,7 +1,7 @@
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
 use parser::{
     Parser as ASTParser,
-    tree_node::{BlockExpression, Expression, FunctionExpression},
+    tree_node::{BlockExpression, DeviceDeclarationExpression, Expression, FunctionExpression},
 };
 use quick_error::quick_error;
 use std::{
@@ -24,6 +24,12 @@ quick_error! {
         DuplicateFunction(func_name: String) {
             display("{func_name} has already been defined")
         }
+        InvalidDevice(device: String) {
+            display("{device} is not valid")
+        }
+        Unknown(reason: String) {
+            display("{reason}")
+        }
     }
 }
 
@@ -34,8 +40,6 @@ pub struct CompilerConfig {
 
 pub struct Compiler<'a, W: std::io::Write> {
     parser: ASTParser,
-    /// Max stack size for the program is by default 512.
-    variable_scope: Vec<HashMap<String, i32>>,
     function_locations: HashMap<String, usize>,
     devices: HashMap<String, String>,
     output: &'a mut BufWriter<W>,
@@ -52,7 +56,6 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     ) -> Self {
         Self {
             parser,
-            variable_scope: Vec::new(),
             function_locations: HashMap::new(),
             devices: HashMap::new(),
             output: writer,
@@ -86,10 +89,33 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         match expr {
             Expression::Function(expr_func) => self.expression_function(expr_func, scope)?,
             Expression::Block(expr_block) => self.expression_block(expr_block, scope)?,
+            Expression::DeviceDeclaration(expr_dev) => self.expression_device(expr_dev),
+            Expression::Declaration(var_name, expr) => {
+                self.expression_declaration(var_name, *expr, scope)?
+            }
             _ => todo!(),
         };
 
         Ok(())
+    }
+
+    fn expression_declaration<'v>(
+        &mut self,
+        var_name: String,
+        expr: Expression,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<(), Error> {
+        scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
+
+        match expr {
+            _ => unimplemented!(),
+        }
+
+        Ok(())
+    }
+
+    fn expression_device<'v>(&mut self, expr: DeviceDeclarationExpression) {
+        self.devices.insert(expr.name, expr.device);
     }
 
     fn expression_block<'v>(
@@ -173,13 +199,16 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     ))?;
                 }
                 VariableLocation::Stack(_) => {
-                    unimplemented!("Attempted to save to stack without tracking in scope")
+                    return Err(Error::Unknown(
+                        "Attempted to save to stack without tracking in scope".into(),
+                    ));
                 }
 
                 _ => {
-                    unimplemented!(
+                    return Err(Error::Unknown(
                         "Attempted to return a Temporary scoped variable from a Persistant request"
-                    )
+                            .into(),
+                    ));
                 }
             }
             saved_variables += 1;
@@ -200,7 +229,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         let VariableLocation::Stack(ra_stack_offset) =
             block_scope.get_location_of(format!("{name}_ra"))?
         else {
-            panic!("This shouldn't happen");
+            return Err(Error::Unknown(
+                "Stored return address not in stack as expected".into(),
+            ));
         };
 
         self.write_output(format!("sub r0 sp {ra_stack_offset}"))?;

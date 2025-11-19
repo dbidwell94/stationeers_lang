@@ -63,7 +63,6 @@ fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
             get ra db r0
             sub sp sp 2
             j ra
-            main:
         "}
     );
 
@@ -90,7 +89,6 @@ fn test_function_declaration_with_register_params() -> anyhow::Result<()> {
             get ra db r0
             sub sp sp 1
             j ra
-            main:
         "}
     );
 
