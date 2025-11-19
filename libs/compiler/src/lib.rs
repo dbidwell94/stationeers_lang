@@ -11,10 +11,12 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
 
+pub use v2::{Compiler, Error};
+
 quick_error! {
     #[derive(Debug)]
     pub enum CompileError {
-        ParseError(err: parser::ParseError) {
+        ParseError(err: parser::Error) {
             from()
             display("Parse error: {}", err)
         }
@@ -43,7 +45,7 @@ quick_error! {
     }
 }
 
-pub struct Compiler<'a, W: std::io::Write> {
+pub struct CompilerV1<'a, W: std::io::Write> {
     parser: ASTParser,
     /// Max stack size for the program is by default 512.
     variable_scope: Vec<HashMap<String, i32>>,
@@ -54,7 +56,7 @@ pub struct Compiler<'a, W: std::io::Write> {
     declared_main: bool,
 }
 
-impl<'a, W: std::io::Write> Compiler<'a, W> {
+impl<'a, W: std::io::Write> CompilerV1<'a, W> {
     pub fn new(parser: ASTParser, writer: &'a mut BufWriter<W>) -> Self {
         Self {
             parser,
@@ -212,7 +214,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         self.variable_scope.push(HashMap::new());
 
         fn perform_operation<W: std::io::Write>(
-            compiler: &mut Compiler<W>,
+            compiler: &mut CompilerV1<W>,
             op: &str,
             left: Expression,
             right: Expression,

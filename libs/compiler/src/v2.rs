@@ -1,3 +1,4 @@
+use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
 use parser::{
     Parser as ASTParser,
     tree_node::{BlockExpression, Expression, FunctionExpression},
@@ -8,15 +9,16 @@ use std::{
     io::{BufWriter, Write},
 };
 
-use crate::variable_manager::VariableScope;
-
 quick_error! {
     #[derive(Debug)]
-    pub enum CompilerError {
-        ParseError(error: parser::ParseError) {
+    pub enum Error {
+        ParseError(error: parser::Error) {
             from()
         }
         IoError(error: std::io::Error) {
+            from()
+        }
+        ScopeError(error: variable_manager::Error) {
             from()
         }
         DuplicateFunction(func_name: String) {
@@ -60,7 +62,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         }
     }
 
-    pub fn compile(mut self) -> Result<(), CompilerError> {
+    pub fn compile(mut self) -> Result<(), Error> {
         let expr = self.parser.parse_all()?;
 
         let Some(expr) = expr else { return Ok(()) };
@@ -69,7 +71,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         self.expression(expr, &mut VariableScope::default())
     }
 
-    fn write_output(&mut self, output: impl Into<String>) -> Result<(), CompilerError> {
+    fn write_output(&mut self, output: impl Into<String>) -> Result<(), Error> {
         self.output.write_all(output.into().as_bytes())?;
         self.output.write_all(b"\n")?;
         self.current_line += 1;
@@ -80,7 +82,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         &mut self,
         expr: Expression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<(), CompilerError> {
+    ) -> Result<(), Error> {
         match expr {
             Expression::Function(expr_func) => self.expression_function(expr_func, scope)?,
             Expression::Block(expr_block) => {
@@ -96,7 +98,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         &mut self,
         mut expr: BlockExpression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<(), CompilerError> {
+    ) -> Result<(), Error> {
         // First, sort the expressions to ensure functions are hoisted
         expr.0.sort_by(|a, b| {
             if matches!(b, Expression::Function(_)) && matches!(a, Expression::Function(_)) {
@@ -120,11 +122,13 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 
+    /// Compile a function declaration.
+    /// Calees are responsible for backing up any registers they wish to use.
     fn expression_function<'v>(
         &mut self,
         expr: FunctionExpression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<(), CompilerError> {
+    ) -> Result<(), Error> {
         let FunctionExpression {
             name,
             arguments,
@@ -132,38 +136,69 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         } = expr;
 
         if self.function_locations.contains_key(&name) {
-            return Err(CompilerError::DuplicateFunction(name));
+            return Err(Error::DuplicateFunction(name));
         }
 
         self.function_locations
             .insert(name.clone(), self.current_line);
 
+        // Declare the function as a line identifier
         self.write_output(format!("{}:", name))?;
-        self.write_output("push ra")?;
 
+        // Create a new block scope for the function body
         let mut block_scope = VariableScope::scoped(&scope);
 
-        for (index, var_name) in arguments.iter().enumerate() {
-            self.write_output(format!("push r{}", index + 4))?;
-            self.write_output(format!(
-                "move r{} r{} {}",
-                index + 4,
-                index,
-                if self.config.debug {
-                    format!("#{}", var_name)
-                } else {
-                    "".into()
+        let mut saved_variables = 0;
+
+        // do a reverse pass to pop variables from the stack and put them into registers
+        for var_name in arguments
+            .iter()
+            .rev()
+            .take(VariableScope::PERSIST_REGISTER_COUNT as usize)
+        {
+            let loc = block_scope.add_variable(var_name, LocationRequest::Persist)?;
+            // we don't need to imcrement the stack offset as it's already on the stack from the
+            // previous scope
+
+            match loc {
+                VariableLocation::Persistant(loc) => {
+                    self.write_output(format!(
+                        "pop r{loc} {}",
+                        if self.config.debug {
+                            format!("#{}", var_name)
+                        } else {
+                            "".into()
+                        }
+                    ))?;
                 }
-            ))?;
+                VariableLocation::Stack(_) => {
+                    unimplemented!("Attempted to save to stack without tracking in scope")
+                }
+
+                _ => {
+                    unimplemented!(
+                        "Attempted to return a Temporary scoped variable from a Persistant request"
+                    )
+                }
+            }
+            saved_variables += 1;
         }
 
+        // now do a forward pass in case we have spilled into the stack. We don't need to push
+        // anything as they already exist on the stack, but we DO need to let our block_scope be
+        // aware that the variables exist on the stack (left to right)
+        for var_name in arguments.iter().take(arguments.len() - saved_variables) {
+            block_scope.add_variable(var_name, LocationRequest::Stack)?;
+        }
+
+        self.write_output("push ra")?;
         self.expression_block(body, &mut block_scope)?;
+        self.write_output("pop ra")?;
 
-        for (indx, _) in arguments.iter().enumerate().rev() {
-            self.write_output(format!("pop r{}", indx + 4))?;
+        if block_scope.stack_offset() > 0 {
+            self.write_output(format!("sub sp {}", block_scope.stack_offset()))?;
         }
 
-        self.write_output("pop ra")?;
         self.write_output("j ra")?;
         Ok(())
     }

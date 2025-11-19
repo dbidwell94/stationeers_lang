@@ -5,7 +5,7 @@ use quick_error::quick_error;
 use std::io::SeekFrom;
 use sys_call::SysCall;
 use tokenizer::{
-    Tokenizer, TokenizerBuffer, TokenizerError,
+    self, Tokenizer, TokenizerBuffer,
     token::{Keyword, Symbol, Token, TokenType},
 };
 use tree_node::*;
@@ -20,8 +20,8 @@ macro_rules! boxed {
 
 quick_error! {
     #[derive(Debug)]
-    pub enum ParseError {
-        TokenizerError(err: TokenizerError) {
+    pub enum Error {
+        TokenizerError(err: tokenizer::Error) {
             from()
             display("Tokenizer Error: {}", err)
             source(err)
@@ -57,7 +57,7 @@ macro_rules! token_from_option {
     ($token:expr) => {
         match $token {
             Some(ref token) => token.clone(),
-            None => return Err(ParseError::UnexpectedEOF),
+            None => return Err(Error::UnexpectedEOF),
         }
     };
 }
@@ -66,14 +66,14 @@ macro_rules! extract_token_data {
     ($token:ident, $pattern:pat, $extraction:expr) => {
         match $token.token_type {
             $pattern => $extraction,
-            _ => return Err(ParseError::UnexpectedToken($token.clone())),
+            _ => return Err(Error::UnexpectedToken($token.clone())),
         }
     };
     ($token:expr, $pattern:pat, $extraction:expr) => {
         match $token.token_type {
             $pattern => $extraction,
             _ => {
-                return Err(ParseError::UnexpectedToken($token.clone()));
+                return Err(Error::UnexpectedToken($token.clone()));
             }
         }
     };
@@ -118,7 +118,7 @@ impl Parser {
 
     /// Parses all the input from the tokenizer buffer and returns the resulting expression
     /// Expressions are returned in a root block expression node
-    pub fn parse_all(&mut self) -> Result<Option<tree_node::Expression>, ParseError> {
+    pub fn parse_all(&mut self) -> Result<Option<tree_node::Expression>, Error> {
         let mut expressions = Vec::<Expression>::new();
 
         while let Some(expression) = self.parse()? {
@@ -129,7 +129,7 @@ impl Parser {
     }
 
     /// Parses the input from the tokenizer buffer and returns the resulting expression
-    pub fn parse(&mut self) -> Result<Option<tree_node::Expression>, ParseError> {
+    pub fn parse(&mut self) -> Result<Option<tree_node::Expression>, Error> {
         self.assign_next()?;
         let expr = self.expression()?;
 
@@ -141,18 +141,18 @@ impl Parser {
     }
 
     /// Assigns the next token in the tokenizer buffer to the current token
-    fn assign_next(&mut self) -> Result<(), ParseError> {
+    fn assign_next(&mut self) -> Result<(), Error> {
         self.current_token = self.tokenizer.next_token()?;
         Ok(())
     }
 
     /// Calls `assign_next` and returns the next token in the tokenizer buffer
-    fn get_next(&mut self) -> Result<Option<&Token>, ParseError> {
+    fn get_next(&mut self) -> Result<Option<&Token>, Error> {
         self.assign_next()?;
         Ok(self.current_token.as_ref())
     }
 
-    fn expression(&mut self) -> Result<Option<tree_node::Expression>, ParseError> {
+    fn expression(&mut self) -> Result<Option<tree_node::Expression>, Error> {
         macro_rules! matches_keyword {
             ($keyword:expr, $($pattern:pat),+) => {
                 matches!($keyword, $($pattern)|+)
@@ -172,7 +172,7 @@ impl Parser {
             TokenType::Keyword(e)
                 if matches_keyword!(e, Keyword::Enum, Keyword::If, Keyword::Else) =>
             {
-                return Err(ParseError::UnsupportedKeyword(current_token.clone()));
+                return Err(Error::UnsupportedKeyword(current_token.clone()));
             }
 
             // match declarations with a `let` keyword
@@ -215,7 +215,7 @@ impl Parser {
             TokenType::Symbol(Symbol::LParen) => Expression::Priority(self.priority()?),
 
             _ => {
-                return Err(ParseError::UnexpectedToken(current_token.clone()));
+                return Err(Error::UnexpectedToken(current_token.clone()));
             }
         });
 
@@ -237,7 +237,7 @@ impl Parser {
         Ok(Some(expr))
     }
 
-    fn get_binary_child_node(&mut self) -> Result<tree_node::Expression, ParseError> {
+    fn get_binary_child_node(&mut self) -> Result<tree_node::Expression, Error> {
         let current_token = token_from_option!(self.current_token);
 
         match current_token.token_type {
@@ -257,16 +257,16 @@ impl Parser {
             {
                 self.invocation().map(Expression::Invocation)
             }
-            _ => Err(ParseError::UnexpectedToken(current_token.clone())),
+            _ => Err(Error::UnexpectedToken(current_token.clone())),
         }
     }
 
-    fn device(&mut self) -> Result<DeviceDeclarationExpression, ParseError> {
+    fn device(&mut self) -> Result<DeviceDeclarationExpression, Error> {
         // sanity check, make sure current token is a `device` keyword
 
         let current_token = token_from_option!(self.current_token);
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Device)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         let identifier = extract_token_data!(
@@ -277,7 +277,7 @@ impl Parser {
 
         let current_token = token_from_option!(self.get_next()?).clone();
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(ParseError::UnexpectedToken(current_token));
+            return Err(Error::UnexpectedToken(current_token));
         }
 
         let device = extract_token_data!(
@@ -292,7 +292,7 @@ impl Parser {
         })
     }
 
-    fn assignment(&mut self) -> Result<AssignmentExpression, ParseError> {
+    fn assignment(&mut self) -> Result<AssignmentExpression, Error> {
         let identifier = extract_token_data!(
             token_from_option!(self.current_token),
             TokenType::Identifier(ref id),
@@ -301,11 +301,11 @@ impl Parser {
 
         let current_token = token_from_option!(self.get_next()?).clone();
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(ParseError::UnexpectedToken(current_token));
+            return Err(Error::UnexpectedToken(current_token));
         }
         self.assign_next()?;
 
-        let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+        let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
         Ok(AssignmentExpression {
             identifier,
@@ -314,7 +314,7 @@ impl Parser {
     }
 
     /// Handles mathmatical expressions in the explicit order of PEMDAS
-    fn binary(&mut self, previous: Expression) -> Result<BinaryExpression, ParseError> {
+    fn binary(&mut self, previous: Expression) -> Result<BinaryExpression, Error> {
         // We cannot use recursion here, as we need to handle the precedence of the operators
         // We need to use a loop to parse the binary expressions.
 
@@ -330,7 +330,7 @@ impl Parser {
             | Expression::Negation(_) // -1 + 2
              => {}
             _ => {
-                return Err(ParseError::InvalidSyntax(current_token.clone(), String::from("Invalid expression for binary operation")))
+                return Err(Error::InvalidSyntax(current_token.clone(), String::from("Invalid expression for binary operation")))
             }
         }
 
@@ -352,7 +352,7 @@ impl Parser {
 
         // validate the vectors and make sure operators.len() == expressions.len() - 1
         if operators.len() != expressions.len() - 1 {
-            return Err(ParseError::InvalidSyntax(
+            return Err(Error::InvalidSyntax(
                 current_token.clone(),
                 String::from("Invalid number of operators"),
             ));
@@ -433,7 +433,7 @@ impl Parser {
 
         // Ensure there is only one expression left in the expressions vector, and no operators left
         if expressions.len() != 1 || !operators.is_empty() {
-            return Err(ParseError::InvalidSyntax(
+            return Err(Error::InvalidSyntax(
                 current_token.clone(),
                 String::from("Invalid number of operators"),
             ));
@@ -454,24 +454,24 @@ impl Parser {
         }
     }
 
-    fn priority(&mut self) -> Result<Box<Expression>, ParseError> {
+    fn priority(&mut self) -> Result<Box<Expression>, Error> {
         let current_token = token_from_option!(self.current_token);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         self.assign_next()?;
-        let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+        let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::RParen)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         Ok(boxed!(expression))
     }
 
-    fn invocation(&mut self) -> Result<InvocationExpression, ParseError> {
+    fn invocation(&mut self) -> Result<InvocationExpression, Error> {
         let identifier = extract_token_data!(
             token_from_option!(self.current_token),
             TokenType::Identifier(ref id),
@@ -481,7 +481,7 @@ impl Parser {
         // Ensure the next token is a left parenthesis
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         let mut arguments = Vec::<Expression>::new();
@@ -492,10 +492,10 @@ impl Parser {
             TokenType::Symbol(Symbol::RParen)
         ) {
             let current_token = token_from_option!(self.current_token);
-            let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+            let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
             if let Expression::Block(_) = expression {
-                return Err(ParseError::InvalidSyntax(
+                return Err(Error::InvalidSyntax(
                     current_token,
                     String::from("Block expressions are not allowed in function invocations"),
                 ));
@@ -507,7 +507,7 @@ impl Parser {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                return Err(ParseError::UnexpectedToken(
+                return Err(Error::UnexpectedToken(
                     token_from_option!(self.get_next()?).clone(),
                 ));
             }
@@ -527,20 +527,20 @@ impl Parser {
         })
     }
 
-    fn block(&mut self) -> Result<BlockExpression, ParseError> {
+    fn block(&mut self) -> Result<BlockExpression, Error> {
         let mut expressions = Vec::<Expression>::new();
         let current_token = token_from_option!(self.current_token);
 
         // sanity check: make sure the current token is a left brace
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         while !self_matches_peek!(
             self,
             TokenType::Symbol(Symbol::RBrace) | TokenType::Keyword(Keyword::Return)
         ) {
-            let expression = self.parse()?.ok_or(ParseError::UnexpectedEOF)?;
+            let expression = self.parse()?.ok_or(Error::UnexpectedEOF)?;
             expressions.push(expression);
         }
 
@@ -549,7 +549,7 @@ impl Parser {
 
         if token_matches!(current_token, TokenType::Keyword(Keyword::Return)) {
             self.assign_next()?;
-            let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+            let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
             let return_expr = Expression::Return(boxed!(expression));
             expressions.push(return_expr);
             self.assign_next()?;
@@ -560,10 +560,10 @@ impl Parser {
         Ok(BlockExpression(expressions))
     }
 
-    fn declaration(&mut self) -> Result<Expression, ParseError> {
+    fn declaration(&mut self) -> Result<Expression, Error> {
         let current_token = token_from_option!(self.current_token);
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Let)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
         let identifier = extract_token_data!(
             token_from_option!(self.get_next()?),
@@ -574,16 +574,16 @@ impl Parser {
         let current_token = token_from_option!(self.get_next()?).clone();
 
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         self.assign_next()?;
-        let assignment_expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+        let assignment_expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
         // make sure the next token is a semi-colon
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Semicolon)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         Ok(Expression::Declaration(
@@ -592,22 +592,22 @@ impl Parser {
         ))
     }
 
-    fn literal(&mut self) -> Result<Literal, ParseError> {
+    fn literal(&mut self) -> Result<Literal, Error> {
         let current_token = token_from_option!(self.current_token);
         let literal = match current_token.token_type {
             TokenType::Number(num) => Literal::Number(num),
             TokenType::String(string) => Literal::String(string),
-            _ => return Err(ParseError::UnexpectedToken(current_token.clone())),
+            _ => return Err(Error::UnexpectedToken(current_token.clone())),
         };
 
         Ok(literal)
     }
 
-    fn function(&mut self) -> Result<FunctionExpression, ParseError> {
+    fn function(&mut self) -> Result<FunctionExpression, Error> {
         let current_token = token_from_option!(self.current_token);
         // Sanify check that the current token is a `fn` keyword
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Fn)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         let fn_ident = extract_token_data!(
@@ -619,7 +619,7 @@ impl Parser {
         // make sure next token is a left parenthesis
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         let mut arguments = Vec::<String>::new();
@@ -635,7 +635,7 @@ impl Parser {
                 extract_token_data!(current_token, TokenType::Identifier(ref id), id.clone());
 
             if arguments.contains(&argument) {
-                return Err(ParseError::DuplicateIdentifier(current_token.clone()));
+                return Err(Error::DuplicateIdentifier(current_token.clone()));
             }
 
             arguments.push(argument);
@@ -644,7 +644,7 @@ impl Parser {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                return Err(ParseError::UnexpectedToken(
+                return Err(Error::UnexpectedToken(
                     token_from_option!(self.get_next()?).clone(),
                 ));
             }
@@ -661,7 +661,7 @@ impl Parser {
         // make sure the next token is a left brace
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         };
 
         Ok(FunctionExpression {
@@ -671,15 +671,15 @@ impl Parser {
         })
     }
 
-    fn syscall(&mut self) -> Result<SysCall, ParseError> {
+    fn syscall(&mut self) -> Result<SysCall, Error> {
         /// Checks the length of the arguments and returns an error if the length is not equal to the expected length
         fn check_length(
             parser: &Parser,
             arguments: &[Expression],
             length: usize,
-        ) -> Result<(), ParseError> {
+        ) -> Result<(), Error> {
             if arguments.len() != length {
-                return Err(ParseError::InvalidSyntax(
+                return Err(Error::InvalidSyntax(
                     token_from_option!(parser.current_token).clone(),
                     format!("Expected {} arguments", length),
                 ));
@@ -695,7 +695,7 @@ impl Parser {
                     }
                     Some(Expression::Variable(ident)) => LiteralOrVariable::Variable(ident.clone()),
                     _ => {
-                        return Err(ParseError::UnexpectedToken(
+                        return Err(Error::UnexpectedToken(
                             token_from_option!(self.current_token).clone(),
                         ))
                     }
@@ -709,7 +709,7 @@ impl Parser {
                 match $arg {
                     LiteralOrVariable::$matcher(i) => i,
                     _ => {
-                        return Err(ParseError::InvalidSyntax(
+                        return Err(Error::InvalidSyntax(
                             token_from_option!(self.current_token).clone(),
                             String::from("Expected a variable"),
                         ))
@@ -737,7 +737,7 @@ impl Parser {
                 let device = literal_or_variable!(args.next());
 
                 let Some(Expression::Literal(Literal::String(variable))) = args.next() else {
-                    return Err(ParseError::UnexpectedToken(
+                    return Err(Error::UnexpectedToken(
                         token_from_option!(self.current_token).clone(),
                     ));
                 };
@@ -756,7 +756,7 @@ impl Parser {
                 let Literal::String(logic_type) =
                     get_arg!(Literal, literal_or_variable!(args.next()))
                 else {
-                    return Err(ParseError::UnexpectedToken(
+                    return Err(Error::UnexpectedToken(
                         token_from_option!(self.current_token).clone(),
                     ));
                 };

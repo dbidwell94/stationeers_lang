@@ -12,7 +12,7 @@ use token::{Keyword, Number, Symbol, Temperature, Token, TokenType};
 
 quick_error! {
     #[derive(Debug)]
-    pub enum TokenizerError {
+    pub enum Error {
         IOError(err: std::io::Error) {
             from()
             display("IO Error: {}", err)
@@ -48,7 +48,7 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-    pub fn from_path(input_file: impl Into<PathBuf>) -> Result<Self, TokenizerError> {
+    pub fn from_path(input_file: impl Into<PathBuf>) -> Result<Self, Error> {
         let file = std::fs::File::open(input_file.into())?;
         let reader = BufReader::new(Box::new(file) as Box<dyn Tokenize>);
 
@@ -83,7 +83,7 @@ impl Tokenizer {
     ///
     /// # Important
     /// This function will increment the line and column counters
-    fn next_char(&mut self) -> Result<Option<char>, TokenizerError> {
+    fn next_char(&mut self) -> Result<Option<char>, Error> {
         let bytes_read = self.reader.read(&mut self.char_buffer)?;
 
         if bytes_read == 0 {
@@ -106,7 +106,7 @@ impl Tokenizer {
     ///
     /// # Important
     /// This does not increment the line or column counters
-    fn peek_next_char(&mut self) -> Result<Option<char>, TokenizerError> {
+    fn peek_next_char(&mut self) -> Result<Option<char>, Error> {
         let current_pos = self.reader.stream_position()?;
 
         let to_return = if self.reader.read(&mut self.char_buffer)? == 0 {
@@ -126,7 +126,7 @@ impl Tokenizer {
     ///
     /// # Important
     /// This function will increment the line and column counters
-    fn skip_line(&mut self) -> Result<(), TokenizerError> {
+    fn skip_line(&mut self) -> Result<(), Error> {
         while let Some(next_char) = self.next_char()? {
             if next_char == '\n' {
                 break;
@@ -137,7 +137,7 @@ impl Tokenizer {
 
     /// Consumes the tokenizer and returns the next token in the stream
     /// If there are no more tokens in the stream, this function returns None
-    pub fn next_token(&mut self) -> Result<Option<Token>, TokenizerError> {
+    pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
         while let Some(next_char) = self.next_char()? {
             // skip whitespace
             if next_char.is_whitespace() {
@@ -165,11 +165,7 @@ impl Tokenizer {
                     return self.tokenize_keyword_or_identifier(next_char).map(Some);
                 }
                 _ => {
-                    return Err(TokenizerError::UnknownSymbolError(
-                        next_char,
-                        self.line,
-                        self.column,
-                    ));
+                    return Err(Error::UnknownSymbolError(next_char, self.line, self.column));
                 }
             }
         }
@@ -183,7 +179,7 @@ impl Tokenizer {
 
     /// Peeks the next token in the stream without consuming it
     /// If there are no more tokens in the stream, this function returns None
-    pub fn peek_next(&mut self) -> Result<Option<Token>, TokenizerError> {
+    pub fn peek_next(&mut self) -> Result<Option<Token>, Error> {
         let current_pos = self.reader.stream_position()?;
         let column = self.column;
         let line = self.line;
@@ -196,7 +192,7 @@ impl Tokenizer {
     }
 
     /// Tokenizes a symbol
-    fn tokenize_symbol(&mut self, first_symbol: char) -> Result<Token, TokenizerError> {
+    fn tokenize_symbol(&mut self, first_symbol: char) -> Result<Token, Error> {
         /// Helper macro to create a symbol token
         macro_rules! symbol {
             ($symbol:ident) => {
@@ -266,7 +262,7 @@ impl Tokenizer {
                 symbol!(LogicalOr)
             }
 
-            _ => Err(TokenizerError::UnknownSymbolError(
+            _ => Err(Error::UnknownSymbolError(
                 first_symbol,
                 self.line,
                 self.column,
@@ -275,7 +271,7 @@ impl Tokenizer {
     }
 
     /// Tokenizes a number literal. Also handles temperatures with a suffix of `c`, `f`, or `k`.
-    fn tokenize_number(&mut self, first_char: char) -> Result<Token, TokenizerError> {
+    fn tokenize_number(&mut self, first_char: char) -> Result<Token, Error> {
         let mut primary = String::with_capacity(16);
         let mut decimal: Option<String> = None;
         let mut reading_decimal = false;
@@ -319,16 +315,16 @@ impl Tokenizer {
             let decimal_scale = decimal.len() as u32;
             let number = format!("{}{}", primary, decimal)
                 .parse::<i128>()
-                .map_err(|e| TokenizerError::NumberParseError(e, self.line, self.column))?;
+                .map_err(|e| Error::NumberParseError(e, self.line, self.column))?;
             Number::Decimal(
                 Decimal::try_from_i128_with_scale(number, decimal_scale)
-                    .map_err(|e| TokenizerError::DecimalParseError(e, line, column))?,
+                    .map_err(|e| Error::DecimalParseError(e, line, column))?,
             )
         } else {
             Number::Integer(
                 primary
                     .parse()
-                    .map_err(|e| TokenizerError::NumberParseError(e, line, column))?,
+                    .map_err(|e| Error::NumberParseError(e, line, column))?,
             )
         };
 
@@ -350,7 +346,7 @@ impl Tokenizer {
     }
 
     /// Tokenizes a string literal
-    fn tokenize_string(&mut self, beginning_quote: char) -> Result<Token, TokenizerError> {
+    fn tokenize_string(&mut self, beginning_quote: char) -> Result<Token, Error> {
         let mut buffer = String::with_capacity(16);
 
         let column = self.column;
@@ -368,10 +364,7 @@ impl Tokenizer {
     }
 
     /// Tokenizes a keyword or an identifier. Also handles boolean literals
-    fn tokenize_keyword_or_identifier(
-        &mut self,
-        first_char: char,
-    ) -> Result<Token, TokenizerError> {
+    fn tokenize_keyword_or_identifier(&mut self, first_char: char) -> Result<Token, Error> {
         macro_rules! keyword {
             ($keyword:ident) => {{
                 return Ok(Token::new(
@@ -441,9 +434,7 @@ impl Tokenizer {
 
             looped_char = self.next_char()?;
         }
-        Err(TokenizerError::UnknownKeywordOrIdentifierError(
-            buffer, line, column,
-        ))
+        Err(Error::UnknownKeywordOrIdentifierError(buffer, line, column))
     }
 }
 
@@ -464,7 +455,7 @@ impl TokenizerBuffer {
 
     /// Reads the next token from the tokenizer, pushing the value to the back of the history
     /// and returning the token
-    pub fn next_token(&mut self) -> Result<Option<Token>, TokenizerError> {
+    pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
         if let Some(token) = self.buffer.pop_front() {
             self.history.push_back(token.clone());
             return Ok(Some(token));
@@ -478,7 +469,7 @@ impl TokenizerBuffer {
     }
 
     /// Peeks the next token in the stream without adding to the history stack
-    pub fn peek(&mut self) -> Result<Option<Token>, TokenizerError> {
+    pub fn peek(&mut self) -> Result<Option<Token>, Error> {
         if let Some(token) = self.buffer.front() {
             return Ok(Some(token.clone()));
         }
@@ -487,7 +478,7 @@ impl TokenizerBuffer {
         Ok(token)
     }
 
-    fn seek_from_current(&mut self, seek_to: i64) -> Result<(), TokenizerError> {
+    fn seek_from_current(&mut self, seek_to: i64) -> Result<(), Error> {
         use Ordering::*;
         // if seek_to > 0 then we need to check if the buffer has enough tokens to pop, otherwise we need to read from the tokenizer
         // if seek_to < 0 then we need to pop from the history and push to the front of the buffer. If not enough, then we throw (we reached the front of the history)
@@ -500,7 +491,7 @@ impl TokenizerBuffer {
                     if let Some(token) = self.tokenizer.next_token()? {
                         tokens.push(token);
                     } else {
-                        return Err(TokenizerError::IOError(std::io::Error::new(
+                        return Err(Error::IOError(std::io::Error::new(
                             std::io::ErrorKind::UnexpectedEof,
                             "Unexpected EOF",
                         )));
@@ -515,7 +506,7 @@ impl TokenizerBuffer {
                     if let Some(token) = self.history.pop_back() {
                         tokens.push(token);
                     } else {
-                        return Err(TokenizerError::IOError(std::io::Error::new(
+                        return Err(Error::IOError(std::io::Error::new(
                             std::io::ErrorKind::UnexpectedEof,
                             "Unexpected EOF",
                         )));
@@ -530,7 +521,7 @@ impl TokenizerBuffer {
     }
 
     /// Adds to or removes from the History stack, allowing the user to move back and forth in the stream
-    pub fn seek(&mut self, from: SeekFrom) -> Result<(), TokenizerError> {
+    pub fn seek(&mut self, from: SeekFrom) -> Result<(), Error> {
         match from {
             SeekFrom::Current(seek_to) => self.seek_from_current(seek_to)?,
             SeekFrom::End(_) => unimplemented!("SeekFrom::End will not be implemented"),
