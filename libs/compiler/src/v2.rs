@@ -1,13 +1,26 @@
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
 use parser::{
     Parser as ASTParser,
-    tree_node::{BlockExpression, DeviceDeclarationExpression, Expression, FunctionExpression},
+    tree_node::{
+        BlockExpression, DeviceDeclarationExpression, Expression, FunctionExpression,
+        InvocationExpression, Literal,
+    },
 };
 use quick_error::quick_error;
 use std::{
     collections::HashMap,
     io::{BufWriter, Write},
 };
+
+macro_rules! debug {
+    ($self: expr, $debug_value: expr) => {
+        if $self.config.debug {
+            format!($debug_value)
+        } else {
+            "".into()
+        }
+    };
+}
 
 quick_error! {
     #[derive(Debug)]
@@ -22,10 +35,16 @@ quick_error! {
             from()
         }
         DuplicateFunction(func_name: String) {
-            display("{func_name} has already been defined")
+            display("`{func_name}` has already been defined")
+        }
+        UnknownIdentifier(ident: String) {
+            display("`{ident}` is not found in the current scope.")
         }
         InvalidDevice(device: String) {
-            display("{device} is not valid")
+            display("`{device}` is not valid")
+        }
+        AgrumentMismatch(func_name: String) {
+            display("Incorrect number of arguments passed into `{func_name}`")
         }
         Unknown(reason: String) {
             display("{reason}")
@@ -41,6 +60,7 @@ pub struct CompilerConfig {
 pub struct Compiler<'a, W: std::io::Write> {
     parser: ASTParser,
     function_locations: HashMap<String, usize>,
+    function_metadata: HashMap<String, Vec<String>>,
     devices: HashMap<String, String>,
     output: &'a mut BufWriter<W>,
     current_line: usize,
@@ -57,6 +77,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Self {
             parser,
             function_locations: HashMap::new(),
+            function_metadata: HashMap::new(),
             devices: HashMap::new(),
             output: writer,
             current_line: 1,
@@ -93,6 +114,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             Expression::Declaration(var_name, expr) => {
                 self.expression_declaration(var_name, *expr, scope)?
             }
+            Expression::Invocation(expr_invoke) => {
+                self.expression_function_invocation(expr_invoke, scope)?
+            }
             _ => todo!(),
         };
 
@@ -105,16 +129,135 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         expr: Expression,
         scope: &mut VariableScope<'v>,
     ) -> Result<(), Error> {
-        scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
-
         match expr {
-            _ => unimplemented!(),
+            Expression::Literal(Literal::Number(num)) => {
+                let var_location =
+                    scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
+                let num_str = num.to_string();
+
+                if let VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) =
+                    var_location
+                {
+                    self.write_output(format!(
+                        "move r{reg} {num_str} {}",
+                        debug!(self, "#{var_name}")
+                    ))?;
+                } else {
+                    self.write_output(format!("push {num_str} {}", debug!(self, "#{var_name}")))?;
+                }
+            }
+            Expression::Invocation(invoke_expr) => {
+                self.expression_function_invocation(invoke_expr, scope)?;
+
+                // Return value _should_ be in VariableScope::RETURN_REGISTER
+                match scope.add_variable(var_name.clone(), LocationRequest::Persist)? {
+                    VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => self
+                        .write_output(format!(
+                            "move r{reg} r{} {}",
+                            VariableScope::RETURN_REGISTER,
+                            debug!(self, "#{var_name}")
+                        ))?,
+                    VariableLocation::Stack(_) => self.write_output(format!(
+                        "push r{} {}",
+                        VariableScope::RETURN_REGISTER,
+                        debug!(self, "#{var_name}")
+                    ))?,
+                }
+            }
+            _ => {
+                return Err(Error::Unknown(
+                    "`{var_name}` declaration of this type is not supported.".into(),
+                ));
+            }
         }
 
         Ok(())
     }
 
-    fn expression_device<'v>(&mut self, expr: DeviceDeclarationExpression) {
+    fn expression_function_invocation(
+        &mut self,
+        invoke_expr: InvocationExpression,
+        stack: &mut VariableScope,
+    ) -> Result<(), Error> {
+        if !self.function_locations.contains_key(&invoke_expr.name) {
+            return Err(Error::UnknownIdentifier(invoke_expr.name));
+        }
+
+        let Some(args) = self.function_metadata.get(&invoke_expr.name) else {
+            return Err(Error::UnknownIdentifier(invoke_expr.name));
+        };
+
+        if args.len() != invoke_expr.arguments.len() {
+            return Err(Error::AgrumentMismatch(invoke_expr.name));
+        }
+
+        // backup all used registers to the stack
+        let active_registers = stack.registers().cloned().collect::<Vec<_>>();
+        for register in &active_registers {
+            stack.add_variable(format!("temp_{register}"), LocationRequest::Stack)?;
+            self.write_output(format!("push r{register}"))?;
+        }
+        for arg in invoke_expr.arguments {
+            match arg {
+                Expression::Literal(Literal::Number(num)) => {
+                    let num_str = num.to_string();
+                    self.write_output(format!("push {num_str}"))?;
+                }
+                Expression::Variable(var_name) => match stack.get_location_of(var_name)? {
+                    VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
+                        self.write_output(format!("push r{reg}"))?;
+                    }
+                    VariableLocation::Stack(stack_offset) => {
+                        self.write_output(format!(
+                            "sub r{0} sp {stack_offset}",
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                        self.write_output(format!(
+                            "get r{0} db r{0}",
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                        self.write_output(format!(
+                            "push r{0}",
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                    }
+                },
+                _ => {
+                    return Err(Error::Unknown(format!(
+                        "Attempted to call `{}` with an unsupported argument",
+                        invoke_expr.name
+                    )));
+                }
+            }
+        }
+
+        // jump to the function and store current line in ra
+        self.write_output(format!("jal {}", invoke_expr.name))?;
+
+        for register in active_registers {
+            let VariableLocation::Stack(stack_offset) =
+                stack.get_location_of(format!("temp_{register}"))?
+            else {
+                return Err(Error::UnknownIdentifier(format!("temp_{register}")));
+            };
+            self.write_output(format!(
+                "sub r{0} sp {stack_offset}",
+                VariableScope::TEMP_STACK_REGISTER
+            ))?;
+            self.write_output(format!(
+                "get r{register} db r{0}",
+                VariableScope::TEMP_STACK_REGISTER
+            ))?;
+        }
+
+        if stack.stack_offset() > 0 {
+            self.write_output(format!("sub sp sp {}", stack.stack_offset()))?;
+        }
+
+        Ok(())
+    }
+
+    fn expression_device(&mut self, expr: DeviceDeclarationExpression) {
         self.devices.insert(expr.name, expr.device);
     }
 
@@ -166,14 +309,17 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             return Err(Error::DuplicateFunction(name));
         }
 
-        self.function_locations
-            .insert(name.clone(), self.current_line);
+        self.function_metadata
+            .insert(name.clone(), arguments.clone());
 
         // Declare the function as a line identifier
         self.write_output(format!("{}:", name))?;
 
+        self.function_locations
+            .insert(name.clone(), self.current_line);
+
         // Create a new block scope for the function body
-        let mut block_scope = VariableScope::scoped(&scope);
+        let mut block_scope = VariableScope::scoped(scope);
 
         let mut saved_variables = 0;
 
@@ -189,14 +335,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
             match loc {
                 VariableLocation::Persistant(loc) => {
-                    self.write_output(format!(
-                        "pop r{loc} {}",
-                        if self.config.debug {
-                            format!("#{}", var_name)
-                        } else {
-                            "".into()
-                        }
-                    ))?;
+                    self.write_output(format!("pop r{loc} {}", debug!(self, "#{var_name}")))?;
                 }
                 VariableLocation::Stack(_) => {
                     return Err(Error::Unknown(
@@ -234,8 +373,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             ));
         };
 
-        self.write_output(format!("sub r0 sp {ra_stack_offset}"))?;
-        self.write_output("get ra db r0")?;
+        self.write_output(format!(
+            "sub r{0} sp {ra_stack_offset}",
+            VariableScope::TEMP_STACK_REGISTER
+        ))?;
+        self.write_output(format!(
+            "get ra db r{0}",
+            VariableScope::TEMP_STACK_REGISTER
+        ))?;
 
         if block_scope.stack_offset() > 0 {
             self.write_output(format!("sub sp sp {}", block_scope.stack_offset()))?;

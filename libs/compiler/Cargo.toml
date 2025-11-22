@@ -11,3 +11,4 @@ tokenizer = { path = "../tokenizer" }
 [dev-dependencies]
 anyhow = { version = "1.0" }
 indoc = { version = "2.0" }
+pretty_assertions = "1"

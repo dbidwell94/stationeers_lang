@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
 
-pub use v2::{Compiler, Error};
+pub use v2::{Compiler, CompilerConfig, Error};
 
 quick_error! {
     #[derive(Debug)]

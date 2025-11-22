@@ -6,7 +6,7 @@ use quick_error::quick_error;
 use std::collections::{HashMap, VecDeque};
 
 const TEMP: [u8; 7] = [1, 2, 3, 4, 5, 6, 7];
-const PERSIST: [u8; 8] = [8, 9, 10, 11, 12, 13, 14, 15];
+const PERSIST: [u8; 7] = [8, 9, 10, 11, 12, 13, 14];
 
 quick_error! {
     #[derive(Debug)]
@@ -72,8 +72,26 @@ impl<'a> Default for VariableScope<'a> {
 }
 
 impl<'a> VariableScope<'a> {
-    pub const TEMP_REGISTER_COUNT: u8 = 8;
-    pub const PERSIST_REGISTER_COUNT: u8 = 8;
+    pub const TEMP_REGISTER_COUNT: u8 = 7;
+    pub const PERSIST_REGISTER_COUNT: u8 = 7;
+
+    pub const RETURN_REGISTER: u8 = 15;
+    pub const TEMP_STACK_REGISTER: u8 = 0;
+
+    pub fn registers(&self) -> impl Iterator<Item = &u8> {
+        self.var_lookup_table
+            .values()
+            .filter(|val| {
+                matches!(
+                    val,
+                    VariableLocation::Temporary(_) | VariableLocation::Persistant(_)
+                )
+            })
+            .map(|loc| match loc {
+                VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => reg,
+                _ => unreachable!(),
+            })
+    }
 
     pub fn scoped(parent: &'a VariableScope<'a>) -> Self {
         Self {
