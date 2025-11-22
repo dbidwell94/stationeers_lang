@@ -74,12 +74,17 @@ fn let_var_args() -> anyhow::Result<()> {
 #[test]
 fn incorrect_args_count() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        result
         "
         fn doSomething(arg1, arg2){};
         let i = doSomething();
         "
     };
+
+    assert!(matches!(
+        compiled,
+        Err(super::super::Error::AgrumentMismatch(_))
+    ));
 
     Ok(())
 }

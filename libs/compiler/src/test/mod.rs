@@ -17,6 +17,16 @@ macro_rules! compile {
         output!(writer)
     }};
 
+    (result $source:expr) => {{
+        let mut writer = std::io::BufWriter::new(Vec::new());
+        let compiler = crate::Compiler::new(
+            parser::Parser::new(tokenizer::Tokenizer::from(String::from($source))),
+            &mut writer,
+            Some(crate::CompilerConfig { debug: true }),
+        );
+        compiler.compile()
+    }};
+
     (debug $source:expr) => {{
         let mut writer = std::io::BufWriter::new(Vec::new());
         let compiler = crate::Compiler::new(
