@@ -1,14 +1,16 @@
+#![allow(clippy::crate_in_macro_def)]
+
 macro_rules! output {
     ($input:expr) => {
         String::from_utf8($input.into_inner()?)?
     };
 }
 
-#[macro_export]
+#[cfg_attr(test, macro_export)]
 macro_rules! compile {
     ($source:expr) => {{
         let mut writer = std::io::BufWriter::new(Vec::new());
-        let compiler = crate::Compiler::new(
+        let compiler = ::Compiler::new(
             parser::Parser::new(tokenizer::Tokenizer::from(String::from($source))),
             &mut writer,
             None,

@@ -1,6 +1,7 @@
-// r0        : Return Value / Temp Stack Pointer
+// r15       : Return Value
+// r0        : Unmanaged temp variable
 // r1 - r7   : Temporary Variables
-// r8 - r15  : Persistant Variables
+// r8 - r14  : Persistant Variables
 
 use quick_error::quick_error;
 use std::collections::{HashMap, VecDeque};
@@ -21,15 +22,6 @@ quick_error! {
             display("{reason}")
         }
     }
-}
-
-pub enum VarType {
-    /// Represents a temporary register (r4 - r8)
-    Temp(u8),
-    /// Represents a variable register (r9 - r15)
-    Persist(u8),
-    /// Represents a stack pointer offset for a given variable
-    Stack(u16),
 }
 
 /// A request to store a variable at a specific register type
@@ -53,7 +45,6 @@ pub struct VariableScope<'a> {
     temporary_vars: VecDeque<u8>,
     persistant_vars: VecDeque<u8>,
     var_lookup_table: HashMap<String, VariableLocation>,
-    var_stack: HashMap<String, u16>,
     stack_offset: u16,
     parent: Option<&'a VariableScope<'a>>,
 }
@@ -65,7 +56,6 @@ impl<'a> Default for VariableScope<'a> {
             stack_offset: 0,
             persistant_vars: PERSIST.to_vec().into(),
             temporary_vars: TEMP.to_vec().into(),
-            var_stack: HashMap::new(),
             var_lookup_table: HashMap::new(),
         }
     }
