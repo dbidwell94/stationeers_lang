@@ -111,6 +111,12 @@ impl std::fmt::Display for Number {
     }
 }
 
+impl std::convert::From<Number> for String {
+    fn from(value: Number) -> Self {
+        value.to_string()
+    }
+}
+
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Symbol {
     // Single Character Symbols

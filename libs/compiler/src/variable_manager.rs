@@ -37,8 +37,11 @@ pub enum LocationRequest {
 
 #[derive(Clone)]
 pub enum VariableLocation {
+    /// Represents a temporary register (r1 - r7)
     Temporary(u8),
+    /// Represents a persistant register (r8 - r14)
     Persistant(u8),
+    /// Represents a a stack offset (current stack - offset = variable loc)
     Stack(u16),
 }
 

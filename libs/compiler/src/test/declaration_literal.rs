@@ -62,3 +62,26 @@ fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> 
 
     Ok(())
 }
+
+#[test]
+fn variable_declaration_negative() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        let i = -1;
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 -1 #i
+            "
+        }
+    );
+
+    Ok(())
+}

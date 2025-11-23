@@ -128,24 +128,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         &mut self,
         var_name: &str,
         location: VariableLocation,
-        source_value: impl Into<String>,
+        source_value: &str,
     ) -> Result<(), Error> {
         let debug_tag = if self.config.debug {
-            format!(" #{var_name}")
+            format!("#{var_name}")
         } else {
             String::new()
         };
-
-        match location {
-            VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
-                self.write_output(format!("move r{reg} {}{debug_tag}", source_value.into()))?;
-            }
-            VariableLocation::Stack(_) => {
-                self.write_output(format!("push {}{debug_tag}", source_value.into()))?;
-            }
-        }
-
-        Ok(())
+        todo!()
     }
 
     fn expression_declaration<'v>(
@@ -158,8 +148,6 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         if let Expression::Negation(box_expr) = &expr
             && let Expression::Literal(Literal::Number(neg_num)) = &**box_expr
         {
-            let loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
-            self.emit_variable_assignment(&var_name, loc, format!("-{neg_num}"))?;
             return Ok(());
         }
 
@@ -168,17 +156,34 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 let var_location =
                     scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
 
-                self.emit_variable_assignment(&var_name, var_location, num)?;
+                if let VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) =
+                    var_location
+                {
+                    self.write_output(format!(
+                        "move r{reg} {num} {}",
+                        debug!(self, "#{var_name}")
+                    ))?;
+                } else {
+                    self.write_output(format!("push {num} {}", debug!(self, "#{var_name}")))?;
+                }
             }
             Expression::Invocation(invoke_expr) => {
                 self.expression_function_invocation(invoke_expr, scope)?;
 
-                let loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
-                self.emit_variable_assignment(
-                    &var_name,
-                    loc,
-                    format!("r{}", VariableScope::RETURN_REGISTER),
-                )?;
+                // Return value _should_ be in VariableScope::RETURN_REGISTER
+                match scope.add_variable(var_name.clone(), LocationRequest::Persist)? {
+                    VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => self
+                        .write_output(format!(
+                            "move r{reg} r{} {}",
+                            VariableScope::RETURN_REGISTER,
+                            debug!(self, "#{var_name}")
+                        ))?,
+                    VariableLocation::Stack(_) => self.write_output(format!(
+                        "push r{} {}",
+                        VariableScope::RETURN_REGISTER,
+                        debug!(self, "#{var_name}")
+                    ))?,
+                }
             }
             _ => {
                 return Err(Error::Unknown(

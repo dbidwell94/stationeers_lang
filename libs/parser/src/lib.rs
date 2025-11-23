@@ -214,6 +214,14 @@ impl Parser {
             // match priority expressions with a left parenthesis
             TokenType::Symbol(Symbol::LParen) => Expression::Priority(self.priority()?),
 
+            // match minus symbols to handle negative numbers or negated expressions
+            TokenType::Symbol(Symbol::Minus) => {
+                self.assign_next()?; // consume the `-` symbol
+                let inner_expr = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+                Expression::Negation(boxed!(inner_expr))
+            }
+
             _ => {
                 return Err(Error::UnexpectedToken(current_token.clone()));
             }
