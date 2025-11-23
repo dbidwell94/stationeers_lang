@@ -731,7 +731,10 @@ impl Parser {
 
         match invocation.name.as_str() {
             // system calls
-            "yield" => Ok(SysCall::System(sys_call::System::Yield)),
+            "yield" => {
+                check_length(self, &invocation.arguments, 0)?;
+                Ok(SysCall::System(sys_call::System::Yield))
+            }
             "sleep" => {
                 check_length(self, &invocation.arguments, 1)?;
                 let mut arg = invocation.arguments.iter();
@@ -752,7 +755,7 @@ impl Parser {
 
                 Ok(SysCall::System(sys_call::System::LoadFromDevice(
                     device,
-                    variable.clone(),
+                    LiteralOrVariable::Variable(variable.clone()),
                 )))
             }
             "setOnDevice" => {
@@ -772,7 +775,9 @@ impl Parser {
                 let variable = literal_or_variable!(args.next());
 
                 Ok(SysCall::System(sys_call::System::SetOnDevice(
-                    device, logic_type, variable,
+                    device,
+                    Literal::String(logic_type),
+                    variable,
                 )))
             }
             // math calls
