@@ -26,6 +26,7 @@ quick_error! {
 
 /// A request to store a variable at a specific register type
 pub enum LocationRequest {
+    #[allow(dead_code)]
     /// Request to store a variable in a temprary register.
     Temp,
     /// Request to store a variable in a persistant register.
@@ -62,6 +63,7 @@ impl<'a> Default for VariableScope<'a> {
 }
 
 impl<'a> VariableScope<'a> {
+    #[allow(dead_code)]
     pub const TEMP_REGISTER_COUNT: u8 = 7;
     pub const PERSIST_REGISTER_COUNT: u8 = 7;
 
@@ -94,10 +96,6 @@ impl<'a> VariableScope<'a> {
         self.stack_offset
     }
 
-    pub fn stack_incr(&mut self) {
-        self.stack_offset += 1;
-    }
-
     /// Adds and tracks a new scoped variable. If the location you request is full, will fall back
     /// to the stack.
     pub fn add_variable(
@@ -112,8 +110,7 @@ impl<'a> VariableScope<'a> {
         let var_location = match location {
             LocationRequest::Temp => {
                 if let Some(next_var) = self.temporary_vars.pop_front() {
-                    let loc = VariableLocation::Temporary(next_var);
-                    loc
+                    VariableLocation::Temporary(next_var)
                 } else {
                     let loc = VariableLocation::Stack(self.stack_offset);
                     self.stack_offset += 1;
@@ -122,8 +119,7 @@ impl<'a> VariableScope<'a> {
             }
             LocationRequest::Persist => {
                 if let Some(next_var) = self.persistant_vars.pop_front() {
-                    let loc = VariableLocation::Persistant(next_var);
-                    loc
+                    VariableLocation::Persistant(next_var)
                 } else {
                     let loc = VariableLocation::Stack(self.stack_offset);
                     self.stack_offset += 1;
@@ -149,7 +145,7 @@ impl<'a> VariableScope<'a> {
         let var = self
             .var_lookup_table
             .get(var_name.as_str())
-            .map(|v| v.clone())
+            .cloned()
             .ok_or(Error::UnknownVariable(var_name))?;
 
         if let VariableLocation::Stack(inserted_at_offset) = var {
@@ -165,6 +161,7 @@ impl<'a> VariableScope<'a> {
         self.parent.is_some()
     }
 
+    #[allow(dead_code)]
     pub fn free_temp(&mut self, var_name: impl Into<String>) -> Result<(), Error> {
         let var_name = var_name.into();
         let Some(location) = self.var_lookup_table.remove(var_name.as_str()) else {

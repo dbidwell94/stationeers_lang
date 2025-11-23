@@ -34,7 +34,7 @@ quick_error! {
         ScopeError(error: variable_manager::Error) {
             from()
         }
-        DuplicateFunction(func_name: String) {
+        DuplicateIdentifier(func_name: String) {
             display("`{func_name}` has already been defined")
         }
         UnknownIdentifier(ident: String) {
@@ -111,7 +111,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         match expr {
             Expression::Function(expr_func) => self.expression_function(expr_func, scope)?,
             Expression::Block(expr_block) => self.expression_block(expr_block, scope)?,
-            Expression::DeviceDeclaration(expr_dev) => self.expression_device(expr_dev),
+            Expression::DeviceDeclaration(expr_dev) => self.expression_device(expr_dev)?,
             Expression::Declaration(var_name, expr) => {
                 self.expression_declaration(var_name, *expr, scope)?
             }
@@ -258,8 +258,13 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 
-    fn expression_device(&mut self, expr: DeviceDeclarationExpression) {
+    fn expression_device(&mut self, expr: DeviceDeclarationExpression) -> Result<(), Error> {
+        if self.devices.contains_key(&expr.name) {
+            return Err(Error::DuplicateIdentifier(expr.name));
+        }
         self.devices.insert(expr.name, expr.device);
+
+        Ok(())
     }
 
     fn expression_block<'v>(
@@ -293,6 +298,42 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 
+    /// Takes the result of the expression and stores it in VariableScope::RETURN_REGISTER
+    fn expression_return<'v>(
+        &mut self,
+        expr: Expression,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<(), Error> {
+        match expr {
+            Expression::Variable(var_name) => match scope.get_location_of(var_name)? {
+                VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
+                    self.write_output(format!(
+                        "move r{} r{reg} {}",
+                        VariableScope::RETURN_REGISTER,
+                        debug!(self, "returnValue")
+                    ))?;
+                }
+                VariableLocation::Stack(offset) => {
+                    self.write_output(format!(
+                        "sub r{} sp {offset}",
+                        VariableScope::TEMP_STACK_REGISTER
+                    ))?;
+                    self.write_output(format!(
+                        "get r{} db r{}",
+                        VariableScope::RETURN_REGISTER,
+                        VariableScope::TEMP_STACK_REGISTER
+                    ))?;
+                }
+            },
+            Expression::Literal(Literal::Number(num)) => {
+                self.write_output(format!("move r{} {}", VariableScope::RETURN_REGISTER, num))?;
+            }
+            _ => return Err(Error::Unknown("Unsupported `return` statement.".into())),
+        }
+
+        Ok(())
+    }
+
     /// Compile a function declaration.
     /// Calees are responsible for backing up any registers they wish to use.
     fn expression_function<'v>(
@@ -307,7 +348,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         } = expr;
 
         if self.function_locations.contains_key(&name) {
-            return Err(Error::DuplicateFunction(name));
+            return Err(Error::DuplicateIdentifier(name));
         }
 
         self.function_metadata
@@ -364,7 +405,15 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         self.write_output("push ra")?;
         block_scope.add_variable(format!("{name}_ra"), LocationRequest::Stack)?;
 
-        self.expression_block(body, &mut block_scope)?;
+        for expr in body.0 {
+            match expr {
+                Expression::Return(ret_expr) => {
+                    self.expression_return(*ret_expr, &mut block_scope)?
+                }
+                _ => self.expression(expr, &mut block_scope)?,
+            }
+        }
+
         // Get the saved return address and save it back into `ra`
         let VariableLocation::Stack(ra_stack_offset) =
             block_scope.get_location_of(format!("{name}_ra"))?
