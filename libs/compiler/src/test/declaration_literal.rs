@@ -25,7 +25,9 @@ fn variable_declaration_numeric_literal() -> anyhow::Result<()> {
 
 #[test]
 fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> {
-    let compiled = compile! {debug r#"
+    let compiled = compile! {
+        debug
+        r#"
         let a = 0;
         let b = 1;
         let c = 2;

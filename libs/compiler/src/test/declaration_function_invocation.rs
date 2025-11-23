@@ -88,3 +88,85 @@ fn incorrect_args_count() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn inline_literal_args() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        fn doSomething(arg1, arg2) {};
+        let thisVariableShouldStayInPlace = 123;
+        let returnedValue = doSomething(12, 34);
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            doSomething:
+            pop r8 #arg2
+            pop r9 #arg1
+            push ra
+            sub r0 sp 1
+            get ra db r0
+            sub sp sp 1
+            j ra
+            main:
+            move r8 123 #thisVariableShouldStayInPlace
+            push r8
+            push 12
+            push 34
+            jal doSomething
+            sub r0 sp 1
+            get r8 db r0
+            sub sp sp 1
+            move r9 r15 #returnedValue
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn mixed_args() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        let arg1 = 123;
+        let returnValue = doSomething(arg1, 456);
+        fn doSomething(arg1, arg2) {};
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            doSomething:
+            pop r8 #arg2
+            pop r9 #arg1
+            push ra
+            sub r0 sp 1
+            get ra db r0
+            sub sp sp 1
+            j ra
+            main:
+            move r8 123 #arg1
+            push r8
+            push r8
+            push 456
+            jal doSomething
+            sub r0 sp 1
+            get r8 db r0
+            sub sp sp 1
+            move r9 r15 #returnValue
+            "
+        }
+    );
+
+    Ok(())
+}

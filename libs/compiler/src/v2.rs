@@ -53,6 +53,7 @@ quick_error! {
 }
 
 #[derive(Default)]
+#[repr(C)]
 pub struct CompilerConfig {
     pub debug: bool,
 }
