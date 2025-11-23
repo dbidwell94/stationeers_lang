@@ -310,7 +310,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     self.write_output(format!(
                         "move r{} r{reg} {}",
                         VariableScope::RETURN_REGISTER,
-                        debug!(self, "returnValue")
+                        debug!(self, "#returnValue")
                     ))?;
                 }
                 VariableLocation::Stack(offset) => {

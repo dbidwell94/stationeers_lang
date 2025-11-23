@@ -170,3 +170,40 @@ fn mixed_args() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn with_return_statement() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        fn doSomething(arg1) {
+            return 456;
+        };
+
+        let returned = doSomething(123);
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            doSomething:
+            pop r8 #arg1
+            push ra
+            move r15 456
+            sub r0 sp 1
+            get ra db r0
+            sub sp sp 1
+            j ra
+            main:
+            push 123
+            jal doSomething
+            move r8 r15 #returned
+            "
+        }
+    );
+
+    Ok(())
+}
