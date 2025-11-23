@@ -327,6 +327,17 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         expr: Expression,
         scope: &mut VariableScope<'v>,
     ) -> Result<(), Error> {
+        if let Expression::Negation(neg_expr) = &expr
+            && let Expression::Literal(Literal::Number(neg_num)) = &**neg_expr
+        {
+            self.emit_variable_assignment(
+                "returnValue",
+                VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                format!("-{neg_num}"),
+            )?;
+            return Ok(());
+        };
+
         match expr {
             Expression::Variable(var_name) => match scope.get_location_of(var_name)? {
                 VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
@@ -349,7 +360,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }
             },
             Expression::Literal(Literal::Number(num)) => {
-                self.write_output(format!("move r{} {}", VariableScope::RETURN_REGISTER, num))?;
+                self.emit_variable_assignment(
+                    "returnValue",
+                    VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    num,
+                )?;
             }
             _ => return Err(Error::Unknown("Unsupported `return` statement.".into())),
         }

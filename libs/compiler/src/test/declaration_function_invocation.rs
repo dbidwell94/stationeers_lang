@@ -192,7 +192,7 @@ fn with_return_statement() -> anyhow::Result<()> {
             doSomething:
             pop r8 #arg1
             push ra
-            move r15 456
+            move r15 456 #returnValue
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
@@ -201,6 +201,40 @@ fn with_return_statement() -> anyhow::Result<()> {
             push 123
             jal doSomething
             move r8 r15 #returned
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn with_negative_return_literal() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        fn doSomething() {
+            return -1;
+        };
+        let i = doSomething();
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            doSomething:
+            push ra
+            move r15 -1 #returnValue
+            sub r0 sp 1
+            get ra db r0
+            sub sp sp 1
+            j ra
+            main:
+            jal doSomething
+            move r8 r15 #i
             "
         }
     );
