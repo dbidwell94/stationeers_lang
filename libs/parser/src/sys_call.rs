@@ -121,6 +121,13 @@ pub enum System {
     /// ## Examples
     /// lbn r0 HASH("StructureWallLight") HASH("wallLight") On Minimum
     LoadBatchNamed(LiteralOrVariable, Literal, Literal, Literal),
+    /// Loads a LogicType from all connected network devices, aggregating them via a
+    /// batchMode
+    /// ## In Game
+    /// lb r? deviceHash loggicType batchMode
+    /// ## Examples
+    /// lb r0 HASH("StructureWallLight") On Minimum
+    LoadBatch(LiteralOrVariable, Literal, Literal),
     /// Represents a function which stores a setting into a specific device.
     /// ## In Game
     /// `s d? logicType r?`
@@ -136,6 +143,7 @@ impl std::fmt::Display for System {
             System::Sleep(a) => write!(f, "sleep({})", a),
             System::Hash(a) => write!(f, "HASH({})", a),
             System::LoadFromDevice(a, b) => write!(f, "loadFromDevice({}, {})", a, b),
+            System::LoadBatch(a, b, c) => write!(f, "loadBatch({}, {}, {})", a, b, c),
             System::LoadBatchNamed(a, b, c, d) => {
                 write!(f, "loadBatchNamed({}, {}, {}, {})", a, b, c, d)
             }

@@ -758,6 +758,36 @@ impl Parser {
                     LiteralOrVariable::Variable(variable.clone()),
                 )))
             }
+            "loadBatch" => {
+                check_length(self, &invocation.arguments, 3)?;
+                let mut args = invocation.arguments.iter();
+
+                let device_hash = literal_or_variable!(args.next());
+                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let batch_mode = get_arg!(Literal, literal_or_variable!(args.next()));
+
+                Ok(SysCall::System(sys_call::System::LoadBatch(
+                    device_hash,
+                    logic_type,
+                    batch_mode,
+                )))
+            }
+            "loadBatchNamed" => {
+                check_length(self, &invocation.arguments, 4)?;
+                let mut args = invocation.arguments.iter();
+
+                let device_hash = literal_or_variable!(args.next());
+                let name_hash = get_arg!(Literal, literal_or_variable!(args.next()));
+                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let batch_mode = get_arg!(Literal, literal_or_variable!(args.next()));
+
+                Ok(SysCall::System(sys_call::System::LoadBatchNamed(
+                    device_hash,
+                    name_hash,
+                    logic_type,
+                    batch_mode,
+                )))
+            }
             "setOnDevice" => {
                 check_length(self, &invocation.arguments, 3)?;
                 let mut args = invocation.arguments.iter();
