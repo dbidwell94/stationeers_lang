@@ -301,6 +301,45 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         expr: BinaryExpression,
         scope: &mut VariableScope<'v>,
     ) -> Result<VariableLocation, Error> {
+        enum VariableType {
+            Location(VariableLocation),
+            Literal(String),
+        }
+        let mut comp_bin_expr = move |expr: Expression| -> Result<VariableType, Error> {
+            if let Expression::Negation(box_expr) = &expr
+                && let Expression::Literal(Literal::Number(num)) = &**box_expr
+            {
+                return Ok(VariableType::Literal(format!("-{num}")));
+            }
+
+            let var_type = match expr {
+                Expression::Binary(bin) => {
+                    VariableType::Location(self.expression_binary(bin, scope)?)
+                }
+                Expression::Variable(var_name) => {
+                    VariableType::Location(scope.get_location_of(var_name)?)
+                }
+                Expression::Invocation(invocation_expression) => {
+                    let temp_ret = scope.add_variable("temp_ret", LocationRequest::Temp)?;
+                    self.expression_function_invocation(invocation_expression, scope)?;
+                    self.emit_variable_assignment(
+                        "temp_ret",
+                        &temp_ret,
+                        format!("r{}", VariableScope::RETURN_REGISTER),
+                    )?;
+                    VariableType::Location(temp_ret)
+                }
+                Expression::Literal(Literal::Number(num)) => VariableType::Literal(num.into()),
+                _ => {
+                    return Err(Error::Unknown(
+                        "Unsupported expression in binary expression.".into(),
+                    ));
+                }
+            };
+
+            Ok(var_type)
+        };
+
         let (op, l, r) = match expr {
             BinaryExpression::Add(l, r) => ("add", *l, *r),
             BinaryExpression::Multiply(l, r) => ("mul", *l, *r),
@@ -308,6 +347,16 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             BinaryExpression::Subtract(l, r) => ("sub", *l, *r),
             BinaryExpression::Exponent(l, r) => ("pow", *l, *r),
         };
+
+        let mut l = comp_bin_expr(l)?;
+        let mut r = comp_bin_expr(r)?;
+
+        // make sure l and r are in registers. If they aren't, backup 2 temp registers to the stack
+        // and
+
+        if let VariableType::Location(VariableLocation::Stack(offset)) = l {}
+
+        if let VariableType::Location(VariableLocation::Stack(offset)) = r {}
 
         todo!()
     }
