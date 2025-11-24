@@ -93,13 +93,15 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         let Some(expr) = expr else { return Ok(()) };
 
         self.write_output("j main")?;
-        self.expression(expr, &mut VariableScope::default())
+        self.expression(expr, &mut VariableScope::default())?;
+        Ok(())
     }
 
     fn write_output(&mut self, output: impl Into<String>) -> Result<(), Error> {
         self.output.write_all(output.into().as_bytes())?;
         self.output.write_all(b"\n")?;
         self.current_line += 1;
+
         Ok(())
     }
 
@@ -107,27 +109,37 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         &mut self,
         expr: Expression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<(), Error> {
-        match expr {
-            Expression::Function(expr_func) => self.expression_function(expr_func, scope)?,
-            Expression::Block(expr_block) => self.expression_block(expr_block, scope)?,
-            Expression::DeviceDeclaration(expr_dev) => self.expression_device(expr_dev)?,
+    ) -> Result<Option<VariableLocation>, Error> {
+        let loc = match expr {
+            Expression::Function(expr_func) => {
+                self.expression_function(expr_func, scope)?;
+                None
+            }
+            Expression::Block(expr_block) => {
+                self.expression_block(expr_block, scope)?;
+                None
+            }
+            Expression::DeviceDeclaration(expr_dev) => {
+                self.expression_device(expr_dev)?;
+                None
+            }
             Expression::Declaration(var_name, expr) => {
                 self.expression_declaration(var_name, *expr, scope)?
             }
             Expression::Invocation(expr_invoke) => {
-                self.expression_function_invocation(expr_invoke, scope)?
+                self.expression_function_invocation(expr_invoke, scope)?;
+                None
             }
             _ => todo!(),
         };
 
-        Ok(())
+        Ok(loc)
     }
 
     fn emit_variable_assignment(
         &mut self,
         var_name: &str,
-        location: VariableLocation,
+        location: &VariableLocation,
         source_value: impl Into<String>,
     ) -> Result<(), Error> {
         let debug_tag = if self.config.debug {
@@ -153,22 +165,23 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         var_name: String,
         expr: Expression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<VariableLocation>, Error> {
         // optimization. Check for a negated numeric literal
         if let Expression::Negation(box_expr) = &expr
             && let Expression::Literal(Literal::Number(neg_num)) = &**box_expr
         {
             let loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
-            self.emit_variable_assignment(&var_name, loc, format!("-{neg_num}"))?;
-            return Ok(());
+            self.emit_variable_assignment(&var_name, &loc, format!("-{neg_num}"))?;
+            return Ok(Some(loc));
         }
 
-        match expr {
+        let loc = match expr {
             Expression::Literal(Literal::Number(num)) => {
                 let var_location =
                     scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
 
-                self.emit_variable_assignment(&var_name, var_location, num)?;
+                self.emit_variable_assignment(&var_name, &var_location, num)?;
+                var_location
             }
             Expression::Invocation(invoke_expr) => {
                 self.expression_function_invocation(invoke_expr, scope)?;
@@ -176,18 +189,19 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 let loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
                 self.emit_variable_assignment(
                     &var_name,
-                    loc,
+                    &loc,
                     format!("r{}", VariableScope::RETURN_REGISTER),
                 )?;
+                loc
             }
             _ => {
                 return Err(Error::Unknown(
                     "`{var_name}` declaration of this type is not supported.".into(),
                 ));
             }
-        }
+        };
 
-        Ok(())
+        Ok(Some(loc))
     }
 
     fn expression_function_invocation(
@@ -286,8 +300,16 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         &mut self,
         expr: BinaryExpression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<(), Error> {
-        Ok(())
+    ) -> Result<VariableLocation, Error> {
+        let (op, l, r) = match expr {
+            BinaryExpression::Add(l, r) => ("add", *l, *r),
+            BinaryExpression::Multiply(l, r) => ("mul", *l, *r),
+            BinaryExpression::Divide(l, r) => ("div", *l, *r),
+            BinaryExpression::Subtract(l, r) => ("sub", *l, *r),
+            BinaryExpression::Exponent(l, r) => ("pow", *l, *r),
+        };
+
+        todo!()
     }
 
     fn expression_block<'v>(
@@ -326,16 +348,13 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         &mut self,
         expr: Expression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<(), Error> {
+    ) -> Result<VariableLocation, Error> {
         if let Expression::Negation(neg_expr) = &expr
             && let Expression::Literal(Literal::Number(neg_num)) = &**neg_expr
         {
-            self.emit_variable_assignment(
-                "returnValue",
-                VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                format!("-{neg_num}"),
-            )?;
-            return Ok(());
+            let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
+            self.emit_variable_assignment("returnValue", &loc, format!("-{neg_num}"))?;
+            return Ok(loc);
         };
 
         match expr {
@@ -362,14 +381,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             Expression::Literal(Literal::Number(num)) => {
                 self.emit_variable_assignment(
                     "returnValue",
-                    VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     num,
                 )?;
             }
             _ => return Err(Error::Unknown("Unsupported `return` statement.".into())),
         }
 
-        Ok(())
+        Ok(VariableLocation::Persistant(VariableScope::RETURN_REGISTER))
     }
 
     /// Compile a function declaration.
@@ -446,9 +465,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         for expr in body.0 {
             match expr {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(*ret_expr, &mut block_scope)?
+                    self.expression_return(*ret_expr, &mut block_scope)?;
                 }
-                _ => self.expression(expr, &mut block_scope)?,
+                _ => {
+                    self.expression(expr, &mut block_scope)?;
+                }
             }
         }
 
