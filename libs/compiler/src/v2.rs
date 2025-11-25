@@ -58,6 +58,13 @@ pub struct CompilerConfig {
     pub debug: bool,
 }
 
+struct CompilationResult {
+    location: VariableLocation,
+    /// If Some, this is the name of the temporary variable that holds the result.
+    /// It must be freed by the caller when done.
+    temp_name: Option<String>,
+}
+
 pub struct Compiler<'a, W: std::io::Write> {
     parser: ASTParser,
     function_locations: HashMap<String, usize>,
@@ -67,6 +74,7 @@ pub struct Compiler<'a, W: std::io::Write> {
     current_line: usize,
     declared_main: bool,
     config: CompilerConfig,
+    temp_counter: usize,
 }
 
 impl<'a, W: std::io::Write> Compiler<'a, W> {
@@ -84,6 +92,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             current_line: 1,
             declared_main: false,
             config: config.unwrap_or_default(),
+            temp_counter: 0,
         }
     }
 
@@ -93,7 +102,8 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         let Some(expr) = expr else { return Ok(()) };
 
         self.write_output("j main")?;
-        self.expression(expr, &mut VariableScope::default())?;
+        // We ignore the result of the root expression (usually a block)
+        let _ = self.expression(expr, &mut VariableScope::default())?;
         Ok(())
     }
 
@@ -105,35 +115,96 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 
+    fn next_temp_name(&mut self) -> String {
+        self.temp_counter += 1;
+        format!("__binary_temp_{}", self.temp_counter)
+    }
+
     fn expression<'v>(
         &mut self,
         expr: Expression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<Option<VariableLocation>, Error> {
-        let loc = match expr {
+    ) -> Result<Option<CompilationResult>, Error> {
+        match expr {
             Expression::Function(expr_func) => {
                 self.expression_function(expr_func, scope)?;
-                None
+                Ok(None)
             }
             Expression::Block(expr_block) => {
                 self.expression_block(expr_block, scope)?;
-                None
+                Ok(None)
             }
             Expression::DeviceDeclaration(expr_dev) => {
                 self.expression_device(expr_dev)?;
-                None
+                Ok(None)
             }
             Expression::Declaration(var_name, expr) => {
-                self.expression_declaration(var_name, *expr, scope)?
+                let loc = self.expression_declaration(var_name, *expr, scope)?;
+                Ok(loc.map(|l| CompilationResult {
+                    location: l,
+                    temp_name: None,
+                }))
             }
             Expression::Invocation(expr_invoke) => {
                 self.expression_function_invocation(expr_invoke, scope)?;
-                None
+                // Invocation returns result in r15 (RETURN_REGISTER).
+                // If used as an expression, we must move it to a temp to avoid overwrite.
+                let temp_name = self.next_temp_name();
+                let temp_loc = scope.add_variable(&temp_name, LocationRequest::Temp)?;
+                self.emit_variable_assignment(
+                    &temp_name,
+                    &temp_loc,
+                    format!("r{}", VariableScope::RETURN_REGISTER),
+                )?;
+                Ok(Some(CompilationResult {
+                    location: temp_loc,
+                    temp_name: Some(temp_name),
+                }))
             }
-            _ => todo!(),
-        };
+            Expression::Binary(bin_expr) => {
+                let result = self.expression_binary(bin_expr, scope)?;
+                Ok(Some(result))
+            }
+            Expression::Literal(Literal::Number(num)) => {
+                let temp_name = self.next_temp_name();
+                let loc = scope.add_variable(&temp_name, LocationRequest::Temp)?;
+                self.emit_variable_assignment(&temp_name, &loc, num.to_string())?;
+                Ok(Some(CompilationResult {
+                    location: loc,
+                    temp_name: Some(temp_name),
+                }))
+            }
+            Expression::Variable(name) => {
+                let loc = scope.get_location_of(&name)?;
+                Ok(Some(CompilationResult {
+                    location: loc,
+                    temp_name: None, // User variable, do not free
+                }))
+            }
+            Expression::Priority(inner_expr) => self.expression(*inner_expr, scope),
+            Expression::Negation(inner_expr) => {
+                // Compile negation as 0 - inner
+                let (inner_str, cleanup) = self.compile_operand(*inner_expr, scope)?;
+                let result_name = self.next_temp_name();
+                let result_loc = scope.add_variable(&result_name, LocationRequest::Temp)?;
+                let result_reg = self.resolve_register(&result_loc)?;
 
-        Ok(loc)
+                self.write_output(format!("sub {result_reg} 0 {inner_str}"))?;
+
+                if let Some(name) = cleanup {
+                    scope.free_temp(name)?;
+                }
+
+                Ok(Some(CompilationResult {
+                    location: result_loc,
+                    temp_name: Some(result_name),
+                }))
+            }
+            _ => Err(Error::Unknown(format!(
+                "Expression type not yet supported in general expression context: {:?}",
+                expr
+            ))),
+        }
     }
 
     fn emit_variable_assignment(
@@ -194,10 +265,52 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 )?;
                 loc
             }
+            // Support assigning binary expressions to variables directly
+            Expression::Binary(bin_expr) => {
+                let result = self.expression_binary(bin_expr, scope)?;
+                let var_loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
+
+                // Move result from temp to new persistent variable
+                let result_reg = self.resolve_register(&result.location)?;
+                self.emit_variable_assignment(&var_name, &var_loc, result_reg)?;
+
+                // Free the temp result
+                if let Some(name) = result.temp_name {
+                    scope.free_temp(name)?;
+                }
+                var_loc
+            }
+            Expression::Variable(name) => {
+                let src_loc = scope.get_location_of(&name)?;
+                let var_loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
+
+                // Handle loading from stack if necessary
+                let src_str = match src_loc {
+                    VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
+                        format!("r{r}")
+                    }
+                    VariableLocation::Stack(offset) => {
+                        self.write_output(format!(
+                            "sub r{0} sp {offset}",
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                        self.write_output(format!(
+                            "get r{0} db r{0}",
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                        format!("r{}", VariableScope::TEMP_STACK_REGISTER)
+                    }
+                };
+                self.emit_variable_assignment(&var_name, &var_loc, src_str)?;
+                var_loc
+            }
+            Expression::Priority(inner) => {
+                return self.expression_declaration(var_name, *inner, scope);
+            }
             _ => {
-                return Err(Error::Unknown(
-                    "`{var_name}` declaration of this type is not supported.".into(),
-                ));
+                return Err(Error::Unknown(format!(
+                    "`{var_name}` declaration of this type is not supported/implemented."
+                )));
             }
         };
 
@@ -252,9 +365,18 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                         ))?;
                     }
                 },
+                Expression::Binary(bin_expr) => {
+                    // Compile the binary expression to a temp register
+                    let result = self.expression_binary(bin_expr, stack)?;
+                    let reg_str = self.resolve_register(&result.location)?;
+                    self.write_output(format!("push {reg_str}"))?;
+                    if let Some(name) = result.temp_name {
+                        stack.free_temp(name)?;
+                    }
+                }
                 _ => {
                     return Err(Error::Unknown(format!(
-                        "Attempted to call `{}` with an unsupported argument",
+                        "Attempted to call `{}` with an unsupported argument type",
                         invoke_expr.name
                     )));
                 }
@@ -296,69 +418,109 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 
+    /// Helper to resolve a location to a register string (e.g., "r0").
+    /// Note: This does not handle Stack locations automatically, as they require
+    /// instruction emission to load. Use `compile_operand` for general handling.
+    fn resolve_register(&self, loc: &VariableLocation) -> Result<String, Error> {
+        match loc {
+            VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => Ok(format!("r{r}")),
+            VariableLocation::Stack(_) => Err(Error::Unknown(
+                "Cannot resolve Stack location directly to register string without context".into(),
+            )),
+        }
+    }
+
+    /// Compiles an expression and ensures the result is available as a string valid for an
+    /// IC10 operand (either a register "rX" or a literal value "123").
+    /// If the result was stored in a new temporary register, returns the name of that temp
+    /// so the caller can free it.
+    fn compile_operand(
+        &mut self,
+        expr: Expression,
+        scope: &mut VariableScope,
+    ) -> Result<(String, Option<String>), Error> {
+        // Optimization for literals
+        if let Expression::Literal(Literal::Number(n)) = expr {
+            return Ok((n.to_string(), None));
+        }
+
+        // Optimization for negated literals used as operands.
+        // E.g., `1 + -2` -> return "-2" string, no register used.
+        if let Expression::Negation(inner) = &expr
+            && let Expression::Literal(Literal::Number(n)) = &**inner
+        {
+            return Ok((format!("-{}", n), None));
+        }
+
+        let result = self
+            .expression(expr, scope)?
+            .ok_or(Error::Unknown("Expression did not return a value".into()))?;
+
+        match result.location {
+            VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
+                Ok((format!("r{r}"), result.temp_name))
+            }
+            VariableLocation::Stack(offset) => {
+                // If it's on the stack, we must load it into a temp to use it as an operand
+                let temp_name = self.next_temp_name();
+                let temp_loc = scope.add_variable(&temp_name, LocationRequest::Temp)?;
+                let temp_reg = self.resolve_register(&temp_loc)?;
+
+                self.write_output(format!(
+                    "sub r{0} sp {offset}",
+                    VariableScope::TEMP_STACK_REGISTER
+                ))?;
+                self.write_output(format!(
+                    "get {temp_reg} db r{0}",
+                    VariableScope::TEMP_STACK_REGISTER
+                ))?;
+
+                // If the original result had a temp name (unlikely for Stack, but possible logic),
+                // we technically should free it if it's not needed, but Stack usually implies it's safe there.
+                // We return the NEW temp name to be freed.
+                Ok((temp_reg, Some(temp_name)))
+            }
+        }
+    }
+
     fn expression_binary<'v>(
         &mut self,
         expr: BinaryExpression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<VariableLocation, Error> {
-        enum VariableType {
-            Location(VariableLocation),
-            Literal(String),
+    ) -> Result<CompilationResult, Error> {
+        let (op_str, left_expr, right_expr) = match expr {
+            BinaryExpression::Add(l, r) => ("add", l, r),
+            BinaryExpression::Multiply(l, r) => ("mul", l, r),
+            BinaryExpression::Divide(l, r) => ("div", l, r),
+            BinaryExpression::Subtract(l, r) => ("sub", l, r),
+            BinaryExpression::Exponent(l, r) => ("pow", l, r),
+        };
+
+        // Compile LHS
+        let (lhs_str, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
+        // Compile RHS
+        let (rhs_str, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
+
+        // Allocate result register
+        let result_name = self.next_temp_name();
+        let result_loc = scope.add_variable(&result_name, LocationRequest::Temp)?;
+        let result_reg = self.resolve_register(&result_loc)?;
+
+        // Emit instruction: op result lhs rhs
+        self.write_output(format!("{op_str} {result_reg} {lhs_str} {rhs_str}"))?;
+
+        // Clean up operand temps
+        if let Some(name) = lhs_cleanup {
+            scope.free_temp(name)?;
         }
-        let mut comp_bin_expr = move |expr: Expression| -> Result<VariableType, Error> {
-            if let Expression::Negation(box_expr) = &expr
-                && let Expression::Literal(Literal::Number(num)) = &**box_expr
-            {
-                return Ok(VariableType::Literal(format!("-{num}")));
-            }
+        if let Some(name) = rhs_cleanup {
+            scope.free_temp(name)?;
+        }
 
-            let var_type = match expr {
-                Expression::Binary(bin) => {
-                    VariableType::Location(self.expression_binary(bin, scope)?)
-                }
-                Expression::Variable(var_name) => {
-                    VariableType::Location(scope.get_location_of(var_name)?)
-                }
-                Expression::Invocation(invocation_expression) => {
-                    let temp_ret = scope.add_variable("temp_ret", LocationRequest::Temp)?;
-                    self.expression_function_invocation(invocation_expression, scope)?;
-                    self.emit_variable_assignment(
-                        "temp_ret",
-                        &temp_ret,
-                        format!("r{}", VariableScope::RETURN_REGISTER),
-                    )?;
-                    VariableType::Location(temp_ret)
-                }
-                Expression::Literal(Literal::Number(num)) => VariableType::Literal(num.into()),
-                _ => {
-                    return Err(Error::Unknown(
-                        "Unsupported expression in binary expression.".into(),
-                    ));
-                }
-            };
-
-            Ok(var_type)
-        };
-
-        let (op, l, r) = match expr {
-            BinaryExpression::Add(l, r) => ("add", *l, *r),
-            BinaryExpression::Multiply(l, r) => ("mul", *l, *r),
-            BinaryExpression::Divide(l, r) => ("div", *l, *r),
-            BinaryExpression::Subtract(l, r) => ("sub", *l, *r),
-            BinaryExpression::Exponent(l, r) => ("pow", *l, *r),
-        };
-
-        let mut l = comp_bin_expr(l)?;
-        let mut r = comp_bin_expr(r)?;
-
-        // make sure l and r are in registers. If they aren't, backup 2 temp registers to the stack
-        // and
-
-        if let VariableType::Location(VariableLocation::Stack(offset)) = l {}
-
-        if let VariableType::Location(VariableLocation::Stack(offset)) = r {}
-
-        todo!()
+        Ok(CompilationResult {
+            location: result_loc,
+            temp_name: Some(result_name),
+        })
     }
 
     fn expression_block<'v>(
@@ -386,7 +548,21 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 self.declared_main = true;
             }
 
-            self.expression(expr, scope)?;
+            match expr {
+                Expression::Return(ret_expr) => {
+                    self.expression_return(*ret_expr, scope)?;
+                }
+                _ => {
+                    let result = self.expression(expr, scope)?;
+                    // If the expression was a statement that returned a temp result (e.g. `1 + 2;` line),
+                    // we must free it to avoid leaking registers.
+                    if let Some(comp_res) = result
+                        && let Some(name) = comp_res.temp_name
+                    {
+                        scope.free_temp(name)?;
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -434,7 +610,24 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     num,
                 )?;
             }
-            _ => return Err(Error::Unknown("Unsupported `return` statement.".into())),
+            Expression::Binary(bin_expr) => {
+                let result = self.expression_binary(bin_expr, scope)?;
+                let result_reg = self.resolve_register(&result.location)?;
+                self.write_output(format!(
+                    "move r{} {}",
+                    VariableScope::RETURN_REGISTER,
+                    result_reg
+                ))?;
+                if let Some(name) = result.temp_name {
+                    scope.free_temp(name)?;
+                }
+            }
+            _ => {
+                return Err(Error::Unknown(format!(
+                    "Unsupported `return` statement: {:?}",
+                    expr
+                )));
+            }
         }
 
         Ok(VariableLocation::Persistant(VariableScope::RETURN_REGISTER))
@@ -517,7 +710,13 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     self.expression_return(*ret_expr, &mut block_scope)?;
                 }
                 _ => {
-                    self.expression(expr, &mut block_scope)?;
+                    let result = self.expression(expr, &mut block_scope)?;
+                    // Free unused statement results
+                    if let Some(comp_res) = result
+                        && let Some(name) = comp_res.temp_name
+                    {
+                        block_scope.free_temp(name)?;
+                    }
                 }
             }
         }

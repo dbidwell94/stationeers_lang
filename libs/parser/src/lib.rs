@@ -259,6 +259,11 @@ impl Parser {
             }
             // A priority expression ( -> (1 + 2) <- + 3 )
             TokenType::Symbol(Symbol::LParen) => self.priority().map(Expression::Priority),
+            TokenType::Symbol(Symbol::Minus) => {
+                self.assign_next()?;
+                let inner = self.get_binary_child_node()?;
+                Ok(Expression::Negation(boxed!(inner)))
+            }
             // A function invocation
             TokenType::Identifier(_)
                 if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
