@@ -186,10 +186,34 @@ impl std::fmt::Display for IfExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct LoopExpression {
+    pub body: BlockExpression,
+}
+
+impl std::fmt::Display for LoopExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(loop {})", self.body)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct WhileExpression {
+    pub condition: Box<Expression>,
+    pub body: BlockExpression,
+}
+
+impl std::fmt::Display for WhileExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(while {} {})", self.condition, self.body)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     Assignment(AssignmentExpression),
     Binary(BinaryExpression),
     Block(BlockExpression),
+    Break,
     Declaration(String, Box<Expression>),
     DeviceDeclaration(DeviceDeclarationExpression),
     Function(FunctionExpression),
@@ -197,11 +221,13 @@ pub enum Expression {
     Invocation(InvocationExpression),
     Literal(Literal),
     Logical(LogicalExpression),
+    Loop(LoopExpression),
     Negation(Box<Expression>),
     Priority(Box<Expression>),
     Return(Box<Expression>),
     Syscall(SysCall),
     Variable(String),
+    While(WhileExpression),
 }
 
 impl std::fmt::Display for Expression {
@@ -209,19 +235,23 @@ impl std::fmt::Display for Expression {
         match self {
             Expression::Assignment(e) => write!(f, "{}", e),
             Expression::Binary(e) => write!(f, "{}", e),
-            Expression::Literal(l) => write!(f, "{}", l),
-            Expression::Negation(e) => write!(f, "(-{})", e),
-            Expression::Logical(e) => write!(f, "{}", e),
-            Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
-            Expression::Function(e) => write!(f, "{}", e),
             Expression::Block(e) => write!(f, "{}", e),
+            Expression::Break => write!(f, "break"),
+            Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
+            Expression::DeviceDeclaration(e) => write!(f, "{}", e),
+            Expression::Function(e) => write!(f, "{}", e),
             Expression::If(e) => write!(f, "{}", e),
             Expression::Invocation(e) => write!(f, "{}", e),
-            Expression::Variable(id) => write!(f, "{}", id),
+            Expression::Literal(l) => write!(f, "{}", l),
+            Expression::Logical(e) => write!(f, "{}", e),
+            Expression::Loop(e) => write!(f, "{}", e),
+            Expression::Negation(e) => write!(f, "(-{})", e),
             Expression::Priority(e) => write!(f, "({})", e),
             Expression::Return(e) => write!(f, "(return {})", e),
-            Expression::DeviceDeclaration(e) => write!(f, "{}", e),
             Expression::Syscall(e) => write!(f, "{}", e),
+            Expression::Variable(id) => write!(f, "{}", id),
+            Expression::While(e) => write!(f, "{}", e),
         }
     }
 }
+

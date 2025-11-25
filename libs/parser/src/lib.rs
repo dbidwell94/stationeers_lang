@@ -204,7 +204,7 @@ impl Parser {
 
         let expr = match current_token.token_type {
             // match unsupported keywords
-            TokenType::Keyword(e) if matches_keyword!(e, Keyword::Enum, Keyword::While) => {
+            TokenType::Keyword(e) if matches_keyword!(e, Keyword::Enum) => {
                 return Err(Error::UnsupportedKeyword(current_token.clone()));
             }
 
@@ -218,6 +218,22 @@ impl Parser {
 
             // match if statements
             TokenType::Keyword(Keyword::If) => Expression::If(self.if_expression()?),
+
+            // match loop statements
+            TokenType::Keyword(Keyword::Loop) => Expression::Loop(self.loop_expression()?),
+
+            // match while statements
+            TokenType::Keyword(Keyword::While) => Expression::While(self.while_expression()?),
+
+            // match break statements
+            TokenType::Keyword(Keyword::Break) => {
+                // make sure the next token is a semi-colon
+                let next = token_from_option!(self.get_next()?);
+                if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
+                    return Err(Error::UnexpectedToken(next.clone()));
+                }
+                Expression::Break
+            }
 
             // match syscalls with a `syscall` keyword
             TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
@@ -832,6 +848,61 @@ impl Parser {
         })
     }
 
+    fn loop_expression(&mut self) -> Result<LoopExpression, Error> {
+        let current_token = token_from_option!(self.current_token);
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::Loop)) {
+            return Err(Error::UnexpectedToken(current_token.clone()));
+        }
+
+        // check for '{'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // parse body
+        let body = self.block()?;
+
+        Ok(LoopExpression { body })
+    }
+
+    fn while_expression(&mut self) -> Result<WhileExpression, Error> {
+        let current_token = token_from_option!(self.current_token);
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::While)) {
+            return Err(Error::UnexpectedToken(current_token.clone()));
+        }
+
+        // consume 'while'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LParen)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+        self.assign_next()?;
+
+        // parse condition
+        let condition = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+        // check for ')'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // check for '{'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // parse body
+        let body = self.block()?;
+
+        Ok(WhileExpression {
+            condition: boxed!(condition),
+            body,
+        })
+    }
+
     fn function(&mut self) -> Result<FunctionExpression, Error> {
         let current_token = token_from_option!(self.current_token);
         // Sanify check that the current token is a `fn` keyword
@@ -1121,4 +1192,3 @@ impl Parser {
         }
     }
 }
-

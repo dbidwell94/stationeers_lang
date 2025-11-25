@@ -4,7 +4,7 @@ use parser::{
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, DeviceDeclarationExpression,
         Expression, FunctionExpression, IfExpression, InvocationExpression, Literal,
-        LogicalExpression,
+        LogicalExpression, LoopExpression, WhileExpression,
     },
 };
 use quick_error::quick_error;
@@ -77,6 +77,7 @@ pub struct Compiler<'a, W: std::io::Write> {
     config: CompilerConfig,
     temp_counter: usize,
     label_counter: usize,
+    loop_stack: Vec<String>, // Stores the 'end' label of the current loops
 }
 
 impl<'a, W: std::io::Write> Compiler<'a, W> {
@@ -96,6 +97,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             config: config.unwrap_or_default(),
             temp_counter: 0,
             label_counter: 0,
+            loop_stack: Vec::new(),
         }
     }
 
@@ -144,6 +146,18 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
             Expression::If(expr_if) => {
                 self.expression_if(expr_if, scope)?;
+                Ok(None)
+            }
+            Expression::Loop(expr_loop) => {
+                self.expression_loop(expr_loop, scope)?;
+                Ok(None)
+            }
+            Expression::While(expr_while) => {
+                self.expression_while(expr_while, scope)?;
+                Ok(None)
+            }
+            Expression::Break => {
+                self.expression_break()?;
                 Ok(None)
             }
             Expression::DeviceDeclaration(expr_dev) => {
@@ -568,6 +582,77 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         self.write_output(format!("{end_label}:"))?;
 
         Ok(())
+    }
+
+    fn expression_loop<'v>(
+        &mut self,
+        expr: LoopExpression,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<(), Error> {
+        let start_label = self.next_label_name();
+        let end_label = self.next_label_name();
+
+        // Push end label to stack for 'break'
+        self.loop_stack.push(end_label.clone());
+
+        self.write_output(format!("{start_label}:"))?;
+
+        // Compile Body
+        self.expression_block(expr.body, scope)?;
+
+        // Jump back to start
+        self.write_output(format!("j {start_label}"))?;
+        self.write_output(format!("{end_label}:"))?;
+
+        self.loop_stack.pop();
+
+        Ok(())
+    }
+
+    fn expression_while<'v>(
+        &mut self,
+        expr: WhileExpression,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<(), Error> {
+        let start_label = self.next_label_name();
+        let end_label = self.next_label_name();
+
+        // Push end label to stack for 'break'
+        self.loop_stack.push(end_label.clone());
+
+        self.write_output(format!("{start_label}:"))?;
+
+        // Compile Condition
+        let (cond_str, cleanup) = self.compile_operand(*expr.condition, scope)?;
+
+        // If condition is FALSE, jump to end
+        self.write_output(format!("beq {cond_str} 0 {end_label}"))?;
+
+        if let Some(name) = cleanup {
+            scope.free_temp(name)?;
+        }
+
+        // Compile Body
+        self.expression_block(expr.body, scope)?;
+
+        // Jump back to start
+        self.write_output(format!("j {start_label}"))?;
+        self.write_output(format!("{end_label}:"))?;
+
+        self.loop_stack.pop();
+
+        Ok(())
+    }
+
+    fn expression_break(&mut self) -> Result<(), Error> {
+        if let Some(label) = self.loop_stack.last() {
+            self.write_output(format!("j {label}"))?;
+            Ok(())
+        } else {
+            // This is a semantic error, but for now we can return a generic error
+            // Ideally we'd have a specific error type for this
+            Err(Error::Unknown("Break statement outside of loop".into()))
+        }
     }
 
     /// Helper to resolve a location to a register string (e.g., "r0").
