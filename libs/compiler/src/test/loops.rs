@@ -106,3 +106,44 @@ fn test_while_loop() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_loop_continue() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        let a = 0;
+        loop {
+            a = a + 1;
+            if (a < 5) {
+                continue;
+            }
+            break;
+        }
+        "
+    };
+
+    // Labels: L1 (start), L2 (end), L3 (if end)
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 0 #a
+            L1:
+            add r1 r8 1
+            move r8 r1 #a
+            slt r2 r8 5
+            beq r2 0 L3
+            j L1
+            L3:
+            j L2
+            j L1
+            L2:
+            "
+        }
+    );
+
+    Ok(())
+}

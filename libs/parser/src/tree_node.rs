@@ -214,6 +214,7 @@ pub enum Expression {
     Binary(BinaryExpression),
     Block(BlockExpression),
     Break,
+    Continue,
     Declaration(String, Box<Expression>),
     DeviceDeclaration(DeviceDeclarationExpression),
     Function(FunctionExpression),
@@ -237,6 +238,7 @@ impl std::fmt::Display for Expression {
             Expression::Binary(e) => write!(f, "{}", e),
             Expression::Block(e) => write!(f, "{}", e),
             Expression::Break => write!(f, "break"),
+            Expression::Continue => write!(f, "continue"),
             Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
             Expression::DeviceDeclaration(e) => write!(f, "{}", e),
             Expression::Function(e) => write!(f, "{}", e),
@@ -254,4 +256,3 @@ impl std::fmt::Display for Expression {
         }
     }
 }
-

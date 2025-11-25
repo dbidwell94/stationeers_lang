@@ -235,6 +235,16 @@ impl Parser {
                 Expression::Break
             }
 
+            // match continue statements
+            TokenType::Keyword(Keyword::Continue) => {
+                // make sure the next token is a semi-colon
+                let next = token_from_option!(self.get_next()?);
+                if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
+                    return Err(Error::UnexpectedToken(next.clone()));
+                }
+                Expression::Continue
+            }
+
             // match syscalls with a `syscall` keyword
             TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
                 Expression::Syscall(self.syscall()?)
@@ -1192,3 +1202,4 @@ impl Parser {
         }
     }
 }
+

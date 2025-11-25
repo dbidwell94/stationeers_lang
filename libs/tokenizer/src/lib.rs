@@ -410,6 +410,7 @@ impl Tokenizer {
                 "loop" if next_ws!() => keyword!(Loop),
                 "break" if next_ws!() => keyword!(Break),
                 "while" if next_ws!() => keyword!(While),
+                "continue" if next_ws!() => keyword!(Continue),
 
                 // boolean literals
                 "true" if next_ws!() => {

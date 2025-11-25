@@ -77,7 +77,7 @@ pub struct Compiler<'a, W: std::io::Write> {
     config: CompilerConfig,
     temp_counter: usize,
     label_counter: usize,
-    loop_stack: Vec<String>, // Stores the 'end' label of the current loops
+    loop_stack: Vec<(String, String)>, // Stores (start_label, end_label)
 }
 
 impl<'a, W: std::io::Write> Compiler<'a, W> {
@@ -158,6 +158,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
             Expression::Break => {
                 self.expression_break()?;
+                Ok(None)
+            }
+            Expression::Continue => {
+                self.expression_continue()?;
                 Ok(None)
             }
             Expression::DeviceDeclaration(expr_dev) => {
@@ -592,8 +596,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         let start_label = self.next_label_name();
         let end_label = self.next_label_name();
 
-        // Push end label to stack for 'break'
-        self.loop_stack.push(end_label.clone());
+        // Push labels to stack for 'break' and 'continue'
+        self.loop_stack
+            .push((start_label.clone(), end_label.clone()));
 
         self.write_output(format!("{start_label}:"))?;
 
@@ -617,8 +622,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         let start_label = self.next_label_name();
         let end_label = self.next_label_name();
 
-        // Push end label to stack for 'break'
-        self.loop_stack.push(end_label.clone());
+        // Push labels to stack for 'break' and 'continue'
+        self.loop_stack
+            .push((start_label.clone(), end_label.clone()));
 
         self.write_output(format!("{start_label}:"))?;
 
@@ -645,13 +651,22 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     }
 
     fn expression_break(&mut self) -> Result<(), Error> {
-        if let Some(label) = self.loop_stack.last() {
-            self.write_output(format!("j {label}"))?;
+        if let Some((_, end_label)) = self.loop_stack.last() {
+            self.write_output(format!("j {end_label}"))?;
             Ok(())
         } else {
             // This is a semantic error, but for now we can return a generic error
             // Ideally we'd have a specific error type for this
             Err(Error::Unknown("Break statement outside of loop".into()))
+        }
+    }
+
+    fn expression_continue(&mut self) -> Result<(), Error> {
+        if let Some((start_label, _)) = self.loop_stack.last() {
+            self.write_output(format!("j {start_label}"))?;
+            Ok(())
+        } else {
+            Err(Error::Unknown("Continue statement outside of loop".into()))
         }
     }
 
