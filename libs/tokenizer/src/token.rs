@@ -210,6 +210,8 @@ impl Symbol {
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Keyword {
+    /// Represents the `continue` keyword
+    Continue,
     /// Represents the `let` keyword
     Let,
     /// Represents the `fn` keyword
@@ -228,4 +230,6 @@ pub enum Keyword {
     Loop,
     /// Represents the `break` keyword
     Break,
+    /// Represents the `while` keyword
+    While,
 }

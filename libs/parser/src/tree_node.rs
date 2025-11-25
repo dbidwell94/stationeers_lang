@@ -5,6 +5,7 @@ use tokenizer::token::Number;
 pub enum Literal {
     Number(Number),
     String(String),
+    Boolean(bool),
 }
 
 impl std::fmt::Display for Literal {
@@ -12,6 +13,7 @@ impl std::fmt::Display for Literal {
         match self {
             Literal::Number(n) => write!(f, "{}", n),
             Literal::String(s) => write!(f, "\"{}\"", s),
+            Literal::Boolean(b) => write!(f, "{}", if *b { 1 } else { 0 }),
         }
     }
 }
@@ -167,40 +169,90 @@ impl std::fmt::Display for DeviceDeclarationExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct IfExpression {
+    pub condition: Box<Expression>,
+    pub body: BlockExpression,
+    pub else_branch: Option<Box<Expression>>,
+}
+
+impl std::fmt::Display for IfExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(if ({}) {}", self.condition, self.body)?;
+        if let Some(else_branch) = &self.else_branch {
+            write!(f, " else {}", else_branch)?;
+        }
+        write!(f, ")")
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct LoopExpression {
+    pub body: BlockExpression,
+}
+
+impl std::fmt::Display for LoopExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(loop {})", self.body)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct WhileExpression {
+    pub condition: Box<Expression>,
+    pub body: BlockExpression,
+}
+
+impl std::fmt::Display for WhileExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(while {} {})", self.condition, self.body)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     Assignment(AssignmentExpression),
     Binary(BinaryExpression),
     Block(BlockExpression),
+    Break,
+    Continue,
     Declaration(String, Box<Expression>),
+    DeviceDeclaration(DeviceDeclarationExpression),
     Function(FunctionExpression),
+    If(IfExpression),
     Invocation(InvocationExpression),
     Literal(Literal),
     Logical(LogicalExpression),
+    Loop(LoopExpression),
     Negation(Box<Expression>),
     Priority(Box<Expression>),
     Return(Box<Expression>),
-    Variable(String),
-    DeviceDeclaration(DeviceDeclarationExpression),
     Syscall(SysCall),
+    Variable(String),
+    While(WhileExpression),
 }
 
 impl std::fmt::Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::Literal(l) => write!(f, "{}", l),
-            Expression::Negation(e) => write!(f, "(-{})", e),
-            Expression::Binary(e) => write!(f, "{}", e),
-            Expression::Logical(e) => write!(f, "{}", e),
             Expression::Assignment(e) => write!(f, "{}", e),
-            Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
-            Expression::Function(e) => write!(f, "{}", e),
+            Expression::Binary(e) => write!(f, "{}", e),
             Expression::Block(e) => write!(f, "{}", e),
+            Expression::Break => write!(f, "break"),
+            Expression::Continue => write!(f, "continue"),
+            Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
+            Expression::DeviceDeclaration(e) => write!(f, "{}", e),
+            Expression::Function(e) => write!(f, "{}", e),
+            Expression::If(e) => write!(f, "{}", e),
             Expression::Invocation(e) => write!(f, "{}", e),
-            Expression::Variable(id) => write!(f, "{}", id),
+            Expression::Literal(l) => write!(f, "{}", l),
+            Expression::Logical(e) => write!(f, "{}", e),
+            Expression::Loop(e) => write!(f, "{}", e),
+            Expression::Negation(e) => write!(f, "(-{})", e),
             Expression::Priority(e) => write!(f, "({})", e),
             Expression::Return(e) => write!(f, "(return {})", e),
-            Expression::DeviceDeclaration(e) => write!(f, "{}", e),
             Expression::Syscall(e) => write!(f, "{}", e),
+            Expression::Variable(id) => write!(f, "{}", id),
+            Expression::While(e) => write!(f, "{}", e),
         }
     }
 }

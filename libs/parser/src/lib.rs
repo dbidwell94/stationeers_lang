@@ -164,15 +164,21 @@ impl Parser {
             return Ok(None);
         };
 
-        // check if the next or current token is an operator
-        if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
-            return Ok(Some(Expression::Binary(self.binary(lhs)?)));
+        // check if the next or current token is an operator, comparison, or logical symbol
+        if self_matches_peek!(
+            self,
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()
+        ) {
+            return Ok(Some(self.infix(lhs)?));
         }
         // This is an edge case. We need to move back one token if the current token is an operator
         // so the binary expression can pick up the operator
-        else if self_matches_current!(self, TokenType::Symbol(s) if s.is_operator()) {
+        else if self_matches_current!(
+            self,
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()
+        ) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
-            return Ok(Some(Expression::Binary(self.binary(lhs)?)));
+            return Ok(Some(self.infix(lhs)?));
         }
 
         Ok(Some(lhs))
@@ -198,9 +204,7 @@ impl Parser {
 
         let expr = match current_token.token_type {
             // match unsupported keywords
-            TokenType::Keyword(e)
-                if matches_keyword!(e, Keyword::Enum, Keyword::If, Keyword::Else) =>
-            {
+            TokenType::Keyword(e) if matches_keyword!(e, Keyword::Enum) => {
                 return Err(Error::UnsupportedKeyword(current_token.clone()));
             }
 
@@ -211,6 +215,35 @@ impl Parser {
 
             // match functions with a `fn` keyword
             TokenType::Keyword(Keyword::Fn) => Expression::Function(self.function()?),
+
+            // match if statements
+            TokenType::Keyword(Keyword::If) => Expression::If(self.if_expression()?),
+
+            // match loop statements
+            TokenType::Keyword(Keyword::Loop) => Expression::Loop(self.loop_expression()?),
+
+            // match while statements
+            TokenType::Keyword(Keyword::While) => Expression::While(self.while_expression()?),
+
+            // match break statements
+            TokenType::Keyword(Keyword::Break) => {
+                // make sure the next token is a semi-colon
+                let next = token_from_option!(self.get_next()?);
+                if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
+                    return Err(Error::UnexpectedToken(next.clone()));
+                }
+                Expression::Break
+            }
+
+            // match continue statements
+            TokenType::Keyword(Keyword::Continue) => {
+                // make sure the next token is a semi-colon
+                let next = token_from_option!(self.get_next()?);
+                if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
+                    return Err(Error::UnexpectedToken(next.clone()));
+                }
+                Expression::Continue
+            }
 
             // match syscalls with a `syscall` keyword
             TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
@@ -238,7 +271,9 @@ impl Parser {
             TokenType::Symbol(Symbol::LBrace) => Expression::Block(self.block()?),
 
             // match literal expressions with a semi-colon afterwards
-            TokenType::Number(_) | TokenType::String(_) => Expression::Literal(self.literal()?),
+            TokenType::Number(_) | TokenType::String(_) | TokenType::Boolean(_) => {
+                Expression::Literal(self.literal()?)
+            }
 
             // match priority expressions with a left parenthesis
             TokenType::Symbol(Symbol::LParen) => Expression::Priority(self.priority()?),
@@ -254,6 +289,13 @@ impl Parser {
                 Expression::Negation(boxed!(inner_expr))
             }
 
+            // match logical NOT `!`
+            TokenType::Symbol(Symbol::LogicalNot) => {
+                self.assign_next()?; // consume the `!` symbol
+                let inner_expr = self.unary()?.ok_or(Error::UnexpectedEOF)?;
+                Expression::Logical(LogicalExpression::Not(boxed!(inner_expr)))
+            }
+
             _ => {
                 return Err(Error::UnexpectedToken(current_token.clone()));
             }
@@ -262,12 +304,12 @@ impl Parser {
         Ok(Some(expr))
     }
 
-    fn get_binary_child_node(&mut self) -> Result<tree_node::Expression, Error> {
+    fn get_infix_child_node(&mut self) -> Result<tree_node::Expression, Error> {
         let current_token = token_from_option!(self.current_token);
 
         match current_token.token_type {
-            // A literal number
-            TokenType::Number(_) => self.literal().map(Expression::Literal),
+            // A literal number or boolean
+            TokenType::Number(_) | TokenType::Boolean(_) => self.literal().map(Expression::Literal),
             // A plain variable
             TokenType::Identifier(ident)
                 if !self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
@@ -286,8 +328,14 @@ impl Parser {
             TokenType::Symbol(Symbol::Minus) => {
                 self.assign_next()?;
                 // recurse to handle double negation or simple negation of atoms
-                let inner = self.get_binary_child_node()?;
+                let inner = self.get_infix_child_node()?;
                 Ok(Expression::Negation(boxed!(inner)))
+            }
+            // Handle Logical Not
+            TokenType::Symbol(Symbol::LogicalNot) => {
+                self.assign_next()?;
+                let inner = self.get_infix_child_node()?;
+                Ok(Expression::Logical(LogicalExpression::Not(boxed!(inner))))
             }
             _ => Err(Error::UnexpectedToken(current_token.clone())),
         }
@@ -345,8 +393,8 @@ impl Parser {
         })
     }
 
-    /// Handles mathmatical expressions in the explicit order of PEMDAS
-    fn binary(&mut self, previous: Expression) -> Result<BinaryExpression, Error> {
+    /// Handles mathmatical and logical expressions in the explicit order of operations
+    fn infix(&mut self, previous: Expression) -> Result<Expression, Error> {
         // We cannot use recursion here, as we need to handle the precedence of the operators
         // We need to use a loop to parse the binary expressions.
 
@@ -354,15 +402,18 @@ impl Parser {
 
         // first, make sure the previous expression supports binary expressions
         match previous {
-            Expression::Binary(_) // 1 + 2 + 3
-            | Expression::Invocation(_) // add() + 3
-            | Expression::Priority(_) // (1 + 2) + 3
-            | Expression::Literal(Literal::Number(_)) // 1 + 2 (no addition of strings)
-            | Expression::Variable(_) // x + 2
-            | Expression::Negation(_) // -1 + 2
-             => {}
+            Expression::Binary(_)
+            | Expression::Logical(_)
+            | Expression::Invocation(_)
+            | Expression::Priority(_)
+            | Expression::Literal(_)
+            | Expression::Variable(_)
+            | Expression::Negation(_) => {}
             _ => {
-                return Err(Error::InvalidSyntax(current_token.clone(), String::from("Invalid expression for binary operation")))
+                return Err(Error::InvalidSyntax(
+                    current_token.clone(),
+                    String::from("Invalid expression for binary/logical operation"),
+                ));
             }
         }
 
@@ -372,12 +423,15 @@ impl Parser {
         let mut operators = Vec::<Symbol>::new(); // +, +
 
         // build the expressions and operators vectors
-        while token_matches!(current_token, TokenType::Symbol(s) if s.is_operator()) {
-            // We are guaranteed to have an operator symbol here as we checked in the while loop
+        while token_matches!(
+            current_token,
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()
+        ) {
+            // We are guaranteed to have an operator/comparison/logical symbol here as we checked in the while loop
             let operator = extract_token_data!(current_token, TokenType::Symbol(s), s);
             operators.push(operator);
             self.assign_next()?;
-            expressions.push(self.get_binary_child_node()?);
+            expressions.push(self.get_infix_child_node()?);
 
             current_token = token_from_option!(self.get_next()?).clone();
         }
@@ -394,7 +448,7 @@ impl Parser {
         // This means that we need to keep track of the current iteration to ensure we are
         // removing the correct expressions from the vector
 
-        // Loop through operators, and build the binary expressions for exponential operators only
+        // --- PRECEDENCE LEVEL 1: Exponent (**) ---
         for (i, operator) in operators.iter().enumerate().rev() {
             if operator == &Symbol::Exp {
                 let right = expressions.remove(i + 1);
@@ -405,12 +459,10 @@ impl Parser {
                 );
             }
         }
-
-        // remove all the exponential operators from the operators vector
         operators.retain(|symbol| symbol != &Symbol::Exp);
-        let mut current_iteration = 0;
 
-        // Loop through operators, and build the binary expressions for multiplication and division operators
+        // --- PRECEDENCE LEVEL 2: Multiplicative (*, /, %) ---
+        let mut current_iteration = 0;
         for (i, operator) in operators.iter().enumerate() {
             if matches!(operator, Symbol::Slash | Symbol::Asterisk | Symbol::Percent) {
                 let index = i - current_iteration;
@@ -430,21 +482,18 @@ impl Parser {
                         index,
                         Expression::Binary(BinaryExpression::Modulo(boxed!(left), boxed!(right))),
                     ),
-                    // safety: we have already checked for the operator
                     _ => unreachable!(),
                 }
                 current_iteration += 1;
             }
         }
-
-        // remove all the multiplication and division operators from the operators vector
         operators
             .retain(|symbol| !matches!(symbol, Symbol::Asterisk | Symbol::Percent | Symbol::Slash));
-        current_iteration = 0;
 
-        // Loop through operators, and build the binary expressions for addition and subtraction operators
+        // --- PRECEDENCE LEVEL 3: Additive (+, -) ---
+        current_iteration = 0;
         for (i, operator) in operators.iter().enumerate() {
-            if operator == &Symbol::Plus || operator == &Symbol::Minus {
+            if matches!(operator, Symbol::Plus | Symbol::Minus) {
                 let index = i - current_iteration;
                 let left = expressions.remove(index);
                 let right = expressions.remove(index);
@@ -458,15 +507,119 @@ impl Parser {
                         index,
                         Expression::Binary(BinaryExpression::Subtract(boxed!(left), boxed!(right))),
                     ),
-                    // safety: we have already checked for the operator
                     _ => unreachable!(),
                 }
                 current_iteration += 1;
             }
         }
-
-        // remove all the addition and subtraction operators from the operators vector
         operators.retain(|symbol| !matches!(symbol, Symbol::Plus | Symbol::Minus));
+
+        // --- PRECEDENCE LEVEL 4: Comparison (<, >, <=, >=) ---
+        current_iteration = 0;
+        for (i, operator) in operators.iter().enumerate() {
+            if operator.is_comparison() && !matches!(operator, Symbol::Equal | Symbol::NotEqual) {
+                let index = i - current_iteration;
+                let left = expressions.remove(index);
+                let right = expressions.remove(index);
+
+                match operator {
+                    Symbol::LessThan => expressions.insert(
+                        index,
+                        Expression::Logical(LogicalExpression::LessThan(
+                            boxed!(left),
+                            boxed!(right),
+                        )),
+                    ),
+                    Symbol::GreaterThan => expressions.insert(
+                        index,
+                        Expression::Logical(LogicalExpression::GreaterThan(
+                            boxed!(left),
+                            boxed!(right),
+                        )),
+                    ),
+                    Symbol::LessThanOrEqual => expressions.insert(
+                        index,
+                        Expression::Logical(LogicalExpression::LessThanOrEqual(
+                            boxed!(left),
+                            boxed!(right),
+                        )),
+                    ),
+                    Symbol::GreaterThanOrEqual => expressions.insert(
+                        index,
+                        Expression::Logical(LogicalExpression::GreaterThanOrEqual(
+                            boxed!(left),
+                            boxed!(right),
+                        )),
+                    ),
+                    _ => unreachable!(),
+                }
+                current_iteration += 1;
+            }
+        }
+        operators.retain(|symbol| {
+            !symbol.is_comparison() || matches!(symbol, Symbol::Equal | Symbol::NotEqual)
+        });
+
+        // --- PRECEDENCE LEVEL 5: Equality (==, !=) ---
+        current_iteration = 0;
+        for (i, operator) in operators.iter().enumerate() {
+            if matches!(operator, Symbol::Equal | Symbol::NotEqual) {
+                let index = i - current_iteration;
+                let left = expressions.remove(index);
+                let right = expressions.remove(index);
+
+                match operator {
+                    Symbol::Equal => expressions.insert(
+                        index,
+                        Expression::Logical(LogicalExpression::Equal(boxed!(left), boxed!(right))),
+                    ),
+                    Symbol::NotEqual => expressions.insert(
+                        index,
+                        Expression::Logical(LogicalExpression::NotEqual(
+                            boxed!(left),
+                            boxed!(right),
+                        )),
+                    ),
+                    _ => unreachable!(),
+                }
+                current_iteration += 1;
+            }
+        }
+        operators.retain(|symbol| !matches!(symbol, Symbol::Equal | Symbol::NotEqual));
+
+        // --- PRECEDENCE LEVEL 6: Logical AND (&&) ---
+        current_iteration = 0;
+        for (i, operator) in operators.iter().enumerate() {
+            if matches!(operator, Symbol::LogicalAnd) {
+                let index = i - current_iteration;
+                let left = expressions.remove(index);
+                let right = expressions.remove(index);
+
+                expressions.insert(
+                    index,
+                    Expression::Logical(LogicalExpression::And(boxed!(left), boxed!(right))),
+                );
+                current_iteration += 1;
+            }
+        }
+        operators.retain(|symbol| !matches!(symbol, Symbol::LogicalAnd));
+
+        // --- PRECEDENCE LEVEL 7: Logical OR (||) ---
+        current_iteration = 0;
+        for (i, operator) in operators.iter().enumerate() {
+            if matches!(operator, Symbol::LogicalOr) {
+                let index = i - current_iteration;
+                let left = expressions.remove(index);
+                let right = expressions.remove(index);
+
+                expressions.insert(
+                    index,
+                    Expression::Logical(LogicalExpression::Or(boxed!(left), boxed!(right))),
+                );
+                current_iteration += 1;
+            }
+        }
+        operators.retain(|symbol| !matches!(symbol, Symbol::LogicalOr));
 
         // Ensure there is only one expression left in the expressions vector, and no operators left
         if expressions.len() != 1 || !operators.is_empty() {
@@ -484,11 +637,7 @@ impl Parser {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
         }
 
-        // Ensure the last expression is a binary expression
-        match expressions.pop().unwrap() {
-            Expression::Binary(binary) => Ok(binary),
-            _ => unreachable!(),
-        }
+        Ok(expressions.pop().unwrap())
     }
 
     fn priority(&mut self) -> Result<Box<Expression>, Error> {
@@ -589,10 +738,19 @@ impl Parser {
             let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
             let return_expr = Expression::Return(boxed!(expression));
             expressions.push(return_expr);
-            self.assign_next()?;
-        }
 
-        self.assign_next()?;
+            // check for semicolon
+            let next = token_from_option!(self.get_next()?);
+            if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
+                return Err(Error::UnexpectedToken(next.clone()));
+            }
+
+            // check for right brace
+            let next = token_from_option!(self.get_next()?);
+            if !token_matches!(next, TokenType::Symbol(Symbol::RBrace)) {
+                return Err(Error::UnexpectedToken(next.clone()));
+            }
+        }
 
         Ok(BlockExpression(expressions))
     }
@@ -634,10 +792,125 @@ impl Parser {
         let literal = match current_token.token_type {
             TokenType::Number(num) => Literal::Number(num),
             TokenType::String(string) => Literal::String(string),
+            TokenType::Boolean(boolean) => Literal::Boolean(boolean),
             _ => return Err(Error::UnexpectedToken(current_token.clone())),
         };
 
         Ok(literal)
+    }
+
+    fn if_expression(&mut self) -> Result<IfExpression, Error> {
+        let current_token = token_from_option!(self.current_token);
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::If)) {
+            return Err(Error::UnexpectedToken(current_token.clone()));
+        }
+
+        // consume 'if'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LParen)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+        self.assign_next()?;
+
+        // parse condition
+        let condition = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+        // check for ')'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // check for '{'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // parse body
+        let body = self.block()?;
+
+        // check for 'else'
+        let else_branch = if self_matches_peek!(self, TokenType::Keyword(Keyword::Else)) {
+            self.assign_next()?; // consume 'else'
+
+            if self_matches_peek!(self, TokenType::Keyword(Keyword::If)) {
+                // else if ...
+                self.assign_next()?;
+                Some(boxed!(Expression::If(self.if_expression()?)))
+            } else if self_matches_peek!(self, TokenType::Symbol(Symbol::LBrace)) {
+                // else { ... }
+                self.assign_next()?;
+                Some(boxed!(Expression::Block(self.block()?)))
+            } else {
+                return Err(Error::UnexpectedToken(
+                    token_from_option!(self.get_next()?).clone(),
+                ));
+            }
+        } else {
+            None
+        };
+
+        Ok(IfExpression {
+            condition: boxed!(condition),
+            body,
+            else_branch,
+        })
+    }
+
+    fn loop_expression(&mut self) -> Result<LoopExpression, Error> {
+        let current_token = token_from_option!(self.current_token);
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::Loop)) {
+            return Err(Error::UnexpectedToken(current_token.clone()));
+        }
+
+        // check for '{'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // parse body
+        let body = self.block()?;
+
+        Ok(LoopExpression { body })
+    }
+
+    fn while_expression(&mut self) -> Result<WhileExpression, Error> {
+        let current_token = token_from_option!(self.current_token);
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::While)) {
+            return Err(Error::UnexpectedToken(current_token.clone()));
+        }
+
+        // consume 'while'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LParen)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+        self.assign_next()?;
+
+        // parse condition
+        let condition = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+        // check for ')'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // check for '{'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // parse body
+        let body = self.block()?;
+
+        Ok(WhileExpression {
+            condition: boxed!(condition),
+            body,
+        })
     }
 
     fn function(&mut self) -> Result<FunctionExpression, Error> {
@@ -929,3 +1202,4 @@ impl Parser {
         }
     }
 }
+
