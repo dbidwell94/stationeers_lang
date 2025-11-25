@@ -9,20 +9,20 @@ use std::{
     io::{BufWriter, Read, Write},
     path::PathBuf,
 };
-use tokenizer::{Tokenizer, TokenizerError};
+use tokenizer::{self, Tokenizer};
 
 quick_error! {
     #[derive(Debug)]
     enum StationlangError {
-        TokenizerError(err: TokenizerError) {
+        TokenizerError(err: tokenizer::Error) {
             from()
             display("Tokenizer error: {}", err)
         }
-        ParserError(err: parser::ParseError) {
+        ParserError(err: parser::Error) {
             from()
             display("Parser error: {}", err)
         }
-        CompileError(err: compiler::CompileError) {
+        CompileError(err: compiler::Error) {
             from()
             display("Compile error: {}", err)
         }
@@ -71,7 +71,7 @@ fn run_logic() -> Result<(), StationlangError> {
         None => BufWriter::new(Box::new(std::io::stdout())),
     };
 
-    let compiler = Compiler::new(parser, &mut writer);
+    let compiler = Compiler::new(parser, &mut writer, None);
 
     compiler.compile()?;
     writer.flush()?;

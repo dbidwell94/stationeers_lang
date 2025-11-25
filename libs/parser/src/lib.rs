@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 pub mod sys_call;
 pub mod tree_node;
 
@@ -5,7 +8,7 @@ use quick_error::quick_error;
 use std::io::SeekFrom;
 use sys_call::SysCall;
 use tokenizer::{
-    Tokenizer, TokenizerBuffer, TokenizerError,
+    self, Tokenizer, TokenizerBuffer,
     token::{Keyword, Symbol, Token, TokenType},
 };
 use tree_node::*;
@@ -20,8 +23,8 @@ macro_rules! boxed {
 
 quick_error! {
     #[derive(Debug)]
-    pub enum ParseError {
-        TokenizerError(err: TokenizerError) {
+    pub enum Error {
+        TokenizerError(err: tokenizer::Error) {
             from()
             display("Tokenizer Error: {}", err)
             source(err)
@@ -57,7 +60,7 @@ macro_rules! token_from_option {
     ($token:expr) => {
         match $token {
             Some(ref token) => token.clone(),
-            None => return Err(ParseError::UnexpectedEOF),
+            None => return Err(Error::UnexpectedEOF),
         }
     };
 }
@@ -66,14 +69,14 @@ macro_rules! extract_token_data {
     ($token:ident, $pattern:pat, $extraction:expr) => {
         match $token.token_type {
             $pattern => $extraction,
-            _ => return Err(ParseError::UnexpectedToken($token.clone())),
+            _ => return Err(Error::UnexpectedToken($token.clone())),
         }
     };
     ($token:expr, $pattern:pat, $extraction:expr) => {
         match $token.token_type {
             $pattern => $extraction,
             _ => {
-                return Err(ParseError::UnexpectedToken($token.clone()));
+                return Err(Error::UnexpectedToken($token.clone()));
             }
         }
     };
@@ -118,7 +121,7 @@ impl Parser {
 
     /// Parses all the input from the tokenizer buffer and returns the resulting expression
     /// Expressions are returned in a root block expression node
-    pub fn parse_all(&mut self) -> Result<Option<tree_node::Expression>, ParseError> {
+    pub fn parse_all(&mut self) -> Result<Option<tree_node::Expression>, Error> {
         let mut expressions = Vec::<Expression>::new();
 
         while let Some(expression) = self.parse()? {
@@ -129,7 +132,7 @@ impl Parser {
     }
 
     /// Parses the input from the tokenizer buffer and returns the resulting expression
-    pub fn parse(&mut self) -> Result<Option<tree_node::Expression>, ParseError> {
+    pub fn parse(&mut self) -> Result<Option<tree_node::Expression>, Error> {
         self.assign_next()?;
         let expr = self.expression()?;
 
@@ -141,18 +144,44 @@ impl Parser {
     }
 
     /// Assigns the next token in the tokenizer buffer to the current token
-    fn assign_next(&mut self) -> Result<(), ParseError> {
+    fn assign_next(&mut self) -> Result<(), Error> {
         self.current_token = self.tokenizer.next_token()?;
         Ok(())
     }
 
     /// Calls `assign_next` and returns the next token in the tokenizer buffer
-    fn get_next(&mut self) -> Result<Option<&Token>, ParseError> {
+    fn get_next(&mut self) -> Result<Option<&Token>, Error> {
         self.assign_next()?;
         Ok(self.current_token.as_ref())
     }
 
-    fn expression(&mut self) -> Result<Option<tree_node::Expression>, ParseError> {
+    /// Parses an expression, handling binary operations with correct precedence.
+    fn expression(&mut self) -> Result<Option<tree_node::Expression>, Error> {
+        // Parse the Left Hand Side (unary/primary expression)
+        let lhs = self.unary()?;
+
+        let Some(lhs) = lhs else {
+            return Ok(None);
+        };
+
+        // check if the next or current token is an operator
+        if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
+            return Ok(Some(Expression::Binary(self.binary(lhs)?)));
+        }
+        // This is an edge case. We need to move back one token if the current token is an operator
+        // so the binary expression can pick up the operator
+        else if self_matches_current!(self, TokenType::Symbol(s) if s.is_operator()) {
+            self.tokenizer.seek(SeekFrom::Current(-1))?;
+            return Ok(Some(Expression::Binary(self.binary(lhs)?)));
+        }
+
+        Ok(Some(lhs))
+    }
+
+    /// Parses a unary or primary expression.
+    /// This handles prefix operators (like negation) and atomic expressions (literals, variables, etc.),
+    /// but stops before consuming binary operators.
+    fn unary(&mut self) -> Result<Option<tree_node::Expression>, Error> {
         macro_rules! matches_keyword {
             ($keyword:expr, $($pattern:pat),+) => {
                 matches!($keyword, $($pattern)|+)
@@ -167,12 +196,12 @@ impl Parser {
             return Ok(None);
         }
 
-        let expr = Some(match current_token.token_type {
+        let expr = match current_token.token_type {
             // match unsupported keywords
             TokenType::Keyword(e)
                 if matches_keyword!(e, Keyword::Enum, Keyword::If, Keyword::Else) =>
             {
-                return Err(ParseError::UnsupportedKeyword(current_token.clone()));
+                return Err(Error::UnsupportedKeyword(current_token.clone()));
             }
 
             // match declarations with a `let` keyword
@@ -214,30 +243,26 @@ impl Parser {
             // match priority expressions with a left parenthesis
             TokenType::Symbol(Symbol::LParen) => Expression::Priority(self.priority()?),
 
-            _ => {
-                return Err(ParseError::UnexpectedToken(current_token.clone()));
+            // match minus symbols to handle negative numbers or negated expressions
+            TokenType::Symbol(Symbol::Minus) => {
+                self.assign_next()?; // consume the `-` symbol
+                // IMPORTANT: We call `unary()` here, NOT `expression()`.
+                // This ensures negation binds tightly to the operand and doesn't consume binary ops.
+                // e.g. `-1 + 2` parses as `(-1) + 2`
+                let inner_expr = self.unary()?.ok_or(Error::UnexpectedEOF)?;
+
+                Expression::Negation(boxed!(inner_expr))
             }
-        });
 
-        let Some(expr) = expr else {
-            return Ok(None);
+            _ => {
+                return Err(Error::UnexpectedToken(current_token.clone()));
+            }
         };
-
-        // check if the next or current token is an operator
-        if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
-            return Ok(Some(Expression::Binary(self.binary(expr)?)));
-        }
-        // This is an edge case. We need to move back one token if the current token is an operator
-        // so the binary expression can pick up the operator
-        else if self_matches_current!(self, TokenType::Symbol(s) if s.is_operator()) {
-            self.tokenizer.seek(SeekFrom::Current(-1))?;
-            return Ok(Some(Expression::Binary(self.binary(expr)?)));
-        }
 
         Ok(Some(expr))
     }
 
-    fn get_binary_child_node(&mut self) -> Result<tree_node::Expression, ParseError> {
+    fn get_binary_child_node(&mut self) -> Result<tree_node::Expression, Error> {
         let current_token = token_from_option!(self.current_token);
 
         match current_token.token_type {
@@ -257,16 +282,23 @@ impl Parser {
             {
                 self.invocation().map(Expression::Invocation)
             }
-            _ => Err(ParseError::UnexpectedToken(current_token.clone())),
+            // Handle Negation
+            TokenType::Symbol(Symbol::Minus) => {
+                self.assign_next()?;
+                // recurse to handle double negation or simple negation of atoms
+                let inner = self.get_binary_child_node()?;
+                Ok(Expression::Negation(boxed!(inner)))
+            }
+            _ => Err(Error::UnexpectedToken(current_token.clone())),
         }
     }
 
-    fn device(&mut self) -> Result<DeviceDeclarationExpression, ParseError> {
+    fn device(&mut self) -> Result<DeviceDeclarationExpression, Error> {
         // sanity check, make sure current token is a `device` keyword
 
         let current_token = token_from_option!(self.current_token);
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Device)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         let identifier = extract_token_data!(
@@ -277,7 +309,7 @@ impl Parser {
 
         let current_token = token_from_option!(self.get_next()?).clone();
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(ParseError::UnexpectedToken(current_token));
+            return Err(Error::UnexpectedToken(current_token));
         }
 
         let device = extract_token_data!(
@@ -292,7 +324,7 @@ impl Parser {
         })
     }
 
-    fn assignment(&mut self) -> Result<AssignmentExpression, ParseError> {
+    fn assignment(&mut self) -> Result<AssignmentExpression, Error> {
         let identifier = extract_token_data!(
             token_from_option!(self.current_token),
             TokenType::Identifier(ref id),
@@ -301,11 +333,11 @@ impl Parser {
 
         let current_token = token_from_option!(self.get_next()?).clone();
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(ParseError::UnexpectedToken(current_token));
+            return Err(Error::UnexpectedToken(current_token));
         }
         self.assign_next()?;
 
-        let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+        let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
         Ok(AssignmentExpression {
             identifier,
@@ -314,7 +346,7 @@ impl Parser {
     }
 
     /// Handles mathmatical expressions in the explicit order of PEMDAS
-    fn binary(&mut self, previous: Expression) -> Result<BinaryExpression, ParseError> {
+    fn binary(&mut self, previous: Expression) -> Result<BinaryExpression, Error> {
         // We cannot use recursion here, as we need to handle the precedence of the operators
         // We need to use a loop to parse the binary expressions.
 
@@ -330,7 +362,7 @@ impl Parser {
             | Expression::Negation(_) // -1 + 2
              => {}
             _ => {
-                return Err(ParseError::InvalidSyntax(current_token.clone(), String::from("Invalid expression for binary operation")))
+                return Err(Error::InvalidSyntax(current_token.clone(), String::from("Invalid expression for binary operation")))
             }
         }
 
@@ -352,7 +384,7 @@ impl Parser {
 
         // validate the vectors and make sure operators.len() == expressions.len() - 1
         if operators.len() != expressions.len() - 1 {
-            return Err(ParseError::InvalidSyntax(
+            return Err(Error::InvalidSyntax(
                 current_token.clone(),
                 String::from("Invalid number of operators"),
             ));
@@ -361,29 +393,26 @@ impl Parser {
         // Every time we find a valid operator, we pop 2 off the expressions and add one back.
         // This means that we need to keep track of the current iteration to ensure we are
         // removing the correct expressions from the vector
-        let mut current_iteration = 0;
 
         // Loop through operators, and build the binary expressions for exponential operators only
-        for (i, operator) in operators.iter().enumerate() {
+        for (i, operator) in operators.iter().enumerate().rev() {
             if operator == &Symbol::Exp {
-                let index = i - current_iteration;
-                let left = expressions.remove(index);
-                let right = expressions.remove(index);
+                let right = expressions.remove(i + 1);
+                let left = expressions.remove(i);
                 expressions.insert(
-                    index,
+                    i,
                     Expression::Binary(BinaryExpression::Exponent(boxed!(left), boxed!(right))),
                 );
-                current_iteration += 1;
             }
         }
 
         // remove all the exponential operators from the operators vector
         operators.retain(|symbol| symbol != &Symbol::Exp);
-        current_iteration = 0;
+        let mut current_iteration = 0;
 
         // Loop through operators, and build the binary expressions for multiplication and division operators
         for (i, operator) in operators.iter().enumerate() {
-            if operator == &Symbol::Asterisk || operator == &Symbol::Slash {
+            if matches!(operator, Symbol::Slash | Symbol::Asterisk | Symbol::Percent) {
                 let index = i - current_iteration;
                 let left = expressions.remove(index);
                 let right = expressions.remove(index);
@@ -397,6 +426,10 @@ impl Parser {
                         index,
                         Expression::Binary(BinaryExpression::Divide(boxed!(left), boxed!(right))),
                     ),
+                    Symbol::Percent => expressions.insert(
+                        index,
+                        Expression::Binary(BinaryExpression::Modulo(boxed!(left), boxed!(right))),
+                    ),
                     // safety: we have already checked for the operator
                     _ => unreachable!(),
                 }
@@ -405,7 +438,8 @@ impl Parser {
         }
 
         // remove all the multiplication and division operators from the operators vector
-        operators.retain(|symbol| symbol != &Symbol::Asterisk && symbol != &Symbol::Slash);
+        operators
+            .retain(|symbol| !matches!(symbol, Symbol::Asterisk | Symbol::Percent | Symbol::Slash));
         current_iteration = 0;
 
         // Loop through operators, and build the binary expressions for addition and subtraction operators
@@ -432,11 +466,11 @@ impl Parser {
         }
 
         // remove all the addition and subtraction operators from the operators vector
-        operators.retain(|symbol| symbol != &Symbol::Plus && symbol != &Symbol::Minus);
+        operators.retain(|symbol| !matches!(symbol, Symbol::Plus | Symbol::Minus));
 
         // Ensure there is only one expression left in the expressions vector, and no operators left
         if expressions.len() != 1 || !operators.is_empty() {
-            return Err(ParseError::InvalidSyntax(
+            return Err(Error::InvalidSyntax(
                 current_token.clone(),
                 String::from("Invalid number of operators"),
             ));
@@ -457,24 +491,24 @@ impl Parser {
         }
     }
 
-    fn priority(&mut self) -> Result<Box<Expression>, ParseError> {
+    fn priority(&mut self) -> Result<Box<Expression>, Error> {
         let current_token = token_from_option!(self.current_token);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         self.assign_next()?;
-        let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+        let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::RParen)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         Ok(boxed!(expression))
     }
 
-    fn invocation(&mut self) -> Result<InvocationExpression, ParseError> {
+    fn invocation(&mut self) -> Result<InvocationExpression, Error> {
         let identifier = extract_token_data!(
             token_from_option!(self.current_token),
             TokenType::Identifier(ref id),
@@ -484,7 +518,7 @@ impl Parser {
         // Ensure the next token is a left parenthesis
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         let mut arguments = Vec::<Expression>::new();
@@ -495,10 +529,10 @@ impl Parser {
             TokenType::Symbol(Symbol::RParen)
         ) {
             let current_token = token_from_option!(self.current_token);
-            let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+            let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
             if let Expression::Block(_) = expression {
-                return Err(ParseError::InvalidSyntax(
+                return Err(Error::InvalidSyntax(
                     current_token,
                     String::from("Block expressions are not allowed in function invocations"),
                 ));
@@ -510,7 +544,7 @@ impl Parser {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                return Err(ParseError::UnexpectedToken(
+                return Err(Error::UnexpectedToken(
                     token_from_option!(self.get_next()?).clone(),
                 ));
             }
@@ -530,20 +564,20 @@ impl Parser {
         })
     }
 
-    fn block(&mut self) -> Result<BlockExpression, ParseError> {
+    fn block(&mut self) -> Result<BlockExpression, Error> {
         let mut expressions = Vec::<Expression>::new();
         let current_token = token_from_option!(self.current_token);
 
         // sanity check: make sure the current token is a left brace
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         while !self_matches_peek!(
             self,
             TokenType::Symbol(Symbol::RBrace) | TokenType::Keyword(Keyword::Return)
         ) {
-            let expression = self.parse()?.ok_or(ParseError::UnexpectedEOF)?;
+            let expression = self.parse()?.ok_or(Error::UnexpectedEOF)?;
             expressions.push(expression);
         }
 
@@ -552,7 +586,7 @@ impl Parser {
 
         if token_matches!(current_token, TokenType::Keyword(Keyword::Return)) {
             self.assign_next()?;
-            let expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+            let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
             let return_expr = Expression::Return(boxed!(expression));
             expressions.push(return_expr);
             self.assign_next()?;
@@ -563,10 +597,10 @@ impl Parser {
         Ok(BlockExpression(expressions))
     }
 
-    fn declaration(&mut self) -> Result<Expression, ParseError> {
+    fn declaration(&mut self) -> Result<Expression, Error> {
         let current_token = token_from_option!(self.current_token);
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Let)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
         let identifier = extract_token_data!(
             token_from_option!(self.get_next()?),
@@ -577,16 +611,16 @@ impl Parser {
         let current_token = token_from_option!(self.get_next()?).clone();
 
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         self.assign_next()?;
-        let assignment_expression = self.expression()?.ok_or(ParseError::UnexpectedEOF)?;
+        let assignment_expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
         // make sure the next token is a semi-colon
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Semicolon)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         Ok(Expression::Declaration(
@@ -595,22 +629,22 @@ impl Parser {
         ))
     }
 
-    fn literal(&mut self) -> Result<Literal, ParseError> {
+    fn literal(&mut self) -> Result<Literal, Error> {
         let current_token = token_from_option!(self.current_token);
         let literal = match current_token.token_type {
             TokenType::Number(num) => Literal::Number(num),
             TokenType::String(string) => Literal::String(string),
-            _ => return Err(ParseError::UnexpectedToken(current_token.clone())),
+            _ => return Err(Error::UnexpectedToken(current_token.clone())),
         };
 
         Ok(literal)
     }
 
-    fn function(&mut self) -> Result<FunctionExpression, ParseError> {
+    fn function(&mut self) -> Result<FunctionExpression, Error> {
         let current_token = token_from_option!(self.current_token);
         // Sanify check that the current token is a `fn` keyword
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Fn)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         let fn_ident = extract_token_data!(
@@ -622,7 +656,7 @@ impl Parser {
         // make sure next token is a left parenthesis
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         }
 
         let mut arguments = Vec::<String>::new();
@@ -638,7 +672,7 @@ impl Parser {
                 extract_token_data!(current_token, TokenType::Identifier(ref id), id.clone());
 
             if arguments.contains(&argument) {
-                return Err(ParseError::DuplicateIdentifier(current_token.clone()));
+                return Err(Error::DuplicateIdentifier(current_token.clone()));
             }
 
             arguments.push(argument);
@@ -647,7 +681,7 @@ impl Parser {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                return Err(ParseError::UnexpectedToken(
+                return Err(Error::UnexpectedToken(
                     token_from_option!(self.get_next()?).clone(),
                 ));
             }
@@ -664,7 +698,7 @@ impl Parser {
         // make sure the next token is a left brace
         let current_token = token_from_option!(self.get_next()?);
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
-            return Err(ParseError::UnexpectedToken(current_token.clone()));
+            return Err(Error::UnexpectedToken(current_token.clone()));
         };
 
         Ok(FunctionExpression {
@@ -674,15 +708,15 @@ impl Parser {
         })
     }
 
-    fn syscall(&mut self) -> Result<SysCall, ParseError> {
+    fn syscall(&mut self) -> Result<SysCall, Error> {
         /// Checks the length of the arguments and returns an error if the length is not equal to the expected length
         fn check_length(
             parser: &Parser,
             arguments: &[Expression],
             length: usize,
-        ) -> Result<(), ParseError> {
+        ) -> Result<(), Error> {
             if arguments.len() != length {
-                return Err(ParseError::InvalidSyntax(
+                return Err(Error::InvalidSyntax(
                     token_from_option!(parser.current_token).clone(),
                     format!("Expected {} arguments", length),
                 ));
@@ -698,7 +732,7 @@ impl Parser {
                     }
                     Some(Expression::Variable(ident)) => LiteralOrVariable::Variable(ident.clone()),
                     _ => {
-                        return Err(ParseError::UnexpectedToken(
+                        return Err(Error::UnexpectedToken(
                             token_from_option!(self.current_token).clone(),
                         ))
                     }
@@ -712,7 +746,7 @@ impl Parser {
                 match $arg {
                     LiteralOrVariable::$matcher(i) => i,
                     _ => {
-                        return Err(ParseError::InvalidSyntax(
+                        return Err(Error::InvalidSyntax(
                             token_from_option!(self.current_token).clone(),
                             String::from("Expected a variable"),
                         ))
@@ -726,7 +760,10 @@ impl Parser {
 
         match invocation.name.as_str() {
             // system calls
-            "yield" => Ok(SysCall::System(sys_call::System::Yield)),
+            "yield" => {
+                check_length(self, &invocation.arguments, 0)?;
+                Ok(SysCall::System(sys_call::System::Yield))
+            }
             "sleep" => {
                 check_length(self, &invocation.arguments, 1)?;
                 let mut arg = invocation.arguments.iter();
@@ -740,14 +777,44 @@ impl Parser {
                 let device = literal_or_variable!(args.next());
 
                 let Some(Expression::Literal(Literal::String(variable))) = args.next() else {
-                    return Err(ParseError::UnexpectedToken(
+                    return Err(Error::UnexpectedToken(
                         token_from_option!(self.current_token).clone(),
                     ));
                 };
 
                 Ok(SysCall::System(sys_call::System::LoadFromDevice(
                     device,
-                    variable.clone(),
+                    LiteralOrVariable::Variable(variable.clone()),
+                )))
+            }
+            "loadBatch" => {
+                check_length(self, &invocation.arguments, 3)?;
+                let mut args = invocation.arguments.iter();
+
+                let device_hash = literal_or_variable!(args.next());
+                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let batch_mode = get_arg!(Literal, literal_or_variable!(args.next()));
+
+                Ok(SysCall::System(sys_call::System::LoadBatch(
+                    device_hash,
+                    logic_type,
+                    batch_mode,
+                )))
+            }
+            "loadBatchNamed" => {
+                check_length(self, &invocation.arguments, 4)?;
+                let mut args = invocation.arguments.iter();
+
+                let device_hash = literal_or_variable!(args.next());
+                let name_hash = get_arg!(Literal, literal_or_variable!(args.next()));
+                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let batch_mode = get_arg!(Literal, literal_or_variable!(args.next()));
+
+                Ok(SysCall::System(sys_call::System::LoadBatchNamed(
+                    device_hash,
+                    name_hash,
+                    logic_type,
+                    batch_mode,
                 )))
             }
             "setOnDevice" => {
@@ -759,7 +826,7 @@ impl Parser {
                 let Literal::String(logic_type) =
                     get_arg!(Literal, literal_or_variable!(args.next()))
                 else {
-                    return Err(ParseError::UnexpectedToken(
+                    return Err(Error::UnexpectedToken(
                         token_from_option!(self.current_token).clone(),
                     ));
                 };
@@ -767,7 +834,9 @@ impl Parser {
                 let variable = literal_or_variable!(args.next());
 
                 Ok(SysCall::System(sys_call::System::SetOnDevice(
-                    device, logic_type, variable,
+                    device,
+                    Literal::String(logic_type),
+                    variable,
                 )))
             }
             // math calls
@@ -858,136 +927,5 @@ impl Parser {
             }
             _ => todo!(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use anyhow::Result;
-
-    macro_rules! parser {
-        ($input:expr) => {
-            Parser::new(Tokenizer::from($input.to_owned()))
-        };
-    }
-
-    #[test]
-    fn test_unsupported_keywords() -> Result<()> {
-        let mut parser = parser!("enum x;");
-        assert!(parser.parse().is_err());
-
-        let mut parser = parser!("if x {}");
-        assert!(parser.parse().is_err());
-
-        let mut parser = parser!("else {}");
-        assert!(parser.parse().is_err());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_declarations() -> Result<()> {
-        let input = r#"
-        let x = 5;
-        // The below line should fail
-        let y = 234
-        "#;
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!("(let x = 5)", expression.to_string());
-
-        assert!(parser.parse().is_err());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_block() -> Result<()> {
-        let input = r#"
-        {
-            let x = 5;
-            let y = 10;
-        }
-        "#;
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!("{ (let x = 5); (let y = 10); }", expression.to_string());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_function_expression() -> Result<()> {
-        let input = r#"
-            // This is a function. The parser is starting to get more complex
-            fn add(x, y) {
-                let z = x;
-            }
-        "#;
-
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!(
-            "(fn add(x, y) { { (let z = x); } })",
-            expression.to_string()
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_function_invocation() -> Result<()> {
-        let input = r#"
-                add();
-            "#;
-
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!("add()", expression.to_string());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_priority_expression() -> Result<()> {
-        let input = r#"
-            let x = (4);
-        "#;
-
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!("(let x = (4))", expression.to_string());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_binary_expression() -> Result<()> {
-        let expr = parser!("4 ** 2 + 5 ** 2").parse()?.unwrap();
-        assert_eq!("((4 ** 2) + (5 ** 2))", expr.to_string());
-
-        let expr = parser!("45 * 2 - 15 / 5 + 5 ** 2").parse()?.unwrap();
-        assert_eq!("(((45 * 2) - (15 / 5)) + (5 ** 2))", expr.to_string());
-
-        let expr = parser!("(5 - 2) * 10").parse()?.unwrap();
-        assert_eq!("(((5 - 2)) * 10)", expr.to_string());
-
-        Ok(())
     }
 }

@@ -1,3 +1,5 @@
+use crate::tree_node::Literal;
+
 use super::LiteralOrVariable;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -111,13 +113,27 @@ pub enum System {
     /// ## Examples
     /// `l r0 d0 Setting`
     /// `l r1 d5 Pressure`
-    LoadFromDevice(LiteralOrVariable, String),
+    LoadFromDevice(LiteralOrVariable, LiteralOrVariable),
+    /// Function which gets a LogicType from all connected network devices that match
+    /// the provided device hash and name, aggregating them via a batchMode
+    /// ## In Game
+    /// lbn r? deviceHash nameHash logicType batchMode
+    /// ## Examples
+    /// lbn r0 HASH("StructureWallLight") HASH("wallLight") On Minimum
+    LoadBatchNamed(LiteralOrVariable, Literal, Literal, Literal),
+    /// Loads a LogicType from all connected network devices, aggregating them via a
+    /// batchMode
+    /// ## In Game
+    /// lb r? deviceHash loggicType batchMode
+    /// ## Examples
+    /// lb r0 HASH("StructureWallLight") On Minimum
+    LoadBatch(LiteralOrVariable, Literal, Literal),
     /// Represents a function which stores a setting into a specific device.
     /// ## In Game
     /// `s d? logicType r?`
     /// ## Example
     /// `s d0 Setting r0`
-    SetOnDevice(LiteralOrVariable, String, LiteralOrVariable),
+    SetOnDevice(LiteralOrVariable, Literal, LiteralOrVariable),
 }
 
 impl std::fmt::Display for System {
@@ -127,6 +143,10 @@ impl std::fmt::Display for System {
             System::Sleep(a) => write!(f, "sleep({})", a),
             System::Hash(a) => write!(f, "HASH({})", a),
             System::LoadFromDevice(a, b) => write!(f, "loadFromDevice({}, {})", a, b),
+            System::LoadBatch(a, b, c) => write!(f, "loadBatch({}, {}, {})", a, b, c),
+            System::LoadBatchNamed(a, b, c, d) => {
+                write!(f, "loadBatchNamed({}, {}, {}, {})", a, b, c, d)
+            }
             System::SetOnDevice(a, b, c) => write!(f, "setOnDevice({}, {}, {})", a, b, c),
         }
     }

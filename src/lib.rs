@@ -9,14 +9,12 @@ fn compile_from_string(
     input: &safer_ffi::string::String,
     output: &mut safer_ffi::string::String,
 ) -> bool {
-    let buffer = Vec::<u8>::new();
-
-    let mut writer = BufWriter::new(buffer);
+    let mut writer = BufWriter::new(Vec::new());
 
     let tokenizer = Tokenizer::from(input.to_string());
     let parser = Parser::new(tokenizer);
 
-    let compiler = Compiler::new(parser, &mut writer);
+    let compiler = Compiler::new(parser, &mut writer, None);
 
     let Ok(()) = compiler.compile() else {
         return false;
