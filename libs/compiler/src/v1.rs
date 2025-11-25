@@ -3,7 +3,7 @@ use parser::{
     Parser as ASTParser,
     tree_node::{
         BinaryExpression, BlockExpression, DeviceDeclarationExpression, Expression,
-        FunctionExpression, InvocationExpression, Literal,
+        FunctionExpression, InvocationExpression, Literal, LogicalExpression,
     },
 };
 use quick_error::quick_error;
@@ -165,6 +165,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 let result = self.expression_binary(bin_expr, scope)?;
                 Ok(Some(result))
             }
+            Expression::Logical(log_expr) => {
+                let result = self.expression_logical(log_expr, scope)?;
+                Ok(Some(result))
+            }
             Expression::Literal(Literal::Number(num)) => {
                 let temp_name = self.next_temp_name();
                 let loc = scope.add_variable(&temp_name, LocationRequest::Temp)?;
@@ -280,6 +284,20 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }
                 var_loc
             }
+            Expression::Logical(log_expr) => {
+                let result = self.expression_logical(log_expr, scope)?;
+                let var_loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
+
+                // Move result from temp to new persistent variable
+                let result_reg = self.resolve_register(&result.location)?;
+                self.emit_variable_assignment(&var_name, &var_loc, result_reg)?;
+
+                // Free the temp result
+                if let Some(name) = result.temp_name {
+                    scope.free_temp(name)?;
+                }
+                var_loc
+            }
             Expression::Variable(name) => {
                 let src_loc = scope.get_location_of(&name)?;
                 let var_loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
@@ -368,6 +386,15 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 Expression::Binary(bin_expr) => {
                     // Compile the binary expression to a temp register
                     let result = self.expression_binary(bin_expr, stack)?;
+                    let reg_str = self.resolve_register(&result.location)?;
+                    self.write_output(format!("push {reg_str}"))?;
+                    if let Some(name) = result.temp_name {
+                        stack.free_temp(name)?;
+                    }
+                }
+                Expression::Logical(log_expr) => {
+                    // Compile the logical expression to a temp register
+                    let result = self.expression_logical(log_expr, stack)?;
                     let reg_str = self.resolve_register(&result.location)?;
                     self.write_output(format!("push {reg_str}"))?;
                     if let Some(name) = result.temp_name {
@@ -524,6 +551,73 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         })
     }
 
+    fn expression_logical<'v>(
+        &mut self,
+        expr: LogicalExpression,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<CompilationResult, Error> {
+        match expr {
+            LogicalExpression::Not(inner) => {
+                let (inner_str, cleanup) = self.compile_operand(*inner, scope)?;
+
+                let result_name = self.next_temp_name();
+                let result_loc = scope.add_variable(&result_name, LocationRequest::Temp)?;
+                let result_reg = self.resolve_register(&result_loc)?;
+
+                // seq rX rY 0  => if rY == 0 set rX = 1 else rX = 0
+                self.write_output(format!("seq {result_reg} {inner_str} 0"))?;
+
+                if let Some(name) = cleanup {
+                    scope.free_temp(name)?;
+                }
+
+                Ok(CompilationResult {
+                    location: result_loc,
+                    temp_name: Some(result_name),
+                })
+            }
+            _ => {
+                let (op_str, left_expr, right_expr) = match expr {
+                    LogicalExpression::And(l, r) => ("and", l, r),
+                    LogicalExpression::Or(l, r) => ("or", l, r),
+                    LogicalExpression::Equal(l, r) => ("seq", l, r),
+                    LogicalExpression::NotEqual(l, r) => ("sne", l, r),
+                    LogicalExpression::GreaterThan(l, r) => ("sgt", l, r),
+                    LogicalExpression::GreaterThanOrEqual(l, r) => ("sge", l, r),
+                    LogicalExpression::LessThan(l, r) => ("slt", l, r),
+                    LogicalExpression::LessThanOrEqual(l, r) => ("sle", l, r),
+                    LogicalExpression::Not(_) => unreachable!(),
+                };
+
+                // Compile LHS
+                let (lhs_str, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
+                // Compile RHS
+                let (rhs_str, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
+
+                // Allocate result register
+                let result_name = self.next_temp_name();
+                let result_loc = scope.add_variable(&result_name, LocationRequest::Temp)?;
+                let result_reg = self.resolve_register(&result_loc)?;
+
+                // Emit instruction: op result lhs rhs
+                self.write_output(format!("{op_str} {result_reg} {lhs_str} {rhs_str}"))?;
+
+                // Clean up operand temps
+                if let Some(name) = lhs_cleanup {
+                    scope.free_temp(name)?;
+                }
+                if let Some(name) = rhs_cleanup {
+                    scope.free_temp(name)?;
+                }
+
+                Ok(CompilationResult {
+                    location: result_loc,
+                    temp_name: Some(result_name),
+                })
+            }
+        }
+    }
+
     fn expression_block<'v>(
         &mut self,
         mut expr: BlockExpression,
@@ -613,6 +707,18 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
             Expression::Binary(bin_expr) => {
                 let result = self.expression_binary(bin_expr, scope)?;
+                let result_reg = self.resolve_register(&result.location)?;
+                self.write_output(format!(
+                    "move r{} {}",
+                    VariableScope::RETURN_REGISTER,
+                    result_reg
+                ))?;
+                if let Some(name) = result.temp_name {
+                    scope.free_temp(name)?;
+                }
+            }
+            Expression::Logical(log_expr) => {
+                let result = self.expression_logical(log_expr, scope)?;
                 let result_reg = self.resolve_register(&result.location)?;
                 self.write_output(format!(
                     "move r{} {}",
@@ -748,3 +854,4 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 }
+

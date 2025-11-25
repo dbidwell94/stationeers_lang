@@ -5,6 +5,7 @@ use tokenizer::token::Number;
 pub enum Literal {
     Number(Number),
     String(String),
+    Boolean(bool),
 }
 
 impl std::fmt::Display for Literal {
@@ -12,6 +13,7 @@ impl std::fmt::Display for Literal {
         match self {
             Literal::Number(n) => write!(f, "{}", n),
             Literal::String(s) => write!(f, "\"{}\"", s),
+            Literal::Boolean(b) => write!(f, "{}", if *b { 1 } else { 0 }),
         }
     }
 }
