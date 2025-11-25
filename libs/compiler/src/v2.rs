@@ -494,6 +494,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             BinaryExpression::Divide(l, r) => ("div", l, r),
             BinaryExpression::Subtract(l, r) => ("sub", l, r),
             BinaryExpression::Exponent(l, r) => ("pow", l, r),
+            BinaryExpression::Modulo(l, r) => ("mod", l, r),
         };
 
         // Compile LHS
@@ -747,4 +748,3 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 }
-

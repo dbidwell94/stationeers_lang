@@ -158,6 +158,8 @@ pub enum Symbol {
     Dot,
     /// Represents the `^` symbol
     Caret,
+    /// Represents the `%` symbol
+    Percent,
 
     // Double Character Symbols
     /// Represents the `==` symbol
@@ -180,7 +182,12 @@ impl Symbol {
     pub fn is_operator(&self) -> bool {
         matches!(
             self,
-            Symbol::Plus | Symbol::Minus | Symbol::Asterisk | Symbol::Slash | Symbol::Exp
+            Symbol::Plus
+                | Symbol::Minus
+                | Symbol::Asterisk
+                | Symbol::Slash
+                | Symbol::Exp
+                | Symbol::Percent
         )
     }
 

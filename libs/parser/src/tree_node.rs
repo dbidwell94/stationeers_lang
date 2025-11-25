@@ -23,6 +23,7 @@ pub enum BinaryExpression {
     Divide(Box<Expression>, Box<Expression>),
     Subtract(Box<Expression>, Box<Expression>),
     Exponent(Box<Expression>, Box<Expression>),
+    Modulo(Box<Expression>, Box<Expression>),
 }
 
 impl std::fmt::Display for BinaryExpression {
@@ -33,6 +34,7 @@ impl std::fmt::Display for BinaryExpression {
             BinaryExpression::Divide(l, r) => write!(f, "({} / {})", l, r),
             BinaryExpression::Subtract(l, r) => write!(f, "({} - {})", l, r),
             BinaryExpression::Exponent(l, r) => write!(f, "({} ** {})", l, r),
+            BinaryExpression::Modulo(l, r) => write!(f, "({} % {})", l, r),
         }
     }
 }

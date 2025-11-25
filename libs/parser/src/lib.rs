@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 pub mod sys_call;
 pub mod tree_node;
 
@@ -409,7 +412,7 @@ impl Parser {
 
         // Loop through operators, and build the binary expressions for multiplication and division operators
         for (i, operator) in operators.iter().enumerate() {
-            if operator == &Symbol::Asterisk || operator == &Symbol::Slash {
+            if matches!(operator, Symbol::Slash | Symbol::Asterisk | Symbol::Percent) {
                 let index = i - current_iteration;
                 let left = expressions.remove(index);
                 let right = expressions.remove(index);
@@ -423,6 +426,10 @@ impl Parser {
                         index,
                         Expression::Binary(BinaryExpression::Divide(boxed!(left), boxed!(right))),
                     ),
+                    Symbol::Percent => expressions.insert(
+                        index,
+                        Expression::Binary(BinaryExpression::Modulo(boxed!(left), boxed!(right))),
+                    ),
                     // safety: we have already checked for the operator
                     _ => unreachable!(),
                 }
@@ -431,7 +438,8 @@ impl Parser {
         }
 
         // remove all the multiplication and division operators from the operators vector
-        operators.retain(|symbol| symbol != &Symbol::Asterisk && symbol != &Symbol::Slash);
+        operators
+            .retain(|symbol| !matches!(symbol, Symbol::Asterisk | Symbol::Percent | Symbol::Slash));
         current_iteration = 0;
 
         // Loop through operators, and build the binary expressions for addition and subtraction operators
@@ -458,7 +466,7 @@ impl Parser {
         }
 
         // remove all the addition and subtraction operators from the operators vector
-        operators.retain(|symbol| symbol != &Symbol::Plus && symbol != &Symbol::Minus);
+        operators.retain(|symbol| !matches!(symbol, Symbol::Plus | Symbol::Minus));
 
         // Ensure there is only one expression left in the expressions vector, and no operators left
         if expressions.len() != 1 || !operators.is_empty() {
@@ -919,139 +927,5 @@ impl Parser {
             }
             _ => todo!(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use anyhow::Result;
-
-    macro_rules! parser {
-        ($input:expr) => {
-            Parser::new(Tokenizer::from($input.to_owned()))
-        };
-    }
-
-    #[test]
-    fn test_unsupported_keywords() -> Result<()> {
-        let mut parser = parser!("enum x;");
-        assert!(parser.parse().is_err());
-
-        let mut parser = parser!("if x {}");
-        assert!(parser.parse().is_err());
-
-        let mut parser = parser!("else {}");
-        assert!(parser.parse().is_err());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_declarations() -> Result<()> {
-        let input = r#"
-        let x = 5;
-        // The below line should fail
-        let y = 234
-        "#;
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!("(let x = 5)", expression.to_string());
-
-        assert!(parser.parse().is_err());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_block() -> Result<()> {
-        let input = r#"
-        {
-            let x = 5;
-            let y = 10;
-        }
-        "#;
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!("{ (let x = 5); (let y = 10); }", expression.to_string());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_function_expression() -> Result<()> {
-        let input = r#"
-            // This is a function. The parser is starting to get more complex
-            fn add(x, y) {
-                let z = x;
-            }
-        "#;
-
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!(
-            "(fn add(x, y) { { (let z = x); } })",
-            expression.to_string()
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_function_invocation() -> Result<()> {
-        let input = r#"
-                add();
-            "#;
-
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!("add()", expression.to_string());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_priority_expression() -> Result<()> {
-        let input = r#"
-            let x = (4);
-        "#;
-
-        let tokenizer = Tokenizer::from(input.to_owned());
-        let mut parser = Parser::new(tokenizer);
-
-        let expression = parser.parse()?.unwrap();
-
-        assert_eq!("(let x = (4))", expression.to_string());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_binary_expression() -> Result<()> {
-        let expr = parser!("4 ** 2 + 5 ** 2").parse()?.unwrap();
-        assert_eq!("((4 ** 2) + (5 ** 2))", expr.to_string());
-
-        let expr = parser!("2 ** 3 ** 4").parse()?.unwrap();
-        assert_eq!("(2 ** (3 ** 4))", expr.to_string());
-
-        let expr = parser!("45 * 2 - 15 / 5 + 5 ** 2").parse()?.unwrap();
-        assert_eq!("(((45 * 2) - (15 / 5)) + (5 ** 2))", expr.to_string());
-
-        let expr = parser!("(5 - 2) * 10").parse()?.unwrap();
-        assert_eq!("(((5 - 2)) * 10)", expr.to_string());
-
-        Ok(())
     }
 }

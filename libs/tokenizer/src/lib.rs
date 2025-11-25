@@ -221,6 +221,7 @@ impl Tokenizer {
 
             '.' => symbol!(Dot),
             '^' => symbol!(Caret),
+            '%' => symbol!(Percent),
 
             // multi-character symbols
             '<' if self.peek_next_char()? == Some('=') => {
@@ -736,7 +737,7 @@ mod tests {
     #[test]
     fn test_symbol_parse() -> Result<()> {
         let mut tokenizer = Tokenizer::from(String::from(
-            "^ ! () [] {} , . ; : + - * / < > = != && || >= <=**",
+            "^ ! () [] {} , . ; : + - * / < > = != && || >= <=**%",
         ));
 
         let expected_tokens = vec![
@@ -765,6 +766,7 @@ mod tests {
             TokenType::Symbol(Symbol::GreaterThanOrEqual),
             TokenType::Symbol(Symbol::LessThanOrEqual),
             TokenType::Symbol(Symbol::Exp),
+            TokenType::Symbol(Symbol::Percent),
         ];
 
         for expected_token in expected_tokens {
