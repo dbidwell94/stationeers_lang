@@ -1017,6 +1017,34 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 Ok(None)
             }
+            System::SetOnDevice(device, logic_type, variable) => {
+                let (variable, var_cleanup) = self.compile_literal_or_variable(variable, scope)?;
+
+                let LiteralOrVariable::Variable(device) = device else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a variable".into(),
+                    ));
+                };
+
+                let Some(device) = self.devices.get(&device) else {
+                    return Err(Error::InvalidDevice(device));
+                };
+
+                let Literal::String(logic_type) = logic_type else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg2 expected to be a string".into(),
+                    ));
+                };
+
+                self.write_output(format!("s {} {} {}", device, logic_type, variable))?;
+
+                if let Some(temp_var) = var_cleanup {
+                    scope.free_temp(temp_var)?;
+                }
+
+                Ok(None)
+            }
+
             _ => {
                 todo!()
             }
