@@ -1,10 +1,11 @@
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
 use parser::{
     Parser as ASTParser,
+    sys_call::{SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, DeviceDeclarationExpression,
         Expression, FunctionExpression, IfExpression, InvocationExpression, Literal,
-        LogicalExpression, LoopExpression, WhileExpression,
+        LiteralOrVariable, LogicalExpression, LoopExpression, WhileExpression,
     },
 };
 use quick_error::quick_error;
@@ -151,6 +152,13 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             Expression::Loop(expr_loop) => {
                 self.expression_loop(expr_loop, scope)?;
                 Ok(None)
+            }
+            Expression::Syscall(SysCall::System(system_syscall)) => {
+                let res = self.expression_syscall_system(system_syscall, scope)?;
+                Ok(res.map(|l| CompilationResult {
+                    location: l,
+                    temp_name: None,
+                }))
             }
             Expression::While(expr_while) => {
                 self.expression_while(expr_while, scope)?;
@@ -740,6 +748,18 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         }
     }
 
+    fn compile_literal_or_variable(
+        &mut self,
+        val: LiteralOrVariable,
+        scope: &mut VariableScope,
+    ) -> Result<(String, Option<String>), Error> {
+        let expr = match val {
+            LiteralOrVariable::Literal(l) => Expression::Literal(l),
+            LiteralOrVariable::Variable(v) => Expression::Variable(v),
+        };
+        self.compile_operand(expr, scope)
+    }
+
     fn expression_binary<'v>(
         &mut self,
         expr: BinaryExpression,
@@ -978,6 +998,31 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(VariableLocation::Persistant(VariableScope::RETURN_REGISTER))
     }
 
+    fn expression_syscall_system<'v>(
+        &mut self,
+        expr: System,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<Option<VariableLocation>, Error> {
+        match expr {
+            System::Yield => {
+                self.write_output("yield")?;
+                Ok(None)
+            }
+            System::Sleep(amt) => {
+                let (var, cleanup) = self.compile_literal_or_variable(amt, scope)?;
+                self.write_output(format!("sleep {var}"))?;
+                if let Some(temp) = cleanup {
+                    scope.free_temp(temp)?;
+                }
+
+                Ok(None)
+            }
+            _ => {
+                todo!()
+            }
+        }
+    }
+
     /// Compile a function declaration.
     /// Calees are responsible for backing up any registers they wish to use.
     fn expression_function<'v>(
@@ -1092,4 +1137,3 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 }
-

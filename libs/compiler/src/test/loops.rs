@@ -111,7 +111,7 @@ fn test_while_loop() -> anyhow::Result<()> {
 fn test_loop_continue() -> anyhow::Result<()> {
     let compiled = compile! {
         debug
-        "
+        r#"
         let a = 0;
         loop {
             a = a + 1;
@@ -120,7 +120,7 @@ fn test_loop_continue() -> anyhow::Result<()> {
             }
             break;
         }
-        "
+        "#
     };
 
     // Labels: L1 (start), L2 (end), L3 (if end)
