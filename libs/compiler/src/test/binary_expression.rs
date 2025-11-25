@@ -84,6 +84,14 @@ fn stress_test_negation_with_stack_spillover() -> anyhow::Result<()> {
         compiled,
         indoc! {
             "
+            j main
+            main:
+            add r1 -1 -2
+            add r2 -5 -6
+            mul r3 -4 r2
+            add r4 -3 r3
+            mul r5 r1 r4
+            move r8 r5 #negationHell
             "
         }
     );

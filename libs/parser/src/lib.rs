@@ -152,7 +152,33 @@ impl Parser {
         Ok(self.current_token.as_ref())
     }
 
+    /// Parses an expression, handling binary operations with correct precedence.
     fn expression(&mut self) -> Result<Option<tree_node::Expression>, Error> {
+        // Parse the Left Hand Side (unary/primary expression)
+        let lhs = self.unary()?;
+
+        let Some(lhs) = lhs else {
+            return Ok(None);
+        };
+
+        // check if the next or current token is an operator
+        if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
+            return Ok(Some(Expression::Binary(self.binary(lhs)?)));
+        }
+        // This is an edge case. We need to move back one token if the current token is an operator
+        // so the binary expression can pick up the operator
+        else if self_matches_current!(self, TokenType::Symbol(s) if s.is_operator()) {
+            self.tokenizer.seek(SeekFrom::Current(-1))?;
+            return Ok(Some(Expression::Binary(self.binary(lhs)?)));
+        }
+
+        Ok(Some(lhs))
+    }
+
+    /// Parses a unary or primary expression.
+    /// This handles prefix operators (like negation) and atomic expressions (literals, variables, etc.),
+    /// but stops before consuming binary operators.
+    fn unary(&mut self) -> Result<Option<tree_node::Expression>, Error> {
         macro_rules! matches_keyword {
             ($keyword:expr, $($pattern:pat),+) => {
                 matches!($keyword, $($pattern)|+)
@@ -167,7 +193,7 @@ impl Parser {
             return Ok(None);
         }
 
-        let expr = Some(match current_token.token_type {
+        let expr = match current_token.token_type {
             // match unsupported keywords
             TokenType::Keyword(e)
                 if matches_keyword!(e, Keyword::Enum, Keyword::If, Keyword::Else) =>
@@ -217,7 +243,10 @@ impl Parser {
             // match minus symbols to handle negative numbers or negated expressions
             TokenType::Symbol(Symbol::Minus) => {
                 self.assign_next()?; // consume the `-` symbol
-                let inner_expr = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+                // IMPORTANT: We call `unary()` here, NOT `expression()`.
+                // This ensures negation binds tightly to the operand and doesn't consume binary ops.
+                // e.g. `-1 + 2` parses as `(-1) + 2`
+                let inner_expr = self.unary()?.ok_or(Error::UnexpectedEOF)?;
 
                 Expression::Negation(boxed!(inner_expr))
             }
@@ -225,22 +254,7 @@ impl Parser {
             _ => {
                 return Err(Error::UnexpectedToken(current_token.clone()));
             }
-        });
-
-        let Some(expr) = expr else {
-            return Ok(None);
         };
-
-        // check if the next or current token is an operator
-        if self_matches_peek!(self, TokenType::Symbol(s) if s.is_operator()) {
-            return Ok(Some(Expression::Binary(self.binary(expr)?)));
-        }
-        // This is an edge case. We need to move back one token if the current token is an operator
-        // so the binary expression can pick up the operator
-        else if self_matches_current!(self, TokenType::Symbol(s) if s.is_operator()) {
-            self.tokenizer.seek(SeekFrom::Current(-1))?;
-            return Ok(Some(Expression::Binary(self.binary(expr)?)));
-        }
 
         Ok(Some(expr))
     }
@@ -259,16 +273,18 @@ impl Parser {
             }
             // A priority expression ( -> (1 + 2) <- + 3 )
             TokenType::Symbol(Symbol::LParen) => self.priority().map(Expression::Priority),
-            TokenType::Symbol(Symbol::Minus) => {
-                self.assign_next()?;
-                let inner = self.get_binary_child_node()?;
-                Ok(Expression::Negation(boxed!(inner)))
-            }
             // A function invocation
             TokenType::Identifier(_)
                 if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
             {
                 self.invocation().map(Expression::Invocation)
+            }
+            // Handle Negation
+            TokenType::Symbol(Symbol::Minus) => {
+                self.assign_next()?;
+                // recurse to handle double negation or simple negation of atoms
+                let inner = self.get_binary_child_node()?;
+                Ok(Expression::Negation(boxed!(inner)))
             }
             _ => Err(Error::UnexpectedToken(current_token.clone())),
         }

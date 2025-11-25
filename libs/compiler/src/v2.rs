@@ -747,3 +747,4 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 }
+
