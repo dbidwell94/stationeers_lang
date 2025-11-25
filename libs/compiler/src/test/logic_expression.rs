@@ -110,7 +110,65 @@ fn test_math_with_logic() -> anyhow::Result<()> {
         compiled,
         indoc! {
             "
-            
+            j main
+            main:
+            add r1 1 2
+            sgt r2 r1 1
+            move r8 r2 #logic
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_boolean_in_logic() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        let res = true && false;
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            and r1 1 0
+            move r8 r1 #res
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_invert_a_boolean() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        let i = true;
+        let y = !i;
+
+        let result = y == false;
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 1 #i
+            seq r1 r8 0
+            move r9 r1 #y
+            seq r2 r9 0
+            move r10 r2 #result
             "
         }
     );

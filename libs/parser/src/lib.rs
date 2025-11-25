@@ -171,9 +171,8 @@ impl Parser {
         ) {
             return Ok(Some(self.infix(lhs)?));
         }
-        // This is an edge case. We need to move back one token if the current token is an
-        // operator, comparison, or logical symbol so the binary expression can pick up
-        // the operator
+        // This is an edge case. We need to move back one token if the current token is an operator
+        // so the binary expression can pick up the operator
         else if self_matches_current!(
             self,
             TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()
@@ -245,7 +244,9 @@ impl Parser {
             TokenType::Symbol(Symbol::LBrace) => Expression::Block(self.block()?),
 
             // match literal expressions with a semi-colon afterwards
-            TokenType::Number(_) | TokenType::String(_) => Expression::Literal(self.literal()?),
+            TokenType::Number(_) | TokenType::String(_) | TokenType::Boolean(_) => {
+                Expression::Literal(self.literal()?)
+            }
 
             // match priority expressions with a left parenthesis
             TokenType::Symbol(Symbol::LParen) => Expression::Priority(self.priority()?),
@@ -280,8 +281,8 @@ impl Parser {
         let current_token = token_from_option!(self.current_token);
 
         match current_token.token_type {
-            // A literal number
-            TokenType::Number(_) => self.literal().map(Expression::Literal),
+            // A literal number or boolean
+            TokenType::Number(_) | TokenType::Boolean(_) => self.literal().map(Expression::Literal),
             // A plain variable
             TokenType::Identifier(ident)
                 if !self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
@@ -378,7 +379,7 @@ impl Parser {
             | Expression::Logical(_)
             | Expression::Invocation(_)
             | Expression::Priority(_)
-            | Expression::Literal(Literal::Number(_))
+            | Expression::Literal(_)
             | Expression::Variable(_)
             | Expression::Negation(_) => {}
             _ => {
@@ -755,6 +756,7 @@ impl Parser {
         let literal = match current_token.token_type {
             TokenType::Number(num) => Literal::Number(num),
             TokenType::String(string) => Literal::String(string),
+            TokenType::Boolean(boolean) => Literal::Boolean(boolean),
             _ => return Err(Error::UnexpectedToken(current_token.clone())),
         };
 
@@ -1050,3 +1052,4 @@ impl Parser {
         }
     }
 }
+

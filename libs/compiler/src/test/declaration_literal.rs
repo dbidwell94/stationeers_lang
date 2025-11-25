@@ -85,3 +85,63 @@ fn variable_declaration_negative() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_boolean_declaration() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        let t = true;
+        let f = false;
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 1 #t
+            move r9 0 #f
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_boolean_return() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        "
+        fn getTrue() {
+            return true;
+        };
+        
+        let val = getTrue();
+        "
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            getTrue:
+            push ra
+            move r15 1 #returnValue
+            sub r0 sp 1
+            get ra db r0
+            sub sp sp 1
+            j ra
+            main:
+            jal getTrue
+            move r8 r15 #val
+            "
+        }
+    );
+
+    Ok(())
+}

@@ -178,6 +178,16 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     temp_name: Some(temp_name),
                 }))
             }
+            Expression::Literal(Literal::Boolean(b)) => {
+                let val = if b { "1" } else { "0" };
+                let temp_name = self.next_temp_name();
+                let loc = scope.add_variable(&temp_name, LocationRequest::Temp)?;
+                self.emit_variable_assignment(&temp_name, &loc, val)?;
+                Ok(Some(CompilationResult {
+                    location: loc,
+                    temp_name: Some(temp_name),
+                }))
+            }
             Expression::Variable(name) => {
                 let loc = scope.get_location_of(&name)?;
                 Ok(Some(CompilationResult {
@@ -256,6 +266,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
 
                 self.emit_variable_assignment(&var_name, &var_location, num)?;
+                var_location
+            }
+            Expression::Literal(Literal::Boolean(b)) => {
+                let val = if b { "1" } else { "0" };
+                let var_location =
+                    scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
+
+                self.emit_variable_assignment(&var_name, &var_location, val)?;
                 var_location
             }
             Expression::Invocation(invoke_expr) => {
@@ -364,6 +382,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     let num_str = num.to_string();
                     self.write_output(format!("push {num_str}"))?;
                 }
+                Expression::Literal(Literal::Boolean(b)) => {
+                    let val = if b { "1" } else { "0" };
+                    self.write_output(format!("push {val}"))?;
+                }
                 Expression::Variable(var_name) => match stack.get_location_of(var_name)? {
                     VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
                         self.write_output(format!("push r{reg}"))?;
@@ -469,6 +491,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         // Optimization for literals
         if let Expression::Literal(Literal::Number(n)) = expr {
             return Ok((n.to_string(), None));
+        }
+
+        // Optimization for boolean literals
+        if let Expression::Literal(Literal::Boolean(b)) = expr {
+            return Ok((if b { "1".to_string() } else { "0".to_string() }, None));
         }
 
         // Optimization for negated literals used as operands.
@@ -703,6 +730,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     "returnValue",
                     &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     num,
+                )?;
+            }
+            Expression::Literal(Literal::Boolean(b)) => {
+                let val = if b { "1" } else { "0" };
+                self.emit_variable_assignment(
+                    "returnValue",
+                    &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    val,
                 )?;
             }
             Expression::Binary(bin_expr) => {

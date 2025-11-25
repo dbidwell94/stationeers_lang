@@ -228,4 +228,6 @@ pub enum Keyword {
     Loop,
     /// Represents the `break` keyword
     Break,
+    /// Represents the `while` keyword
+    While,
 }

@@ -409,6 +409,7 @@ impl Tokenizer {
                 "device" if next_ws!() => keyword!(Device),
                 "loop" if next_ws!() => keyword!(Loop),
                 "break" if next_ws!() => keyword!(Break),
+                "while" if next_ws!() => keyword!(While),
 
                 // boolean literals
                 "true" if next_ws!() => {
@@ -883,6 +884,41 @@ mod tests {
         );
         assert_ne!(tokenizer.column, column);
         assert_ne!(tokenizer.line, line);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_compact_syntax() -> Result<()> {
+        let mut tokenizer = Tokenizer::from(String::from("if(true) while(false)"));
+
+        // if(true)
+        assert_eq!(
+            tokenizer.next_token()?.unwrap().token_type,
+            TokenType::Keyword(Keyword::If)
+        );
+        assert_eq!(
+            tokenizer.next_token()?.unwrap().token_type,
+            TokenType::Symbol(Symbol::LParen)
+        );
+        assert_eq!(
+            tokenizer.next_token()?.unwrap().token_type,
+            TokenType::Boolean(true)
+        );
+        assert_eq!(
+            tokenizer.next_token()?.unwrap().token_type,
+            TokenType::Symbol(Symbol::RParen)
+        );
+
+        // while(false)
+        assert_eq!(
+            tokenizer.next_token()?.unwrap().token_type,
+            TokenType::Keyword(Keyword::While)
+        );
+        assert_eq!(
+            tokenizer.next_token()?.unwrap().token_type,
+            TokenType::Symbol(Symbol::LParen)
+        );
 
         Ok(())
     }
