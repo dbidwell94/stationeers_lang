@@ -169,34 +169,53 @@ impl std::fmt::Display for DeviceDeclarationExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct IfExpression {
+    pub condition: Box<Expression>,
+    pub body: BlockExpression,
+    pub else_branch: Option<Box<Expression>>,
+}
+
+impl std::fmt::Display for IfExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(if ({}) {}", self.condition, self.body)?;
+        if let Some(else_branch) = &self.else_branch {
+            write!(f, " else {}", else_branch)?;
+        }
+        write!(f, ")")
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     Assignment(AssignmentExpression),
     Binary(BinaryExpression),
     Block(BlockExpression),
     Declaration(String, Box<Expression>),
+    DeviceDeclaration(DeviceDeclarationExpression),
     Function(FunctionExpression),
+    If(IfExpression),
     Invocation(InvocationExpression),
     Literal(Literal),
     Logical(LogicalExpression),
     Negation(Box<Expression>),
     Priority(Box<Expression>),
     Return(Box<Expression>),
-    Variable(String),
-    DeviceDeclaration(DeviceDeclarationExpression),
     Syscall(SysCall),
+    Variable(String),
 }
 
 impl std::fmt::Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Expression::Assignment(e) => write!(f, "{}", e),
+            Expression::Binary(e) => write!(f, "{}", e),
             Expression::Literal(l) => write!(f, "{}", l),
             Expression::Negation(e) => write!(f, "(-{})", e),
-            Expression::Binary(e) => write!(f, "{}", e),
             Expression::Logical(e) => write!(f, "{}", e),
-            Expression::Assignment(e) => write!(f, "{}", e),
             Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
             Expression::Function(e) => write!(f, "{}", e),
             Expression::Block(e) => write!(f, "{}", e),
+            Expression::If(e) => write!(f, "{}", e),
             Expression::Invocation(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),
             Expression::Priority(e) => write!(f, "({})", e),

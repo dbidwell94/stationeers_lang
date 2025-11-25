@@ -41,6 +41,7 @@ macro_rules! compile {
     }};
 }
 mod binary_expression;
+mod branching;
 mod declaration_function_invocation;
 mod declaration_literal;
 mod function_declaration;

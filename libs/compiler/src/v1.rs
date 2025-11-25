@@ -2,8 +2,9 @@ use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableS
 use parser::{
     Parser as ASTParser,
     tree_node::{
-        BinaryExpression, BlockExpression, DeviceDeclarationExpression, Expression,
-        FunctionExpression, InvocationExpression, Literal, LogicalExpression,
+        AssignmentExpression, BinaryExpression, BlockExpression, DeviceDeclarationExpression,
+        Expression, FunctionExpression, IfExpression, InvocationExpression, Literal,
+        LogicalExpression,
     },
 };
 use quick_error::quick_error;
@@ -75,6 +76,7 @@ pub struct Compiler<'a, W: std::io::Write> {
     declared_main: bool,
     config: CompilerConfig,
     temp_counter: usize,
+    label_counter: usize,
 }
 
 impl<'a, W: std::io::Write> Compiler<'a, W> {
@@ -93,6 +95,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             declared_main: false,
             config: config.unwrap_or_default(),
             temp_counter: 0,
+            label_counter: 0,
         }
     }
 
@@ -120,6 +123,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         format!("__binary_temp_{}", self.temp_counter)
     }
 
+    fn next_label_name(&mut self) -> String {
+        self.label_counter += 1;
+        format!("L{}", self.label_counter)
+    }
+
     fn expression<'v>(
         &mut self,
         expr: Expression,
@@ -134,6 +142,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 self.expression_block(expr_block, scope)?;
                 Ok(None)
             }
+            Expression::If(expr_if) => {
+                self.expression_if(expr_if, scope)?;
+                Ok(None)
+            }
             Expression::DeviceDeclaration(expr_dev) => {
                 self.expression_device(expr_dev)?;
                 Ok(None)
@@ -144,6 +156,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     location: l,
                     temp_name: None,
                 }))
+            }
+            Expression::Assignment(assign_expr) => {
+                self.expression_assignment(assign_expr, scope)?;
+                Ok(None)
             }
             Expression::Invocation(expr_invoke) => {
                 self.expression_function_invocation(expr_invoke, scope)?;
@@ -353,6 +369,50 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(Some(loc))
     }
 
+    fn expression_assignment<'v>(
+        &mut self,
+        expr: AssignmentExpression,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<(), Error> {
+        let AssignmentExpression {
+            identifier,
+            expression,
+        } = expr;
+
+        let location = scope.get_location_of(&identifier)?;
+        let (val_str, cleanup) = self.compile_operand(*expression, scope)?;
+
+        let debug_tag = if self.config.debug {
+            format!(" #{}", identifier)
+        } else {
+            String::new()
+        };
+
+        match location {
+            VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
+                self.write_output(format!("move r{reg} {val_str}{debug_tag}"))?;
+            }
+            VariableLocation::Stack(offset) => {
+                // Calculate address: sp - offset
+                self.write_output(format!(
+                    "sub r{0} sp {offset}",
+                    VariableScope::TEMP_STACK_REGISTER
+                ))?;
+                // Store value to stack/db at address
+                self.write_output(format!(
+                    "put db r{0} {val_str}{debug_tag}",
+                    VariableScope::TEMP_STACK_REGISTER
+                ))?;
+            }
+        }
+
+        if let Some(name) = cleanup {
+            scope.free_temp(name)?;
+        }
+
+        Ok(())
+    }
+
     fn expression_function_invocation(
         &mut self,
         invoke_expr: InvocationExpression,
@@ -463,6 +523,49 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             return Err(Error::DuplicateIdentifier(expr.name));
         }
         self.devices.insert(expr.name, expr.device);
+
+        Ok(())
+    }
+
+    fn expression_if<'v>(
+        &mut self,
+        expr: IfExpression,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<(), Error> {
+        let end_label = self.next_label_name();
+        let else_label = if expr.else_branch.is_some() {
+            self.next_label_name()
+        } else {
+            end_label.clone()
+        };
+
+        // Compile Condition
+        let (cond_str, cleanup) = self.compile_operand(*expr.condition, scope)?;
+
+        // If condition is FALSE (0), jump to else_label
+        self.write_output(format!("beq {cond_str} 0 {else_label}"))?;
+
+        if let Some(name) = cleanup {
+            scope.free_temp(name)?;
+        }
+
+        // Compile Body
+        // Scope variables in body are ephemeral to the block, handled by expression_block
+        self.expression_block(expr.body, scope)?;
+
+        // If we have an else branch, we need to jump over it after the 'if' body
+        if expr.else_branch.is_some() {
+            self.write_output(format!("j {end_label}"))?;
+            self.write_output(format!("{else_label}:"))?;
+
+            match *expr.else_branch.unwrap() {
+                Expression::Block(block) => self.expression_block(block, scope)?,
+                Expression::If(if_expr) => self.expression_if(if_expr, scope)?,
+                _ => unreachable!("Parser ensures else branch is Block or If"),
+            }
+        }
+
+        self.write_output(format!("{end_label}:"))?;
 
         Ok(())
     }

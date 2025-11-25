@@ -204,9 +204,7 @@ impl Parser {
 
         let expr = match current_token.token_type {
             // match unsupported keywords
-            TokenType::Keyword(e)
-                if matches_keyword!(e, Keyword::Enum, Keyword::If, Keyword::Else) =>
-            {
+            TokenType::Keyword(e) if matches_keyword!(e, Keyword::Enum, Keyword::While) => {
                 return Err(Error::UnsupportedKeyword(current_token.clone()));
             }
 
@@ -217,6 +215,9 @@ impl Parser {
 
             // match functions with a `fn` keyword
             TokenType::Keyword(Keyword::Fn) => Expression::Function(self.function()?),
+
+            // match if statements
+            TokenType::Keyword(Keyword::If) => Expression::If(self.if_expression()?),
 
             // match syscalls with a `syscall` keyword
             TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
@@ -711,10 +712,19 @@ impl Parser {
             let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
             let return_expr = Expression::Return(boxed!(expression));
             expressions.push(return_expr);
-            self.assign_next()?;
-        }
 
-        self.assign_next()?;
+            // check for semicolon
+            let next = token_from_option!(self.get_next()?);
+            if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
+                return Err(Error::UnexpectedToken(next.clone()));
+            }
+
+            // check for right brace
+            let next = token_from_option!(self.get_next()?);
+            if !token_matches!(next, TokenType::Symbol(Symbol::RBrace)) {
+                return Err(Error::UnexpectedToken(next.clone()));
+            }
+        }
 
         Ok(BlockExpression(expressions))
     }
@@ -761,6 +771,65 @@ impl Parser {
         };
 
         Ok(literal)
+    }
+
+    fn if_expression(&mut self) -> Result<IfExpression, Error> {
+        let current_token = token_from_option!(self.current_token);
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::If)) {
+            return Err(Error::UnexpectedToken(current_token.clone()));
+        }
+
+        // consume 'if'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LParen)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+        self.assign_next()?;
+
+        // parse condition
+        let condition = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+        // check for ')'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // check for '{'
+        let next = token_from_option!(self.get_next()?);
+        if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
+            return Err(Error::UnexpectedToken(next.clone()));
+        }
+
+        // parse body
+        let body = self.block()?;
+
+        // check for 'else'
+        let else_branch = if self_matches_peek!(self, TokenType::Keyword(Keyword::Else)) {
+            self.assign_next()?; // consume 'else'
+
+            if self_matches_peek!(self, TokenType::Keyword(Keyword::If)) {
+                // else if ...
+                self.assign_next()?;
+                Some(boxed!(Expression::If(self.if_expression()?)))
+            } else if self_matches_peek!(self, TokenType::Symbol(Symbol::LBrace)) {
+                // else { ... }
+                self.assign_next()?;
+                Some(boxed!(Expression::Block(self.block()?)))
+            } else {
+                return Err(Error::UnexpectedToken(
+                    token_from_option!(self.get_next()?).clone(),
+                ));
+            }
+        } else {
+            None
+        };
+
+        Ok(IfExpression {
+            condition: boxed!(condition),
+            body,
+            else_branch,
+        })
     }
 
     fn function(&mut self) -> Result<FunctionExpression, Error> {
