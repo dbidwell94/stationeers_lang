@@ -9,7 +9,6 @@ members = ["libs/*"]
 [workspace.dependencies]
 quick-error = "2"
 rust_decimal = "1"
-safer-ffi = { version = "^0.1" }
 
 [profile.release]
 strip = true
@@ -30,10 +29,7 @@ rust_decimal = { workspace = true }
 tokenizer = { path = "libs/tokenizer" }
 parser = { path = "libs/parser" }
 compiler = { path = "libs/compiler" }
-safer-ffi = { workspace = true }
 
-[features]
-headers = ["safer-ffi/headers"]
 
 [dev-dependencies]
 anyhow = { version = "^1.0", features = ["backtrace"] }
