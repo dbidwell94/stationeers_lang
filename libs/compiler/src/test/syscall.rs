@@ -81,3 +81,29 @@ fn test_set_on_device() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_load_from_device() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        device airCon = "d0";
+
+        let setting = loadFromDevice(airCon, "On");
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d0 On
+            move r8 r15 #setting
+            "
+        }
+    );
+
+    Ok(())
+}
