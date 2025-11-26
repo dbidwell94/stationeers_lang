@@ -1,10 +1,11 @@
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
 use parser::{
     Parser as ASTParser,
+    sys_call::{SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, DeviceDeclarationExpression,
         Expression, FunctionExpression, IfExpression, InvocationExpression, Literal,
-        LogicalExpression, LoopExpression, WhileExpression,
+        LiteralOrVariable, LogicalExpression, LoopExpression, WhileExpression,
     },
 };
 use quick_error::quick_error;
@@ -152,6 +153,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 self.expression_loop(expr_loop, scope)?;
                 Ok(None)
             }
+            Expression::Syscall(SysCall::System(system_syscall)) => {
+                self.expression_syscall_system(system_syscall, scope)
+            }
             Expression::While(expr_while) => {
                 self.expression_while(expr_while, scope)?;
                 Ok(None)
@@ -169,11 +173,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 Ok(None)
             }
             Expression::Declaration(var_name, expr) => {
-                let loc = self.expression_declaration(var_name, *expr, scope)?;
-                Ok(loc.map(|l| CompilationResult {
-                    location: l,
-                    temp_name: None,
-                }))
+                self.expression_declaration(var_name, *expr, scope)
             }
             Expression::Assignment(assign_expr) => {
                 self.expression_assignment(assign_expr, scope)?;
@@ -284,23 +284,26 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         var_name: String,
         expr: Expression,
         scope: &mut VariableScope<'v>,
-    ) -> Result<Option<VariableLocation>, Error> {
+    ) -> Result<Option<CompilationResult>, Error> {
         // optimization. Check for a negated numeric literal
         if let Expression::Negation(box_expr) = &expr
             && let Expression::Literal(Literal::Number(neg_num)) = &**box_expr
         {
             let loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
             self.emit_variable_assignment(&var_name, &loc, format!("-{neg_num}"))?;
-            return Ok(Some(loc));
+            return Ok(Some(CompilationResult {
+                location: loc,
+                temp_name: None,
+            }));
         }
 
-        let loc = match expr {
+        let (loc, temp_name) = match expr {
             Expression::Literal(Literal::Number(num)) => {
                 let var_location =
                     scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
 
                 self.emit_variable_assignment(&var_name, &var_location, num)?;
-                var_location
+                (var_location, None)
             }
             Expression::Literal(Literal::Boolean(b)) => {
                 let val = if b { "1" } else { "0" };
@@ -308,7 +311,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     scope.add_variable(var_name.clone(), LocationRequest::Persist)?;
 
                 self.emit_variable_assignment(&var_name, &var_location, val)?;
-                var_location
+                (var_location, None)
             }
             Expression::Invocation(invoke_expr) => {
                 self.expression_function_invocation(invoke_expr, scope)?;
@@ -319,7 +322,21 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     &loc,
                     format!("r{}", VariableScope::RETURN_REGISTER),
                 )?;
-                loc
+                (loc, None)
+            }
+            Expression::Syscall(SysCall::System(call)) => {
+                if self.expression_syscall_system(call, scope)?.is_none() {
+                    return Err(Error::Unknown("SysCall did not return a value".into()));
+                };
+
+                let loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
+                self.emit_variable_assignment(
+                    &var_name,
+                    &loc,
+                    format!("r{}", VariableScope::RETURN_REGISTER),
+                )?;
+
+                (loc, None)
             }
             // Support assigning binary expressions to variables directly
             Expression::Binary(bin_expr) => {
@@ -334,7 +351,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 if let Some(name) = result.temp_name {
                     scope.free_temp(name)?;
                 }
-                var_loc
+                (var_loc, None)
             }
             Expression::Logical(log_expr) => {
                 let result = self.expression_logical(log_expr, scope)?;
@@ -348,7 +365,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 if let Some(name) = result.temp_name {
                     scope.free_temp(name)?;
                 }
-                var_loc
+                (var_loc, None)
             }
             Expression::Variable(name) => {
                 let src_loc = scope.get_location_of(&name)?;
@@ -372,7 +389,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     }
                 };
                 self.emit_variable_assignment(&var_name, &var_loc, src_str)?;
-                var_loc
+                (var_loc, None)
             }
             Expression::Priority(inner) => {
                 return self.expression_declaration(var_name, *inner, scope);
@@ -384,7 +401,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
         };
 
-        Ok(Some(loc))
+        Ok(Some(CompilationResult {
+            location: loc,
+            temp_name,
+        }))
     }
 
     fn expression_assignment<'v>(
@@ -740,6 +760,18 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         }
     }
 
+    fn compile_literal_or_variable(
+        &mut self,
+        val: LiteralOrVariable,
+        scope: &mut VariableScope,
+    ) -> Result<(String, Option<String>), Error> {
+        let expr = match val {
+            LiteralOrVariable::Literal(l) => Expression::Literal(l),
+            LiteralOrVariable::Variable(v) => Expression::Variable(v),
+        };
+        self.compile_operand(expr, scope)
+    }
+
     fn expression_binary<'v>(
         &mut self,
         expr: BinaryExpression,
@@ -978,6 +1010,127 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(VariableLocation::Persistant(VariableScope::RETURN_REGISTER))
     }
 
+    // syscalls that return values will be stored in the VariableScope::RETURN_REGISTER
+    // register
+    fn expression_syscall_system<'v>(
+        &mut self,
+        expr: System,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<Option<CompilationResult>, Error> {
+        match expr {
+            System::Yield => {
+                self.write_output("yield")?;
+                Ok(None)
+            }
+            System::Sleep(amt) => {
+                let (var, cleanup) = self.compile_operand(*amt, scope)?;
+                self.write_output(format!("sleep {var}"))?;
+                if let Some(temp) = cleanup {
+                    scope.free_temp(temp)?;
+                }
+
+                Ok(None)
+            }
+            System::Hash(hash_arg) => {
+                let Literal::String(str_lit) = hash_arg else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a string literal.".into(),
+                    ));
+                };
+
+                let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
+                self.emit_variable_assignment("hash_ret", &loc, format!(r#"HASH("{}")"#, str_lit))?;
+
+                Ok(Some(CompilationResult {
+                    location: loc,
+                    temp_name: None,
+                }))
+            }
+            System::SetOnDevice(device, logic_type, variable) => {
+                let (variable, var_cleanup) = self.compile_operand(*variable, scope)?;
+
+                let LiteralOrVariable::Variable(device) = device else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a variable".into(),
+                    ));
+                };
+
+                let Some(device) = self.devices.get(&device) else {
+                    return Err(Error::InvalidDevice(device));
+                };
+
+                let Literal::String(logic_type) = logic_type else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg2 expected to be a string".into(),
+                    ));
+                };
+
+                self.write_output(format!("s {} {} {}", device, logic_type, variable))?;
+
+                if let Some(temp_var) = var_cleanup {
+                    scope.free_temp(temp_var)?;
+                }
+
+                Ok(None)
+            }
+            System::SetOnDeviceBatched(device_hash, logic_type, variable) => {
+                let (var, var_cleanup) = self.compile_operand(*variable, scope)?;
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_literal_or_variable(device_hash, scope)?;
+                let Literal::String(logic_type) = logic_type else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg2 expected to be a string".into(),
+                    ));
+                };
+
+                self.write_output(format!("sb {} {} {}", device_hash, logic_type, var))?;
+
+                if let Some(var_cleanup) = var_cleanup {
+                    scope.free_temp(var_cleanup)?;
+                }
+
+                if let Some(device_cleanup) = device_hash_cleanup {
+                    scope.free_temp(device_cleanup)?;
+                }
+
+                Ok(None)
+            }
+            System::LoadFromDevice(device, logic_type) => {
+                let LiteralOrVariable::Variable(device) = device else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a variable".into(),
+                    ));
+                };
+
+                let Some(device) = self.devices.get(&device) else {
+                    return Err(Error::InvalidDevice(device));
+                };
+
+                let Literal::String(logic_type) = logic_type else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg2 expected to be a string".into(),
+                    ));
+                };
+
+                self.write_output(format!(
+                    "l r{} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    device,
+                    logic_type
+                ))?;
+
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Temporary(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+
+            _ => {
+                todo!()
+            }
+        }
+    }
+
     /// Compile a function declaration.
     /// Calees are responsible for backing up any registers they wish to use.
     fn expression_function<'v>(
@@ -1092,4 +1245,3 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 }
-

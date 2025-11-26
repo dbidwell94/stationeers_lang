@@ -76,6 +76,12 @@ impl From<String> for Tokenizer {
     }
 }
 
+impl From<&str> for Tokenizer {
+    fn from(value: &str) -> Self {
+        Self::from(value.to_string())
+    }
+}
+
 impl Tokenizer {
     /// Consumes the tokenizer and returns the next token in the stream
     /// If there are no more tokens in the stream, this function returns None
