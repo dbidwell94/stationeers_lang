@@ -1,0 +1,57 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AssemblyName>StationeersSlang</AssemblyName>
+    <Description>Slang Compiler Bridge</Description>
+    <Version>0.1.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameDir>/home/dbidwell/.local/share/Steam/steamapps/common/Stationeers/</GameDir>
+    <ManagedDir>$(GameDir)/rocketstation_Data/Managed</ManagedDir>
+    <BepInExDir>$(GameDir)/BepInEx/core</BepInExDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+      <Reference Include="netstandard">
+        <HintPath>$(ManagedDir)/netstandard.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="BepInEx">
+        <HintPath>$(BepInExDir)/BepInEx.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="0Harmony">
+        <HintPath>$(BepInExDir)/0Harmony.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+
+      <Reference Include="UnityEngine">
+        <HintPath>$(ManagedDir)/UnityEngine.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="UnityEngine.CoreModule">
+        <HintPath>$(ManagedDir)/UnityEngine.CoreModule.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="Assembly-CSharp">
+        <HintPath>$(ManagedDir)/Assembly-CSharp.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="Assembly-CSharp-firstpass">
+        <HintPath>$(ManagedDir)/Assembly-CSharp-firstpass.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+    </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="../rust_compiler/target/x86_64-pc-windows-gnu/release/slang.dll">
+      <LogicalName>slang.dll</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

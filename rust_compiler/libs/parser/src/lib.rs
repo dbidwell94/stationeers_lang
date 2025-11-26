@@ -4,6 +4,7 @@ mod test;
 pub mod sys_call;
 pub mod tree_node;
 
+use crate::sys_call::System;
 use quick_error::quick_error;
 use std::io::SeekFrom;
 use sys_call::SysCall;
@@ -12,8 +13,6 @@ use tokenizer::{
     token::{Keyword, Symbol, Token, TokenType},
 };
 use tree_node::*;
-
-use crate::sys_call::System;
 
 #[macro_export]
 /// A macro to create a boxed value.
