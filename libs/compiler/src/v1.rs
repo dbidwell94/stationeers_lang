@@ -1023,7 +1023,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 Ok(None)
             }
             System::Sleep(amt) => {
-                let (var, cleanup) = self.compile_literal_or_variable(amt, scope)?;
+                let (var, cleanup) = self.compile_operand(*amt, scope)?;
                 self.write_output(format!("sleep {var}"))?;
                 if let Some(temp) = cleanup {
                     scope.free_temp(temp)?;
@@ -1031,8 +1031,23 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 Ok(None)
             }
+            System::Hash(hash_arg) => {
+                let Literal::String(str_lit) = hash_arg else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a string literal.".into(),
+                    ));
+                };
+
+                let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
+                self.emit_variable_assignment("hash_ret", &loc, format!(r#"HASH("{}")"#, str_lit))?;
+
+                Ok(Some(CompilationResult {
+                    location: loc,
+                    temp_name: None,
+                }))
+            }
             System::SetOnDevice(device, logic_type, variable) => {
-                let (variable, var_cleanup) = self.compile_literal_or_variable(variable, scope)?;
+                let (variable, var_cleanup) = self.compile_operand(*variable, scope)?;
 
                 let LiteralOrVariable::Variable(device) = device else {
                     return Err(Error::AgrumentMismatch(
@@ -1054,6 +1069,28 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 if let Some(temp_var) = var_cleanup {
                     scope.free_temp(temp_var)?;
+                }
+
+                Ok(None)
+            }
+            System::SetOnDeviceBatched(device_hash, logic_type, variable) => {
+                let (var, var_cleanup) = self.compile_operand(*variable, scope)?;
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_literal_or_variable(device_hash, scope)?;
+                let Literal::String(logic_type) = logic_type else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg2 expected to be a string".into(),
+                    ));
+                };
+
+                self.write_output(format!("sb {} {} {}", device_hash, logic_type, var))?;
+
+                if let Some(var_cleanup) = var_cleanup {
+                    scope.free_temp(var_cleanup)?;
+                }
+
+                if let Some(device_cleanup) = device_hash_cleanup {
+                    scope.free_temp(device_cleanup)?;
                 }
 
                 Ok(None)

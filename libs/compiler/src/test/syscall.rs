@@ -33,6 +33,7 @@ fn test_sleep() -> anyhow::Result<()> {
         sleep(3);
         let sleepAmount = 15;
         sleep(sleepAmount);
+        sleep(sleepAmount * 2);
         "
     };
 
@@ -45,6 +46,8 @@ fn test_sleep() -> anyhow::Result<()> {
             sleep 3
             move r8 15 #sleepAmount
             sleep r8
+            mul r1 r8 2
+            sleep r1
             "
         }
     );
@@ -60,8 +63,7 @@ fn test_set_on_device() -> anyhow::Result<()> {
             device airConditioner = "d0";
             let internalTemp = 20c;
 
-            let shouldToggleOn = internalTemp > 25c;
-            setOnDevice(airConditioner, "On", shouldToggleOn);
+            setOnDevice(airConditioner, "On", internalTemp > 25c);
         "#
     };
 
@@ -73,12 +75,36 @@ fn test_set_on_device() -> anyhow::Result<()> {
             main:
             move r8 293.15 #internalTemp
             sgt r1 r8 298.15
-            move r9 r1 #shouldToggleOn
-            s d0 On r9
+            s d0 On r1
             "
         }
     );
 
+    Ok(())
+}
+
+#[test]
+fn test_set_on_device_batched() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        let doorHash = hash("Door");
+        setOnDeviceBatched(doorHash, "Lock", true);
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            r#"
+            j main
+            main:
+            move r15 HASH("Door") #hash_ret
+            move r8 r15 #doorHash
+            sb r8 Lock 1
+            "#
+        }
+    );
     Ok(())
 }
 
@@ -102,6 +128,30 @@ fn test_load_from_device() -> anyhow::Result<()> {
             l r15 d0 On
             move r8 r15 #setting
             "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_hash() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        let nameHash = hash("testValue");
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            r#"
+            j main
+            main:
+            move r15 HASH("testValue") #hash_ret
+            move r8 r15 #nameHash
+            "#
         }
     );
 

@@ -13,6 +13,8 @@ use tokenizer::{
 };
 use tree_node::*;
 
+use crate::sys_call::System;
+
 #[macro_export]
 /// A macro to create a boxed value.
 macro_rules! boxed {
@@ -60,6 +62,12 @@ macro_rules! token_from_option {
     ($token:expr) => {
         match $token {
             Some(ref token) => token.clone(),
+            None => return Err(Error::UnexpectedEOF),
+        }
+    };
+    (owned $token:expr) => {
+        match $token {
+            Some(token) => token,
             None => return Err(Error::UnexpectedEOF),
         }
     };
@@ -1039,9 +1047,22 @@ impl Parser {
             }
             "sleep" => {
                 check_length(self, &invocation.arguments, 1)?;
-                let mut arg = invocation.arguments.iter();
-                let argument = literal_or_variable!(arg.next());
-                Ok(SysCall::System(sys_call::System::Sleep(argument)))
+                let mut arg = invocation.arguments.into_iter();
+                let expr = token_from_option!(owned arg.next());
+                Ok(SysCall::System(System::Sleep(boxed!(expr))))
+            }
+            "hash" => {
+                check_length(self, &invocation.arguments, 1)?;
+                let mut args = invocation.arguments.into_iter();
+                let lit_str = literal_or_variable!(args.next());
+
+                let LiteralOrVariable::Literal(lit_str) = lit_str else {
+                    return Err(Error::UnexpectedToken(
+                        token_from_option!(self.current_token).clone(),
+                    ));
+                };
+
+                Ok(SysCall::System(System::Hash(lit_str)))
             }
             "loadFromDevice" => {
                 check_length(self, &invocation.arguments, 2)?;
@@ -1076,23 +1097,23 @@ impl Parser {
             }
             "loadBatchNamed" => {
                 check_length(self, &invocation.arguments, 4)?;
-                let mut args = invocation.arguments.iter();
+                let mut args = invocation.arguments.into_iter();
 
                 let device_hash = literal_or_variable!(args.next());
-                let name_hash = get_arg!(Literal, literal_or_variable!(args.next()));
+                let name_hash = token_from_option!(owned args.next());
                 let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
                 let batch_mode = get_arg!(Literal, literal_or_variable!(args.next()));
 
                 Ok(SysCall::System(sys_call::System::LoadBatchNamed(
                     device_hash,
-                    name_hash,
+                    boxed!(name_hash),
                     logic_type,
                     batch_mode,
                 )))
             }
             "setOnDevice" => {
                 check_length(self, &invocation.arguments, 3)?;
-                let mut args = invocation.arguments.iter();
+                let mut args = invocation.arguments.into_iter();
 
                 let device = literal_or_variable!(args.next());
 
@@ -1104,12 +1125,54 @@ impl Parser {
                     ));
                 };
 
-                let variable = literal_or_variable!(args.next());
+                let variable = token_from_option!(owned args.next());
 
                 Ok(SysCall::System(sys_call::System::SetOnDevice(
                     device,
                     Literal::String(logic_type),
-                    variable,
+                    boxed!(variable),
+                )))
+            }
+            "setOnDeviceBatched" => {
+                check_length(self, &invocation.arguments, 3)?;
+                let mut args = invocation.arguments.into_iter();
+
+                let device = literal_or_variable!(args.next());
+                let Literal::String(logic_type) =
+                    get_arg!(Literal, literal_or_variable!(args.next()))
+                else {
+                    return Err(Error::UnexpectedToken(
+                        token_from_option!(self.current_token).clone(),
+                    ));
+                };
+                let variable = token_from_option!(owned args.next());
+
+                Ok(SysCall::System(System::SetOnDeviceBatched(
+                    device,
+                    Literal::String(logic_type),
+                    boxed!(variable),
+                )))
+            }
+            "setOnDeviceBatchedNamed" => {
+                check_length(self, &invocation.arguments, 4)?;
+                let mut args = invocation.arguments.into_iter();
+
+                let device = literal_or_variable!(args.next());
+                let name = literal_or_variable!(args.next());
+                let Literal::String(logic_type) =
+                    get_arg!(Literal, literal_or_variable!(args.next()))
+                else {
+                    return Err(Error::UnexpectedToken(
+                        token_from_option!(self.current_token).clone(),
+                    ));
+                };
+                let variable = token_from_option!(owned args.next());
+
+                Ok(SysCall::System(System::SetOnDeviceBatchedNamed(
+                    device,
+                    name,
+                    Literal::String(logic_type),
+                    boxed!(variable),
                 )))
             }
             // math calls

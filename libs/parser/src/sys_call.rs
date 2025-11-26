@@ -1,4 +1,4 @@
-use crate::tree_node::Literal;
+use crate::tree_node::{Expression, Literal};
 
 use super::LiteralOrVariable;
 
@@ -102,11 +102,11 @@ pub enum System {
     /// Represents a function that can be called to sleep for a certain amount of time.
     /// ## In Game
     /// `sleep a(r?|num)`
-    Sleep(LiteralOrVariable),
+    Sleep(Box<Expression>),
     /// Gets the in-game hash for a specific prefab name.
     /// ## In Game
     /// `HASH("prefabName")`
-    Hash(LiteralOrVariable),
+    Hash(Literal),
     /// Represents a function which loads a device variable into a register.
     /// ## In Game
     /// `l r? d? var`
@@ -120,7 +120,7 @@ pub enum System {
     /// lbn r? deviceHash nameHash logicType batchMode
     /// ## Examples
     /// lbn r0 HASH("StructureWallLight") HASH("wallLight") On Minimum
-    LoadBatchNamed(LiteralOrVariable, Literal, Literal, Literal),
+    LoadBatchNamed(LiteralOrVariable, Box<Expression>, Literal, Literal),
     /// Loads a LogicType from all connected network devices, aggregating them via a
     /// batchMode
     /// ## In Game
@@ -133,7 +133,26 @@ pub enum System {
     /// `s d? logicType r?`
     /// ## Example
     /// `s d0 Setting r0`
-    SetOnDevice(LiteralOrVariable, Literal, LiteralOrVariable),
+    SetOnDevice(LiteralOrVariable, Literal, Box<Expression>),
+    /// Represents a function which stores a setting to all devices that match
+    /// the given deviceHash
+    /// ## In Game
+    /// `sb deviceHash logictype r?`
+    /// ## Example
+    /// `sb HASH("Doors") Lock 1`
+    SetOnDeviceBatched(LiteralOrVariable, Literal, Box<Expression>),
+    /// Represents a function which stores a setting to all devices that match
+    /// both the given deviceHash AND the given nameHash
+    /// ## In Game
+    /// `sbn deviceHash nameHash logicType r?`
+    /// ## Example
+    /// `sbn HASH("Doors") HASH("Exterior") Lock 1`
+    SetOnDeviceBatchedNamed(
+        LiteralOrVariable,
+        LiteralOrVariable,
+        Literal,
+        Box<Expression>,
+    ),
 }
 
 impl std::fmt::Display for System {
@@ -141,13 +160,19 @@ impl std::fmt::Display for System {
         match self {
             System::Yield => write!(f, "yield()"),
             System::Sleep(a) => write!(f, "sleep({})", a),
-            System::Hash(a) => write!(f, "HASH({})", a),
+            System::Hash(a) => write!(f, "hash({})", a),
             System::LoadFromDevice(a, b) => write!(f, "loadFromDevice({}, {})", a, b),
             System::LoadBatch(a, b, c) => write!(f, "loadBatch({}, {}, {})", a, b, c),
             System::LoadBatchNamed(a, b, c, d) => {
                 write!(f, "loadBatchNamed({}, {}, {}, {})", a, b, c, d)
             }
             System::SetOnDevice(a, b, c) => write!(f, "setOnDevice({}, {}, {})", a, b, c),
+            System::SetOnDeviceBatched(a, b, c) => {
+                write!(f, "setOnDeviceBatched({}, {}, {})", a, b, c)
+            }
+            System::SetOnDeviceBatchedNamed(a, b, c, d) => {
+                write!(f, "setOnDeviceBatchedNamed({}, {}, {}, {})", a, b, c, d)
+            }
         }
     }
 }
@@ -175,9 +200,11 @@ impl SysCall {
             identifier,
             "yield"
                 | "sleep"
-                | "HASH"
+                | "hash"
                 | "loadFromDevice"
                 | "setOnDevice"
+                | "setOnDeviceBatched"
+                | "setOnDeviceBatchedNamed"
                 | "acos"
                 | "asin"
                 | "atan"
