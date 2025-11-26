@@ -113,7 +113,7 @@ pub enum System {
     /// ## Examples
     /// `l r0 d0 Setting`
     /// `l r1 d5 Pressure`
-    LoadFromDevice(LiteralOrVariable, LiteralOrVariable),
+    LoadFromDevice(LiteralOrVariable, Literal),
     /// Function which gets a LogicType from all connected network devices that match
     /// the provided device hash and name, aggregating them via a batchMode
     /// ## In Game

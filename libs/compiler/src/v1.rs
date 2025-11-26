@@ -1044,6 +1044,25 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 Ok(None)
             }
+            System::LoadFromDevice(device, logic_type) => {
+                let LiteralOrVariable::Variable(device) = device else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a variable".into(),
+                    ));
+                };
+
+                let Some(device) = self.devices.get(&device) else {
+                    return Err(Error::InvalidDevice(device));
+                };
+
+                let Literal::String(logic_type) = logic_type else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg2 expected to be a string".into(),
+                    ));
+                };
+
+                todo!()
+            }
 
             _ => {
                 todo!()

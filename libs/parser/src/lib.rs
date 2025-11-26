@@ -1057,7 +1057,7 @@ impl Parser {
 
                 Ok(SysCall::System(sys_call::System::LoadFromDevice(
                     device,
-                    LiteralOrVariable::Variable(variable.clone()),
+                    Literal::String(variable.clone()),
                 )))
             }
             "loadBatch" => {
@@ -1202,4 +1202,3 @@ impl Parser {
         }
     }
 }
-
