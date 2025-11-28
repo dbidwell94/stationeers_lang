@@ -6,7 +6,7 @@ namespace Slang
     {
         public override Line ParseLine(string line)
         {
-            throw new System.NotImplementedException();
+            return Marshal.TokenizeLine(line);
         }
     }
 }

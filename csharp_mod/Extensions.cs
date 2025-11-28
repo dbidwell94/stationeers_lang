@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text;
 using StationeersIC10Editor;
 
@@ -27,9 +26,11 @@ namespace Slang
         }
 
         // 2. Convert Rust Token Vector to C# List
-        public static List<Token> AsList(this Vec_FfiToken_t vec)
+        public static Line AsList(this Vec_FfiToken_t vec)
         {
-            var list = new List<Token>((int)vec.len);
+            var list = new Line();
+            list.Capacity = (int)vec.len;
+
             var currentPtr = vec.ptr;
 
             // Iterate through the raw memory array

@@ -14,11 +14,15 @@ pub struct FfiToken {
     pub column: i32,
 }
 
+/// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
+/// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
+/// This should result in the ability to compile many times without triggering frame drops
+/// from the GC from a `GetBytes()` call on a string in C#.
 #[ffi_export]
-pub fn compile_from_string(input: safer_ffi::char_p::char_p_ref<'_>) -> safer_ffi::String {
+pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::String {
     let mut writer = BufWriter::new(Vec::new());
 
-    let tokenizer = Tokenizer::from(input.to_str());
+    let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
     let parser = Parser::new(tokenizer);
     let compiler = Compiler::new(parser, &mut writer, None);
 
@@ -33,10 +37,13 @@ pub fn compile_from_string(input: safer_ffi::char_p::char_p_ref<'_>) -> safer_ff
     // Safety: I know the compiler only outputs valid utf8
     safer_ffi::String::from(unsafe { String::from_utf8_unchecked(compiled_vec) })
 }
-
+/// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
+/// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
+/// This should result in the ability to tokenize many times without triggering frame drops
+/// from the GC from a `GetBytes()` call on a string in C#.
 #[ffi_export]
-pub fn tokenize_line(input: safer_ffi::char_p::char_p_ref<'_>) -> safer_ffi::Vec<FfiToken> {
-    let tokenizer = Tokenizer::from(input.to_str());
+pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<FfiToken> {
+    let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
 
     let mut tokens = Vec::<FfiToken>::new();
 
@@ -83,6 +90,6 @@ pub fn free_string(s: safer_ffi::String) {
 pub fn generate_headers() -> std::io::Result<()> {
     ::safer_ffi::headers::builder()
         .with_language(safer_ffi::headers::Language::CSharp)
-        .to_file("../csharp_mod/SlangGlue.cs")?
+        .to_file("../csharp_mod/FfiGlue.cs")?
         .generate()
 }

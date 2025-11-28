@@ -1,10 +1,9 @@
-using System;
 using System.IO;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using BepInEx;
 using HarmonyLib;
+using StationeersIC10Editor;
 
 namespace Slang
 {
@@ -103,6 +102,7 @@ namespace Slang
             ExtractNativeDll("slang.dll");
             var harmony = new Harmony(PluginGuid);
             harmony.PatchAll();
+            CodeFormatters.RegisterFormatter("slang", () => new SlangFormatter(), true);
         }
 
         private void ExtractNativeDll(string fileName)
