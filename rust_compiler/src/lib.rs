@@ -69,6 +69,16 @@ pub fn tokenize_line(input: safer_ffi::char_p::char_p_ref<'_>) -> safer_ffi::Vec
     tokens.into()
 }
 
+#[ffi_export]
+pub fn free_ffi_token_vec(v: safer_ffi::Vec<FfiToken>) {
+    drop(v)
+}
+
+#[ffi_export]
+pub fn free_string(s: safer_ffi::String) {
+    drop(s)
+}
+
 #[cfg(feature = "headers")]
 pub fn generate_headers() -> std::io::Result<()> {
     ::safer_ffi::headers::builder()

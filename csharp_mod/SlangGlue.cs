@@ -72,6 +72,18 @@ public unsafe struct Vec_FfiToken_t {
 
 public unsafe partial class Ffi {
     [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    void free_ffi_token_vec (
+        Vec_FfiToken_t v);
+}
+
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    void free_string (
+        Vec_uint8_t s);
+}
+
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
     Vec_FfiToken_t tokenize_line (
         byte /*const*/ * input);
 }
