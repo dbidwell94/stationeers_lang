@@ -18,6 +18,9 @@ cargo build --release --target=x86_64-unknown-linux-gnu
 # -- Build for Windows (x86-64) --
 cargo build --release --target=x86_64-pc-windows-gnu
 
+# -- Generate C# Headers --
+cargo run --features headers --bin generate-headers
+
 cd ..
 echo "--------------------"
 

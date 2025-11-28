@@ -447,6 +447,14 @@ impl Tokenizer {
     }
 }
 
+impl Iterator for Tokenizer {
+    type Item = Result<Token, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+}
+
 pub struct TokenizerBuffer {
     tokenizer: Tokenizer,
     buffer: VecDeque<Token>,

@@ -1,6 +1,6 @@
 target
 *.ic10
 release
-bin
+csharp_mod/bin
 obj
 ref

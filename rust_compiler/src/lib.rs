@@ -1,58 +1,78 @@
 use compiler::Compiler;
 use parser::Parser;
-use std::{
-    ffi::{CStr, CString},
-    io::BufWriter,
-};
-use tokenizer::Tokenizer;
+use safer_ffi::prelude::*;
+use std::io::BufWriter;
+use tokenizer::{Error as TokenizerError, Tokenizer};
 
-/// Takes a raw pointer to a string and compiles the `slang` code into valid IC10
-/// # Safety
-/// This must be called with a valid string pointer from C# (or wherever is calling this function)
-#[no_mangle]
-pub unsafe extern "C" fn compile_from_string(
-    input_ptr: *const std::os::raw::c_char,
-) -> *mut std::os::raw::c_char {
-    if input_ptr.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let c_str = unsafe { CStr::from_ptr(input_ptr) };
-
-    let Ok(input_str) = c_str.to_str() else {
-        return std::ptr::null_mut();
-    };
-
-    let mut writer = BufWriter::new(Vec::new());
-    let tokenizer = Tokenizer::from(input_str);
-    let parser = Parser::new(tokenizer);
-
-    let compiler = Compiler::new(parser, &mut writer, None);
-
-    let Ok(()) = compiler.compile() else {
-        return std::ptr::null_mut();
-    };
-
-    let Ok(buffer) = writer.into_inner() else {
-        return std::ptr::null_mut();
-    };
-
-    let c_string = CString::from_vec_unchecked(buffer);
-
-    c_string.into_raw()
+#[derive_ReprC]
+#[repr(C)]
+pub struct FfiToken {
+    pub text: safer_ffi::String,
+    pub tooltip: Option<safer_ffi::String>,
+    pub error: Option<safer_ffi::String>,
+    pub status: Option<safer_ffi::String>,
+    pub column: i32,
 }
 
-/// Takes ownership of the string pointer and drops it, freeing the memory
-/// # Safety
-/// Must be called with a valid string pointer
-#[no_mangle]
-pub unsafe extern "C" fn free_slang_string(input_ptr: *mut std::os::raw::c_char) {
-    if input_ptr.is_null() {
-        return;
+#[ffi_export]
+pub fn compile_from_string(input: safer_ffi::String) -> safer_ffi::String {
+    let mut writer = BufWriter::new(Vec::new());
+
+    let tokenizer = Tokenizer::from(String::from(input));
+    let parser = Parser::new(tokenizer);
+    let compiler = Compiler::new(parser, &mut writer, None);
+
+    if compiler.compile().is_err() {
+        return safer_ffi::String::EMPTY;
     }
 
-    unsafe {
-        // Takes ownership of the input string, and then drops it immediately
-        let _ = CString::from_raw(input_ptr);
+    let Ok(compiled_vec) = writer.into_inner() else {
+        return safer_ffi::String::EMPTY;
+    };
+
+    // Safety: I know the compiler only outputs valid utf8
+    safer_ffi::String::from(unsafe { String::from_utf8_unchecked(compiled_vec) })
+}
+
+#[ffi_export]
+pub fn tokenize_line(input: safer_ffi::String) -> safer_ffi::Vec<FfiToken> {
+    let tokenizer = Tokenizer::from(String::from(input));
+
+    let mut tokens = Vec::<FfiToken>::new();
+
+    for token in tokenizer {
+        match token {
+            Err(TokenizerError::NumberParseError(_, _, col))
+            | Err(TokenizerError::UnknownSymbolError(_, _, col))
+            | Err(TokenizerError::DecimalParseError(_, _, col))
+            | Err(TokenizerError::UnknownKeywordOrIdentifierError(_, _, col)) => {
+                tokens.push(FfiToken {
+                    column: col as i32,
+                    text: "".into(),
+                    tooltip: None,
+                    // Safety: it's okay to unwrap the err here because we are matching on the `Err` variant
+                    error: Some(token.unwrap_err().to_string().into()),
+                    status: None,
+                });
+            }
+            Err(_) => return safer_ffi::Vec::EMPTY,
+            Ok(token) => tokens.push(FfiToken {
+                text: token.token_type.to_string().into(),
+                tooltip: None,
+                error: None,
+                status: None,
+                column: token.column as i32,
+            }),
+        }
     }
+
+    tokens.into()
+}
+
+#[cfg(feature = "headers")]
+pub fn generate_headers() -> std::io::Result<()> {
+    ::safer_ffi::headers::builder()
+        .with_language(safer_ffi::headers::Language::CSharp)
+        .to_file("SlangGlue.cs")?
+        .generate()
 }
