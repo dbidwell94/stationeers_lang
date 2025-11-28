@@ -46,11 +46,15 @@
         <HintPath>$(ManagedDir)/Assembly-CSharp-firstpass.dll</HintPath>
         <Private>False</Private>
       </Reference>
+      <Reference Include="IC10Editor.dll">
+        <HintPath>./ref/IC10Editor.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
     </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="../rust_compiler/target/x86_64-pc-windows-gnu/release/slang.dll">
-      <LogicalName>slang.dll</LogicalName>
+      <LogicalName>slang.compiler.dll</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

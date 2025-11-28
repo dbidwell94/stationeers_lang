@@ -1,3 +1,4 @@
+using System;
 using Assets.Scripts.Objects.Motherboards;
 using HarmonyLib;
 
@@ -28,6 +29,10 @@ namespace Slang
             {
                 return;
             }
+
+            var newUuid = Guid.NewGuid().ToString();
+
+            SlangPlugin.CopySourceToFile(result);
 
             // Set the result to be the compiled source so the rest of the function can continue as normal
             result = compiled;
