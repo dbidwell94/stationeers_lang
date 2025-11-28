@@ -44,16 +44,6 @@ namespace Slang
         public const string PluginGuid = "com.biddydev.slang";
         public const string PluginName = "Slang";
 
-        const string RUST_DLL_NAME = "slang.compiler.dll";
-
-        /// <summary>Takes raw `Slang` source code and compiles it into IC10</summary>
-        [DllImport(RUST_DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr compile_from_string(string input);
-
-        /// <summary>Frees memory that was allocated by the FFI call to `compile_from_string`</summary>
-        [DllImport(RUST_DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void free_slang_string(IntPtr ptr);
-
         private static Regex? _slangSourceCheck = null;
 
         private static Regex SlangSourceCheck
@@ -69,19 +59,28 @@ namespace Slang
             }
         }
 
-        public static string Compile(string source)
+        public static unsafe string Compile(string source)
         {
             if (string.IsNullOrEmpty(source))
                 return "";
 
-            IntPtr ptr = compile_from_string(source);
-            try
+            // Add a null terminator char at the end of the source string (turns into a CStr)
+            source += "\0";
+
+            var bytes = System.Text.Encoding.UTF8.GetBytes(source);
+
+            // don't move my memory around, C#!
+            fixed (byte* pBytes = bytes)
             {
-                return Marshal.PtrToStringAnsi(ptr);
-            }
-            finally
-            {
-                free_slang_string(ptr);
+                var compiled = Ffi.compile_from_string(pBytes);
+                try
+                {
+                    return compiled.AsString();
+                }
+                finally
+                {
+                    Ffi.free_string(compiled);
+                }
             }
         }
 
@@ -101,8 +100,8 @@ namespace Slang
         private void Awake()
         {
             L.SetLogger(Logger);
-            ExtractNativeDll(RUST_DLL_NAME);
-            var harmony = new Harmony("com.dbidwell94.slang");
+            ExtractNativeDll("slang.dll");
+            var harmony = new Harmony(PluginGuid);
             harmony.PatchAll();
         }
 
@@ -117,7 +116,7 @@ namespace Slang
                 if (stream == null)
                 {
                     L.Error(
-                        $"{RUST_DLL_NAME} compiler not found. This means it was not embedded in the mod. Please contact the mod author!"
+                        "slang.dll compiler not found. This means it was not embedded in the mod. Please contact the mod author!"
                     );
                     return;
                 }
