@@ -113,13 +113,13 @@ macro_rules! token_matches {
     };
 }
 
-pub struct Parser {
-    tokenizer: TokenizerBuffer,
+pub struct Parser<'a> {
+    tokenizer: TokenizerBuffer<'a>,
     current_token: Option<Token>,
 }
 
-impl Parser {
-    pub fn new(tokenizer: Tokenizer) -> Self {
+impl<'a> Parser<'a> {
+    pub fn new(tokenizer: Tokenizer<'a>) -> Self {
         Parser {
             tokenizer: TokenizerBuffer::new(tokenizer),
             current_token: None,

@@ -15,10 +15,10 @@ pub struct FfiToken {
 }
 
 #[ffi_export]
-pub fn compile_from_string(input: safer_ffi::String) -> safer_ffi::String {
+pub fn compile_from_string(input: safer_ffi::char_p::char_p_ref<'_>) -> safer_ffi::String {
     let mut writer = BufWriter::new(Vec::new());
 
-    let tokenizer = Tokenizer::from(String::from(input));
+    let tokenizer = Tokenizer::from(input.to_str());
     let parser = Parser::new(tokenizer);
     let compiler = Compiler::new(parser, &mut writer, None);
 
@@ -35,8 +35,8 @@ pub fn compile_from_string(input: safer_ffi::String) -> safer_ffi::String {
 }
 
 #[ffi_export]
-pub fn tokenize_line(input: safer_ffi::String) -> safer_ffi::Vec<FfiToken> {
-    let tokenizer = Tokenizer::from(String::from(input));
+pub fn tokenize_line(input: safer_ffi::char_p::char_p_ref<'_>) -> safer_ffi::Vec<FfiToken> {
+    let tokenizer = Tokenizer::from(input.to_str());
 
     let mut tokens = Vec::<FfiToken>::new();
 
@@ -73,6 +73,6 @@ pub fn tokenize_line(input: safer_ffi::String) -> safer_ffi::Vec<FfiToken> {
 pub fn generate_headers() -> std::io::Result<()> {
     ::safer_ffi::headers::builder()
         .with_language(safer_ffi::headers::Language::CSharp)
-        .to_file("SlangGlue.cs")?
+        .to_file("../csharp_mod/SlangGlue.cs")?
         .generate()
 }

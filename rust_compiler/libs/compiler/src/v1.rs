@@ -68,7 +68,7 @@ struct CompilationResult {
 }
 
 pub struct Compiler<'a, W: std::io::Write> {
-    parser: ASTParser,
+    parser: ASTParser<'a>,
     function_locations: HashMap<String, usize>,
     function_metadata: HashMap<String, Vec<String>>,
     devices: HashMap<String, String>,
@@ -83,7 +83,7 @@ pub struct Compiler<'a, W: std::io::Write> {
 
 impl<'a, W: std::io::Write> Compiler<'a, W> {
     pub fn new(
-        parser: ASTParser,
+        parser: ASTParser<'a>,
         writer: &'a mut BufWriter<W>,
         config: Option<CompilerConfig>,
     ) -> Self {

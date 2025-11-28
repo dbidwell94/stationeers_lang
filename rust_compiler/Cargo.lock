@@ -780,6 +780,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
+name = "slang"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "compiler",
+ "parser",
+ "quick-error",
+ "rust_decimal",
+ "safer-ffi",
+ "tokenizer",
+]
+
+[[package]]
 name = "stabby"
 version = "36.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -812,20 +826,6 @@ dependencies = [
  "quote",
  "rand",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "stationlang"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "compiler",
- "parser",
- "quick-error",
- "rust_decimal",
- "safer-ffi",
- "tokenizer",
 ]
 
 [[package]]

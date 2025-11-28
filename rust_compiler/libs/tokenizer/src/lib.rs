@@ -39,15 +39,15 @@ pub trait Tokenize: Read + Seek {}
 
 impl<T> Tokenize for T where T: Read + Seek {}
 
-pub struct Tokenizer {
-    reader: BufReader<Box<dyn Tokenize>>,
+pub struct Tokenizer<'a> {
+    reader: BufReader<Box<dyn Tokenize + 'a>>,
     char_buffer: [u8; 1],
     line: usize,
     column: usize,
     returned_eof: bool,
 }
 
-impl Tokenizer {
+impl<'a> Tokenizer<'a> {
     pub fn from_path(input_file: impl Into<PathBuf>) -> Result<Self, Error> {
         let file = std::fs::File::open(input_file.into())?;
         let reader = BufReader::new(Box::new(file) as Box<dyn Tokenize>);
@@ -62,7 +62,7 @@ impl Tokenizer {
     }
 }
 
-impl From<String> for Tokenizer {
+impl<'a> From<String> for Tokenizer<'a> {
     fn from(input: String) -> Self {
         let reader = BufReader::new(Box::new(Cursor::new(input)) as Box<dyn Tokenize>);
 
@@ -76,13 +76,19 @@ impl From<String> for Tokenizer {
     }
 }
 
-impl From<&str> for Tokenizer {
-    fn from(value: &str) -> Self {
-        Self::from(value.to_string())
+impl<'a> From<&'a str> for Tokenizer<'a> {
+    fn from(value: &'a str) -> Self {
+        Self {
+            reader: BufReader::new(Box::new(Cursor::new(value)) as Box<dyn Tokenize>),
+            char_buffer: [0],
+            column: 1,
+            line: 1,
+            returned_eof: false,
+        }
     }
 }
 
-impl Tokenizer {
+impl<'a> Tokenizer<'a> {
     /// Consumes the tokenizer and returns the next token in the stream
     /// If there are no more tokens in the stream, this function returns None
     /// If there is an error reading the stream, this function returns an error
@@ -447,7 +453,7 @@ impl Tokenizer {
     }
 }
 
-impl Iterator for Tokenizer {
+impl<'a> Iterator for Tokenizer<'a> {
     type Item = Result<Token, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -455,14 +461,14 @@ impl Iterator for Tokenizer {
     }
 }
 
-pub struct TokenizerBuffer {
-    tokenizer: Tokenizer,
+pub struct TokenizerBuffer<'a> {
+    tokenizer: Tokenizer<'a>,
     buffer: VecDeque<Token>,
     history: VecDeque<Token>,
 }
 
-impl TokenizerBuffer {
-    pub fn new(tokenizer: Tokenizer) -> Self {
+impl<'a> TokenizerBuffer<'a> {
+    pub fn new(tokenizer: Tokenizer<'a>) -> Self {
         Self {
             tokenizer,
             buffer: VecDeque::new(),
