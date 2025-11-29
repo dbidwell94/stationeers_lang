@@ -56,7 +56,7 @@ impl<'a> Tokenizer<'a> {
         Ok(Self {
             reader,
             line: 1,
-            column: 1,
+            column: 0, // Start at 0 so first char becomes 1
             char_buffer: [0],
             returned_eof: false,
             string_buffer: String::new(),
@@ -71,7 +71,7 @@ impl<'a> From<String> for Tokenizer<'a> {
         Self {
             reader,
             line: 1,
-            column: 1,
+            column: 0,
             char_buffer: [0],
             returned_eof: false,
             string_buffer: String::new(),
@@ -84,7 +84,7 @@ impl<'a> From<&'a str> for Tokenizer<'a> {
         Self {
             reader: BufReader::new(Box::new(Cursor::new(value)) as Box<dyn Tokenize>),
             char_buffer: [0],
-            column: 1,
+            column: 0,
             line: 1,
             returned_eof: false,
             string_buffer: String::new(),
@@ -93,12 +93,6 @@ impl<'a> From<&'a str> for Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
-    /// Consumes the tokenizer and returns the next token in the stream
-    /// If there are no more tokens in the stream, this function returns None
-    /// If there is an error reading the stream, this function returns an error
-    ///
-    /// # Important
-    /// This function will increment the line and column counters
     fn next_char(&mut self) -> Result<Option<char>, Error> {
         let bytes_read = self.reader.read(&mut self.char_buffer)?;
 
@@ -106,7 +100,6 @@ impl<'a> Tokenizer<'a> {
             return Ok(None);
         }
 
-        // Safety: The buffer is guaranteed to have 1 value as it is initialized with a size of 1
         let c = self.char_buffer[0] as char;
         if c == '\n' {
             self.line += 1;
@@ -119,30 +112,17 @@ impl<'a> Tokenizer<'a> {
         Ok(Some(c))
     }
 
-    /// Peeks the next character in the stream without consuming it
-    ///
-    /// # Important
-    /// This does not increment the line or column counters
     fn peek_next_char(&mut self) -> Result<Option<char>, Error> {
         let current_pos = self.reader.stream_position()?;
-
         let to_return = if self.reader.read(&mut self.char_buffer)? == 0 {
             None
         } else {
             self.reader.seek(SeekFrom::Start(current_pos))?;
-
-            // Safety: The buffer is guaranteed to have 1 value as it is initialized with a size of 1
             Some(self.char_buffer[0] as char)
         };
-
         Ok(to_return)
     }
 
-    /// Skips the current line in the stream.
-    /// Useful for skipping comments or empty lines
-    ///
-    /// # Important
-    /// This function will increment the line and column counters
     fn skip_line(&mut self) -> Result<(), Error> {
         while let Some(next_char) = self.next_char()? {
             if next_char == '\n' {
@@ -152,40 +132,50 @@ impl<'a> Tokenizer<'a> {
         Ok(())
     }
 
-    /// Consumes the tokenizer and returns the next token in the stream
-    /// If there are no more tokens in the stream, this function returns None
     pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
+        self.string_buffer.clear();
+
         while let Some(next_char) = self.next_char()? {
-            // skip whitespace
             if next_char.is_whitespace() {
+                self.string_buffer.clear();
                 continue;
             }
-            // skip comments
             if next_char == '/' && self.peek_next_char()? == Some('/') {
                 self.skip_line()?;
+                self.string_buffer.clear();
                 continue;
             }
 
+            // Capture start position before delegating
+            let start_line = self.line;
+            let start_col = self.column;
+
             match next_char {
-                // numbers
                 '0'..='9' => {
-                    return self.tokenize_number(next_char).map(Some);
+                    return self
+                        .tokenize_number(next_char, start_line, start_col)
+                        .map(Some);
                 }
-                // strings
-                '"' | '\'' => return self.tokenize_string(next_char).map(Some),
-                // symbols excluding `"` and `'`
+                '"' | '\'' => {
+                    return self
+                        .tokenize_string(next_char, start_line, start_col)
+                        .map(Some);
+                }
                 char if !char.is_alphanumeric() && char != '"' && char != '\'' => {
-                    return self.tokenize_symbol(next_char).map(Some);
+                    return self
+                        .tokenize_symbol(next_char, start_line, start_col)
+                        .map(Some);
                 }
-                // keywords and identifiers
                 char if char.is_alphabetic() => {
-                    return self.tokenize_keyword_or_identifier(next_char).map(Some);
+                    return self
+                        .tokenize_keyword_or_identifier(next_char, start_line, start_col)
+                        .map(Some);
                 }
                 _ => {
                     return Err(Error::UnknownSymbolError(
                         next_char,
-                        self.line,
-                        self.column,
+                        start_line,
+                        start_col,
                         std::mem::take(&mut self.string_buffer),
                     ));
                 }
@@ -204,13 +194,10 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    /// Peeks the next token in the stream without consuming it
-    /// If there are no more tokens in the stream, this function returns None
     pub fn peek_next(&mut self) -> Result<Option<Token>, Error> {
         let current_pos = self.reader.stream_position()?;
         let column = self.column;
         let line = self.line;
-
         let token = self.next_token()?;
         self.reader.seek(SeekFrom::Start(current_pos))?;
         self.column = column;
@@ -218,22 +205,26 @@ impl<'a> Tokenizer<'a> {
         Ok(token)
     }
 
-    /// Tokenizes a symbol
-    fn tokenize_symbol(&mut self, first_symbol: char) -> Result<Token, Error> {
-        /// Helper macro to create a symbol token
+    // Updated helper functions to accept start_line and start_col
+
+    fn tokenize_symbol(
+        &mut self,
+        first_symbol: char,
+        line: usize,
+        col: usize,
+    ) -> Result<Token, Error> {
         macro_rules! symbol {
             ($symbol:ident) => {
                 Ok(Token::new(
                     TokenType::Symbol(Symbol::$symbol),
-                    self.line,
-                    self.column,
+                    line,
+                    col,
                     Some(std::mem::take(&mut self.string_buffer)),
                 ))
             };
         }
 
         match first_symbol {
-            // single character symbols
             '(' => symbol!(LParen),
             ')' => symbol!(RParen),
             '{' => symbol!(LBrace),
@@ -246,42 +237,34 @@ impl<'a> Tokenizer<'a> {
             '+' => symbol!(Plus),
             '-' => symbol!(Minus),
             '/' => symbol!(Slash),
-
             '.' => symbol!(Dot),
             '^' => symbol!(Caret),
             '%' => symbol!(Percent),
-
-            // multi-character symbols
             '<' if self.peek_next_char()? == Some('=') => {
                 self.next_char()?;
                 symbol!(LessThanOrEqual)
             }
             '<' => symbol!(LessThan),
-
             '>' if self.peek_next_char()? == Some('=') => {
                 self.next_char()?;
                 symbol!(GreaterThanOrEqual)
             }
             '>' => symbol!(GreaterThan),
-
             '=' if self.peek_next_char()? == Some('=') => {
                 self.next_char()?;
                 symbol!(Equal)
             }
             '=' => symbol!(Assign),
-
             '!' if self.peek_next_char()? == Some('=') => {
                 self.next_char()?;
                 symbol!(NotEqual)
             }
             '!' => symbol!(LogicalNot),
-
             '*' if self.peek_next_char()? == Some('*') => {
                 self.next_char()?;
                 symbol!(Exp)
             }
             '*' => symbol!(Asterisk),
-
             '&' if self.peek_next_char()? == Some('&') => {
                 self.next_char()?;
                 symbol!(LogicalAnd)
@@ -290,45 +273,39 @@ impl<'a> Tokenizer<'a> {
                 self.next_char()?;
                 symbol!(LogicalOr)
             }
-
             _ => Err(Error::UnknownSymbolError(
                 first_symbol,
-                self.line,
-                self.column,
+                line,
+                col,
                 std::mem::take(&mut self.string_buffer),
             )),
         }
     }
 
-    /// Tokenizes a number literal. Also handles temperatures with a suffix of `c`, `f`, or `k`.
-    fn tokenize_number(&mut self, first_char: char) -> Result<Token, Error> {
+    fn tokenize_number(
+        &mut self,
+        first_char: char,
+        line: usize,
+        col: usize,
+    ) -> Result<Token, Error> {
         let mut primary = String::with_capacity(16);
         let mut decimal: Option<String> = None;
         let mut reading_decimal = false;
-
-        let column = self.column;
-        let line = self.line;
-
         primary.push(first_char);
 
         while let Some(next_char) = self.peek_next_char()? {
             if next_char.is_whitespace() {
                 break;
             }
-
             if next_char == '.' {
                 reading_decimal = true;
                 self.next_char()?;
                 continue;
             }
-
-            // support underscores in numbers for readability
             if next_char == '_' {
                 self.next_char()?;
                 continue;
             }
-
-            // This is for the times when we have a number followed by a symbol (like a semicolon or =)
             if !next_char.is_numeric() {
                 break;
             }
@@ -343,33 +320,21 @@ impl<'a> Tokenizer<'a> {
 
         let number: Number = if let Some(decimal) = decimal {
             let decimal_scale = decimal.len() as u32;
-            let number = format!("{}{}", primary, decimal)
-                .parse::<i128>()
-                .map_err(|e| {
-                    Error::NumberParseError(
-                        e,
-                        self.line,
-                        self.column,
-                        std::mem::take(&mut self.string_buffer),
-                    )
-                })?;
+            let number_str = format!("{}{}", primary, decimal);
+            let number = number_str.parse::<i128>().map_err(|e| {
+                Error::NumberParseError(e, line, col, std::mem::take(&mut self.string_buffer))
+            })?;
             Number::Decimal(
                 Decimal::try_from_i128_with_scale(number, decimal_scale).map_err(|e| {
-                    Error::DecimalParseError(
-                        e,
-                        line,
-                        column,
-                        std::mem::take(&mut self.string_buffer),
-                    )
+                    Error::DecimalParseError(e, line, col, std::mem::take(&mut self.string_buffer))
                 })?,
             )
         } else {
             Number::Integer(primary.parse().map_err(|e| {
-                Error::NumberParseError(e, line, column, std::mem::take(&mut self.string_buffer))
+                Error::NumberParseError(e, line, col, std::mem::take(&mut self.string_buffer))
             })?)
         };
 
-        // check if the next char is a temperature suffix
         if let Some(next_char) = self.peek_next_char()? {
             let temperature = match next_char {
                 'c' => Temperature::Celsius(number),
@@ -379,7 +344,7 @@ impl<'a> Tokenizer<'a> {
                     return Ok(Token::new(
                         TokenType::Number(number),
                         line,
-                        column,
+                        col,
                         Some(std::mem::take(&mut self.string_buffer)),
                     ));
                 }
@@ -390,74 +355,65 @@ impl<'a> Tokenizer<'a> {
             Ok(Token::new(
                 TokenType::Number(temperature),
                 line,
-                column,
+                col,
                 Some(std::mem::take(&mut self.string_buffer)),
             ))
         } else {
             Ok(Token::new(
                 TokenType::Number(number),
                 line,
-                column,
+                col,
                 Some(std::mem::take(&mut self.string_buffer)),
             ))
         }
     }
 
-    /// Tokenizes a string literal
-    fn tokenize_string(&mut self, beginning_quote: char) -> Result<Token, Error> {
+    fn tokenize_string(
+        &mut self,
+        beginning_quote: char,
+        line: usize,
+        col: usize,
+    ) -> Result<Token, Error> {
         let mut buffer = String::with_capacity(16);
-
-        let column = self.column;
-        let line = self.line;
-
         while let Some(next_char) = self.next_char()? {
             if next_char == beginning_quote {
                 break;
             }
-
             buffer.push(next_char);
         }
-
         Ok(Token::new(
             TokenType::String(buffer),
             line,
-            column,
+            col,
             Some(std::mem::take(&mut self.string_buffer)),
         ))
     }
 
-    /// Tokenizes a keyword or an identifier. Also handles boolean literals
-    fn tokenize_keyword_or_identifier(&mut self, first_char: char) -> Result<Token, Error> {
+    fn tokenize_keyword_or_identifier(
+        &mut self,
+        first_char: char,
+        line: usize,
+        col: usize,
+    ) -> Result<Token, Error> {
         macro_rules! keyword {
             ($keyword:ident) => {{
                 return Ok(Token::new(
                     TokenType::Keyword(Keyword::$keyword),
-                    self.line,
-                    self.column,
+                    line,
+                    col,
                     Some(std::mem::take(&mut self.string_buffer)),
                 ));
             }};
         }
-
-        /// Helper macro to check if the next character is whitespace or not alphanumeric
         macro_rules! next_ws {
-            () => {
-                matches!(self.peek_next_char()?, Some(x) if x.is_whitespace() || !x.is_alphanumeric()) || self.peek_next_char()?.is_none()
-            };
+            () => { matches!(self.peek_next_char()?, Some(x) if x.is_whitespace() || !x.is_alphanumeric()) || self.peek_next_char()?.is_none() };
         }
 
         let mut buffer = String::with_capacity(16);
-        let line = self.line;
-        let column = self.column;
-
         let mut looped_char = Some(first_char);
 
         while let Some(next_char) = looped_char {
-            if next_char.is_whitespace() {
-                break;
-            }
-
-            if !next_char.is_alphanumeric() {
+            if next_char.is_whitespace() || !next_char.is_alphanumeric() {
                 break;
             }
             buffer.push(next_char);
@@ -474,51 +430,47 @@ impl<'a> Tokenizer<'a> {
                 "break" if next_ws!() => keyword!(Break),
                 "while" if next_ws!() => keyword!(While),
                 "continue" if next_ws!() => keyword!(Continue),
-
-                // boolean literals
                 "true" if next_ws!() => {
                     return Ok(Token::new(
                         TokenType::Boolean(true),
-                        self.line,
-                        self.column,
+                        line,
+                        col,
                         Some(std::mem::take(&mut self.string_buffer)),
                     ));
                 }
                 "false" if next_ws!() => {
                     return Ok(Token::new(
                         TokenType::Boolean(false),
-                        self.line,
-                        self.column,
+                        line,
+                        col,
                         Some(std::mem::take(&mut self.string_buffer)),
                     ));
                 }
-                // if the next character is whitespace or not alphanumeric, then we have an identifier
-                // this is because keywords are checked first
                 val if next_ws!() => {
                     return Ok(Token::new(
                         TokenType::Identifier(val.to_string()),
                         line,
-                        column,
+                        col,
                         Some(std::mem::take(&mut self.string_buffer)),
                     ));
                 }
                 _ => {}
             }
-
             looped_char = self.next_char()?;
         }
         Err(Error::UnknownKeywordOrIdentifierError(
             buffer,
             line,
-            column,
+            col,
             std::mem::take(&mut self.string_buffer),
         ))
     }
 }
 
+// ... Iterator and TokenizerBuffer implementations remain unchanged ...
+// They just call the methods above which now use the passed-in start coordinates.
 impl<'a> Iterator for Tokenizer<'a> {
     type Item = Result<Token, Error>;
-
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_token() {
             Ok(Some(tok)) => Some(Ok(tok)),
@@ -542,38 +494,26 @@ impl<'a> TokenizerBuffer<'a> {
             history: VecDeque::with_capacity(128),
         }
     }
-
-    /// Reads the next token from the tokenizer, pushing the value to the back of the history
-    /// and returning the token
     pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
         if let Some(token) = self.buffer.pop_front() {
             self.history.push_back(token.clone());
             return Ok(Some(token));
         }
-
         let token = self.tokenizer.next_token()?;
         if let Some(ref token) = token {
             self.history.push_back(token.clone());
         }
         Ok(token)
     }
-
-    /// Peeks the next token in the stream without adding to the history stack
     pub fn peek(&mut self) -> Result<Option<Token>, Error> {
         if let Some(token) = self.buffer.front() {
             return Ok(Some(token.clone()));
         }
-
         let token = self.tokenizer.peek_next()?;
         Ok(token)
     }
-
     fn seek_from_current(&mut self, seek_to: i64) -> Result<(), Error> {
         use Ordering::*;
-        // if seek_to > 0 then we need to check if the buffer has enough tokens to pop, otherwise we need to read from the tokenizer
-        // if seek_to < 0 then we need to pop from the history and push to the front of the buffer. If not enough, then we throw (we reached the front of the history)
-        // if seek_to == 0 then we don't need to do anything
-
         match seek_to.cmp(&0) {
             Greater => {
                 let mut tokens = Vec::with_capacity(seek_to as usize);
@@ -606,18 +546,13 @@ impl<'a> TokenizerBuffer<'a> {
             }
             _ => {}
         }
-
         Ok(())
     }
-
-    /// Adds to or removes from the History stack, allowing the user to move back and forth in the stream
     pub fn seek(&mut self, from: SeekFrom) -> Result<(), Error> {
         match from {
             SeekFrom::Current(seek_to) => self.seek_from_current(seek_to)?,
-            SeekFrom::End(_) => unimplemented!("SeekFrom::End will not be implemented"),
-            SeekFrom::Start(_) => unimplemented!("SeekFrom::Start will not be implemented"),
+            _ => unimplemented!("SeekFrom::End/Start not implemented"),
         }
-
         Ok(())
     }
 }
@@ -682,7 +617,7 @@ mod tests {
 
         assert_eq!(char, Some('f'));
         assert_eq!(tokenizer.line, 1);
-        assert_eq!(tokenizer.column, 2);
+        assert_eq!(tokenizer.column, 1);
 
         Ok(())
     }
@@ -695,7 +630,7 @@ mod tests {
 
         assert_eq!(char, Some('\n'));
         assert_eq!(tokenizer.line, 1);
-        assert_eq!(tokenizer.column, 1);
+        assert_eq!(tokenizer.column, 0);
 
         let char = tokenizer.next_char()?;
         assert_eq!(char, Some('\n'));
@@ -1006,6 +941,38 @@ mod tests {
         assert_eq!(
             tokenizer.next_token()?.unwrap().token_type,
             TokenType::Symbol(Symbol::LParen)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_identifier_has_correct_length() -> Result<()> {
+        let mut tokenizer = Tokenizer::from("hello");
+        assert_eq!(
+            tokenizer.next_token()?,
+            Some(Token {
+                token_type: TokenType::Identifier("hello".into()),
+                original_string: Some("hello".into()),
+                column: 1,
+                line: 1
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_keyword_token_has_correct_length() -> Result<()> {
+        let mut tokenizer = Tokenizer::from("while");
+
+        assert_eq!(
+            tokenizer.next_token()?,
+            Some(Token {
+                token_type: TokenType::Keyword(Keyword::While),
+                original_string: Some("while".into()),
+                column: 1,
+                line: 1
+            })
         );
 
         Ok(())

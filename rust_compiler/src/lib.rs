@@ -7,11 +7,24 @@ use tokenizer::{token::TokenType, Error as TokenizerError, Tokenizer};
 #[derive_ReprC]
 #[repr(C)]
 pub struct FfiToken {
-    pub text: safer_ffi::String,
     pub tooltip: safer_ffi::String,
     pub error: safer_ffi::String,
-    pub status: safer_ffi::String,
     pub column: i32,
+    pub length: i32,
+    pub token_kind: u32,
+}
+
+fn map_token_kind(t: &TokenType) -> u32 {
+    use TokenType::*;
+    match t {
+        Keyword(_) => 1,
+        Identifier(_) => 2,
+        Number(_) => 3,
+        String(_) => 4,
+        Boolean(_) => 5,
+        Symbol(_) => 6,
+        _ => 0,
+    }
 }
 
 /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
@@ -49,29 +62,29 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
 
     for token in tokenizer {
         match token {
-            Err(TokenizerError::NumberParseError(_, _, col, ref original))
-            | Err(TokenizerError::UnknownSymbolError(_, _, col, ref original))
-            | Err(TokenizerError::DecimalParseError(_, _, col, ref original))
-            | Err(TokenizerError::UnknownKeywordOrIdentifierError(_, _, col, ref original)) => {
+            Err(TokenizerError::NumberParseError(_, _, col, ref str))
+            | Err(TokenizerError::UnknownSymbolError(_, _, col, ref str))
+            | Err(TokenizerError::DecimalParseError(_, _, col, ref str))
+            | Err(TokenizerError::UnknownKeywordOrIdentifierError(_, _, col, ref str)) => {
                 tokens.push(FfiToken {
-                    column: col as i32,
-                    text: original.to_string().into(),
+                    column: col as i32 - 1,
                     tooltip: "".into(),
+                    length: str.len() as i32,
+                    token_kind: 0,
                     // Safety: it's okay to unwrap the err here because we are matching on the `Err` variant
                     error: token.unwrap_err().to_string().into(),
-                    status: "".into(),
                 });
             }
             Err(_) => return safer_ffi::Vec::EMPTY,
             Ok(token) if !matches!(token.token_type, TokenType::EOF) => tokens.push(FfiToken {
-                text: token
-                    .original_string
-                    .unwrap_or(token.token_type.to_string())
-                    .into(),
                 tooltip: "".into(),
                 error: "".into(),
-                status: "".into(),
-                column: token.column as i32,
+                length: token
+                    .original_string
+                    .map(|s| s.len() as i32)
+                    .unwrap_or_default(),
+                token_kind: map_token_kind(&token.token_type),
+                column: token.column as i32 - 1,
             }),
             _ => {}
         }
