@@ -26,7 +26,7 @@ public static class Marshal
         try
         {
             _libraryHandle = LoadLibrary(ExtractNativeLibrary(Ffi.RustLib));
-            CodeFormatters.RegisterFormatter("Slang", () => new SlangFormatter(), true);
+            CodeFormatters.RegisterFormatter("Slang", typeof(SlangFormatter), true);
             return true;
         }
         catch (Exception ex)
