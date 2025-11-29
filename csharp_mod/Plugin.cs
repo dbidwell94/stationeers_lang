@@ -1,9 +1,6 @@
-using System.IO;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using BepInEx;
 using HarmonyLib;
-using StationeersIC10Editor;
 
 namespace Slang
 {
@@ -43,6 +40,8 @@ namespace Slang
     {
         public const string PluginGuid = "com.biddydev.slang";
         public const string PluginName = "Slang";
+
+        private Harmony? _harmony;
 
         private static Regex? _slangSourceCheck = null;
 
@@ -89,44 +88,28 @@ namespace Slang
         private void Awake()
         {
             L.SetLogger(Logger);
+            this._harmony = new Harmony(PluginGuid);
+            L.Info("slang loaded");
 
-            if (ExtractNativeDll(Ffi.RustLib))
+            // If we failed to load the compiler, bail from the rest of the patches. It won't matter,
+            // as the compiler itself has failed to load.
+            if (!Marshal.Init())
             {
-                var harmony = new Harmony(PluginGuid);
-                harmony.PatchAll();
-                CodeFormatters.RegisterFormatter("slang", () => new SlangFormatter(), true);
+                return;
             }
+
+            this._harmony.PatchAll();
         }
 
-        private bool ExtractNativeDll(string fileName)
+        private void OnDestroy()
         {
-            string destinationPath = Path.Combine(Path.GetDirectoryName(Info.Location), fileName);
-
-            Assembly assembly = Assembly.GetExecutingAssembly();
-
-            using (Stream stream = assembly.GetManifestResourceStream(fileName))
+            if (Marshal.Destroy())
             {
-                if (stream == null)
-                {
-                    L.Error(
-                        $"{Ffi.RustLib} not found. This means it was not embedded in the mod. Please contact the mod author!"
-                    );
-                    return false;
-                }
-
-                try
-                {
-                    using (FileStream fileStream = new FileStream(destinationPath, FileMode.Create))
-                    {
-                        stream.CopyTo(fileStream);
-                    }
-                    return true;
-                }
-                catch (IOException e)
-                {
-                    L.Warning($"Could not overwrite {fileName} (it might be in use): {e.Message}");
-                    return false;
-                }
+                L.Info("FFI references cleaned up.");
+            }
+            if (this._harmony is not null)
+            {
+                this._harmony.UnpatchSelf();
             }
         }
     }

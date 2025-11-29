@@ -1,12 +1,24 @@
+namespace Slang;
+
 using StationeersIC10Editor;
 
-namespace Slang
+public class SlangFormatter : ICodeFormatter
 {
-    public class SlangFormatter : ICodeFormatter
+    public static readonly uint ColorInstruction = ColorFromHTML("#ffff00");
+    public static readonly uint ColorString = ColorFromHTML("#ce9178");
+
+    public override Line ParseLine(string line)
     {
-        public override Line ParseLine(string line)
+        return Marshal.TokenizeLine(line);
+    }
+
+    public override string Compile()
+    {
+        if (Marshal.CompileFromString(this.Lines.RawText, out string compiled))
         {
-            return Marshal.TokenizeLine(line);
+            return compiled;
         }
+
+        return string.Empty;
     }
 }

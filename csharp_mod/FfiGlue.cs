@@ -83,17 +83,17 @@ public unsafe partial class Ffi {
         slice_ref_uint16_t input);
 }
 
-[StructLayout(LayoutKind.Sequential, Size = 104)]
+[StructLayout(LayoutKind.Sequential, Size = 64)]
 public unsafe struct FfiToken_t {
-    public Vec_uint8_t text;
-
     public Vec_uint8_t tooltip;
 
     public Vec_uint8_t error;
 
-    public Vec_uint8_t status;
-
     public Int32 column;
+
+    public Int32 length;
+
+    public UInt32 token_kind;
 }
 
 /// <summary>
