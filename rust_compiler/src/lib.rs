@@ -2,7 +2,7 @@ use compiler::Compiler;
 use parser::Parser;
 use safer_ffi::prelude::*;
 use std::io::BufWriter;
-use tokenizer::{Error as TokenizerError, Tokenizer};
+use tokenizer::{token::TokenType, Error as TokenizerError, Tokenizer};
 
 #[derive_ReprC]
 #[repr(C)]
@@ -63,13 +63,14 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
                 });
             }
             Err(_) => return safer_ffi::Vec::EMPTY,
-            Ok(token) => tokens.push(FfiToken {
+            Ok(token) if !matches!(token.token_type, TokenType::EOF) => tokens.push(FfiToken {
                 text: token.token_type.to_string().into(),
                 tooltip: "".into(),
                 error: "".into(),
                 status: "".into(),
                 column: token.column as i32,
             }),
+            _ => {}
         }
     }
 

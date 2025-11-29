@@ -42,11 +42,8 @@ namespace Slang
          */
         public static Line AsList(this Vec_FfiToken_t vec)
         {
-            L.Info("Converting output into a C# List.");
             var list = new Line();
-            L.Info("Created new `Line`.");
             list.Capacity = (int)vec.len;
-            L.Info("Changed `Capacity` to be returned Vec's len");
 
             var currentPtr = vec.ptr;
 

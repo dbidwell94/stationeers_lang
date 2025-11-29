@@ -19,7 +19,7 @@ namespace Slang
                 return;
             }
 
-            L.Info("Detected Slang source, compiling...");
+            L.Debug("Detected Slang source, compiling...");
 
             // Compile the Slang source into IC10
             string compiled = SlangPlugin.Compile(result);

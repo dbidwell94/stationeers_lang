@@ -12,17 +12,13 @@ namespace Slang
                 return new Line();
             }
 
-            L.Info("Input string not empty");
-
             fixed (char* ptrString = source)
             {
-                L.Info("In `fixed` block.");
                 var input = new slice_ref_uint16_t
                 {
                     ptr = (ushort*)ptrString,
                     len = (UIntPtr)source.Length,
                 };
-                L.Info("Calling tokenize_line");
                 return Ffi.tokenize_line(input).AsList();
             }
         }
