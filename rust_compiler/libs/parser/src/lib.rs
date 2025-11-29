@@ -4,6 +4,7 @@ mod test;
 pub mod sys_call;
 pub mod tree_node;
 
+use crate::sys_call::System;
 use quick_error::quick_error;
 use std::io::SeekFrom;
 use sys_call::SysCall;
@@ -12,8 +13,6 @@ use tokenizer::{
     token::{Keyword, Symbol, Token, TokenType},
 };
 use tree_node::*;
-
-use crate::sys_call::System;
 
 #[macro_export]
 /// A macro to create a boxed value.
@@ -114,13 +113,13 @@ macro_rules! token_matches {
     };
 }
 
-pub struct Parser {
-    tokenizer: TokenizerBuffer,
+pub struct Parser<'a> {
+    tokenizer: TokenizerBuffer<'a>,
     current_token: Option<Token>,
 }
 
-impl Parser {
-    pub fn new(tokenizer: Tokenizer) -> Self {
+impl<'a> Parser<'a> {
+    pub fn new(tokenizer: Tokenizer<'a>) -> Self {
         Parser {
             tokenizer: TokenizerBuffer::new(tokenizer),
             current_token: None,
@@ -1261,7 +1260,9 @@ impl Parser {
                 let arg = literal_or_variable!(invocation.arguments.first());
                 Ok(SysCall::Math(sys_call::Math::Trunc(arg)))
             }
-            _ => todo!(),
+            _ => Err(Error::UnsupportedKeyword(token_from_option!(
+                self.current_token
+            ))),
         }
     }
 }

@@ -18,18 +18,18 @@ quick_error! {
             display("IO Error: {}", err)
             source(err)
         }
-        NumberParseError(err: std::num::ParseIntError, line: usize, column: usize) {
+        NumberParseError(err: std::num::ParseIntError, line: usize, column: usize, original: String) {
             display("Number Parse Error: {}\nLine: {}, Column: {}", err, line, column)
             source(err)
         }
-        DecimalParseError(err: rust_decimal::Error, line: usize, column: usize) {
+        DecimalParseError(err: rust_decimal::Error, line: usize, column: usize, original: String) {
             display("Decimal Parse Error: {}\nLine: {}, Column: {}", err, line, column)
             source(err)
         }
-        UnknownSymbolError(char: char, line: usize, column: usize) {
+        UnknownSymbolError(char: char, line: usize, column: usize, original: String) {
             display("Unknown Symbol: {}\nLine: {}, Column: {}", char, line, column)
         }
-        UnknownKeywordOrIdentifierError(val: String, line: usize, column: usize) {
+        UnknownKeywordOrIdentifierError(val: String, line: usize, column: usize, original: String) {
             display("Unknown Keyword or Identifier: {}\nLine: {}, Column: {}", val, line, column)
         }
     }
@@ -39,15 +39,16 @@ pub trait Tokenize: Read + Seek {}
 
 impl<T> Tokenize for T where T: Read + Seek {}
 
-pub struct Tokenizer {
-    reader: BufReader<Box<dyn Tokenize>>,
+pub struct Tokenizer<'a> {
+    reader: BufReader<Box<dyn Tokenize + 'a>>,
     char_buffer: [u8; 1],
     line: usize,
     column: usize,
     returned_eof: bool,
+    string_buffer: String,
 }
 
-impl Tokenizer {
+impl<'a> Tokenizer<'a> {
     pub fn from_path(input_file: impl Into<PathBuf>) -> Result<Self, Error> {
         let file = std::fs::File::open(input_file.into())?;
         let reader = BufReader::new(Box::new(file) as Box<dyn Tokenize>);
@@ -58,11 +59,12 @@ impl Tokenizer {
             column: 1,
             char_buffer: [0],
             returned_eof: false,
+            string_buffer: String::new(),
         })
     }
 }
 
-impl From<String> for Tokenizer {
+impl<'a> From<String> for Tokenizer<'a> {
     fn from(input: String) -> Self {
         let reader = BufReader::new(Box::new(Cursor::new(input)) as Box<dyn Tokenize>);
 
@@ -72,17 +74,25 @@ impl From<String> for Tokenizer {
             column: 1,
             char_buffer: [0],
             returned_eof: false,
+            string_buffer: String::new(),
         }
     }
 }
 
-impl From<&str> for Tokenizer {
-    fn from(value: &str) -> Self {
-        Self::from(value.to_string())
+impl<'a> From<&'a str> for Tokenizer<'a> {
+    fn from(value: &'a str) -> Self {
+        Self {
+            reader: BufReader::new(Box::new(Cursor::new(value)) as Box<dyn Tokenize>),
+            char_buffer: [0],
+            column: 1,
+            line: 1,
+            returned_eof: false,
+            string_buffer: String::new(),
+        }
     }
 }
 
-impl Tokenizer {
+impl<'a> Tokenizer<'a> {
     /// Consumes the tokenizer and returns the next token in the stream
     /// If there are no more tokens in the stream, this function returns None
     /// If there is an error reading the stream, this function returns an error
@@ -105,6 +115,7 @@ impl Tokenizer {
             self.column += 1;
         }
 
+        self.string_buffer.push(c);
         Ok(Some(c))
     }
 
@@ -171,7 +182,12 @@ impl Tokenizer {
                     return self.tokenize_keyword_or_identifier(next_char).map(Some);
                 }
                 _ => {
-                    return Err(Error::UnknownSymbolError(next_char, self.line, self.column));
+                    return Err(Error::UnknownSymbolError(
+                        next_char,
+                        self.line,
+                        self.column,
+                        std::mem::take(&mut self.string_buffer),
+                    ));
                 }
             }
         }
@@ -179,7 +195,12 @@ impl Tokenizer {
             Ok(None)
         } else {
             self.returned_eof = true;
-            Ok(Some(Token::new(TokenType::EOF, self.line, self.column)))
+            Ok(Some(Token::new(
+                TokenType::EOF,
+                self.line,
+                self.column,
+                Some(std::mem::take(&mut self.string_buffer)),
+            )))
         }
     }
 
@@ -206,6 +227,7 @@ impl Tokenizer {
                     TokenType::Symbol(Symbol::$symbol),
                     self.line,
                     self.column,
+                    Some(std::mem::take(&mut self.string_buffer)),
                 ))
             };
         }
@@ -273,6 +295,7 @@ impl Tokenizer {
                 first_symbol,
                 self.line,
                 self.column,
+                std::mem::take(&mut self.string_buffer),
             )),
         }
     }
@@ -322,17 +345,28 @@ impl Tokenizer {
             let decimal_scale = decimal.len() as u32;
             let number = format!("{}{}", primary, decimal)
                 .parse::<i128>()
-                .map_err(|e| Error::NumberParseError(e, self.line, self.column))?;
+                .map_err(|e| {
+                    Error::NumberParseError(
+                        e,
+                        self.line,
+                        self.column,
+                        std::mem::take(&mut self.string_buffer),
+                    )
+                })?;
             Number::Decimal(
-                Decimal::try_from_i128_with_scale(number, decimal_scale)
-                    .map_err(|e| Error::DecimalParseError(e, line, column))?,
+                Decimal::try_from_i128_with_scale(number, decimal_scale).map_err(|e| {
+                    Error::DecimalParseError(
+                        e,
+                        line,
+                        column,
+                        std::mem::take(&mut self.string_buffer),
+                    )
+                })?,
             )
         } else {
-            Number::Integer(
-                primary
-                    .parse()
-                    .map_err(|e| Error::NumberParseError(e, line, column))?,
-            )
+            Number::Integer(primary.parse().map_err(|e| {
+                Error::NumberParseError(e, line, column, std::mem::take(&mut self.string_buffer))
+            })?)
         };
 
         // check if the next char is a temperature suffix
@@ -341,14 +375,31 @@ impl Tokenizer {
                 'c' => Temperature::Celsius(number),
                 'f' => Temperature::Fahrenheit(number),
                 'k' => Temperature::Kelvin(number),
-                _ => return Ok(Token::new(TokenType::Number(number), line, column)),
+                _ => {
+                    return Ok(Token::new(
+                        TokenType::Number(number),
+                        line,
+                        column,
+                        Some(std::mem::take(&mut self.string_buffer)),
+                    ));
+                }
             }
             .to_kelvin();
 
             self.next_char()?;
-            Ok(Token::new(TokenType::Number(temperature), line, column))
+            Ok(Token::new(
+                TokenType::Number(temperature),
+                line,
+                column,
+                Some(std::mem::take(&mut self.string_buffer)),
+            ))
         } else {
-            Ok(Token::new(TokenType::Number(number), line, column))
+            Ok(Token::new(
+                TokenType::Number(number),
+                line,
+                column,
+                Some(std::mem::take(&mut self.string_buffer)),
+            ))
         }
     }
 
@@ -367,7 +418,12 @@ impl Tokenizer {
             buffer.push(next_char);
         }
 
-        Ok(Token::new(TokenType::String(buffer), line, column))
+        Ok(Token::new(
+            TokenType::String(buffer),
+            line,
+            column,
+            Some(std::mem::take(&mut self.string_buffer)),
+        ))
     }
 
     /// Tokenizes a keyword or an identifier. Also handles boolean literals
@@ -378,6 +434,7 @@ impl Tokenizer {
                     TokenType::Keyword(Keyword::$keyword),
                     self.line,
                     self.column,
+                    Some(std::mem::take(&mut self.string_buffer)),
                 ));
             }};
         }
@@ -420,13 +477,19 @@ impl Tokenizer {
 
                 // boolean literals
                 "true" if next_ws!() => {
-                    return Ok(Token::new(TokenType::Boolean(true), self.line, self.column));
+                    return Ok(Token::new(
+                        TokenType::Boolean(true),
+                        self.line,
+                        self.column,
+                        Some(std::mem::take(&mut self.string_buffer)),
+                    ));
                 }
                 "false" if next_ws!() => {
                     return Ok(Token::new(
                         TokenType::Boolean(false),
                         self.line,
                         self.column,
+                        Some(std::mem::take(&mut self.string_buffer)),
                     ));
                 }
                 // if the next character is whitespace or not alphanumeric, then we have an identifier
@@ -436,6 +499,7 @@ impl Tokenizer {
                         TokenType::Identifier(val.to_string()),
                         line,
                         column,
+                        Some(std::mem::take(&mut self.string_buffer)),
                     ));
                 }
                 _ => {}
@@ -443,18 +507,35 @@ impl Tokenizer {
 
             looped_char = self.next_char()?;
         }
-        Err(Error::UnknownKeywordOrIdentifierError(buffer, line, column))
+        Err(Error::UnknownKeywordOrIdentifierError(
+            buffer,
+            line,
+            column,
+            std::mem::take(&mut self.string_buffer),
+        ))
     }
 }
 
-pub struct TokenizerBuffer {
-    tokenizer: Tokenizer,
+impl<'a> Iterator for Tokenizer<'a> {
+    type Item = Result<Token, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_token() {
+            Ok(Some(tok)) => Some(Ok(tok)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+pub struct TokenizerBuffer<'a> {
+    tokenizer: Tokenizer<'a>,
     buffer: VecDeque<Token>,
     history: VecDeque<Token>,
 }
 
-impl TokenizerBuffer {
-    pub fn new(tokenizer: Tokenizer) -> Self {
+impl<'a> TokenizerBuffer<'a> {
+    pub fn new(tokenizer: Tokenizer<'a>) -> Self {
         Self {
             tokenizer,
             buffer: VecDeque::new(),

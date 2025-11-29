@@ -155,4 +155,3 @@ fn test_spilled_variable_update_in_branch() -> anyhow::Result<()> {
 
     Ok(())
 }
-

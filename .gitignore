@@ -1,2 +1,6 @@
-/target
+target
 *.ic10
+release
+csharp_mod/bin
+obj
+ref

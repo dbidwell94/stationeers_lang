@@ -8,14 +8,21 @@ pub struct Token {
     pub line: usize,
     /// The column where the token was found
     pub column: usize,
+    pub original_string: Option<String>,
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, line: usize, column: usize) -> Self {
+    pub fn new(
+        token_type: TokenType,
+        line: usize,
+        column: usize,
+        original: Option<String>,
+    ) -> Self {
         Self {
             token_type,
             line,
             column,
+            original_string: original,
         }
     }
 }
@@ -32,7 +39,7 @@ impl std::fmt::Display for Temperature {
         match self {
             Temperature::Celsius(n) => write!(f, "{}°C", n),
             Temperature::Fahrenheit(n) => write!(f, "{}°F", n),
-            Temperature::Kelvin(n) => write!(f, "{}K", n),
+            Temperature::Kelvin(n) => write!(f, "{}°K", n),
         }
     }
 }
@@ -88,7 +95,7 @@ impl std::fmt::Display for TokenType {
             TokenType::Boolean(b) => write!(f, "{}", b),
             TokenType::Keyword(k) => write!(f, "{:?}", k),
             TokenType::Identifier(i) => write!(f, "{}", i),
-            TokenType::Symbol(s) => write!(f, "{:?}", s),
+            TokenType::Symbol(s) => write!(f, "{}", s),
             TokenType::EOF => write!(f, "EOF"),
         }
     }
@@ -205,6 +212,40 @@ impl Symbol {
 
     pub fn is_logical(&self) -> bool {
         matches!(self, Symbol::LogicalAnd | Symbol::LogicalOr)
+    }
+}
+
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Percent => write!(f, "%"),
+            Self::LParen => write!(f, "("),
+            Self::RParen => write!(f, ")"),
+            Self::LBrace => write!(f, "{{"),
+            Self::RBrace => write!(f, "}}"),
+            Self::LBracket => write!(f, "["),
+            Self::RBracket => write!(f, "]"),
+            Self::Semicolon => write!(f, ";"),
+            Self::Colon => write!(f, ":"),
+            Self::Plus => write!(f, "+"),
+            Self::Minus => write!(f, "-"),
+            Self::Comma => write!(f, ","),
+            Self::Asterisk => write!(f, "*"),
+            Self::Slash => write!(f, "/"),
+            Self::LessThan => write!(f, "<"),
+            Self::LessThanOrEqual => write!(f, "<="),
+            Self::GreaterThan => write!(f, ">"),
+            Self::GreaterThanOrEqual => write!(f, ">="),
+            Self::Assign => write!(f, "="),
+            Self::Equal => write!(f, "=="),
+            Self::LogicalAnd => write!(f, "&&"),
+            Self::LogicalOr => write!(f, "||"),
+            Self::LogicalNot => write!(f, "!"),
+            Self::NotEqual => write!(f, "!="),
+            Self::Dot => write!(f, "."),
+            Self::Caret => write!(f, "^"),
+            Self::Exp => write!(f, "**"),
+        }
     }
 }
 

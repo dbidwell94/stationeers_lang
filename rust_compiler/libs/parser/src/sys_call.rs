@@ -124,7 +124,7 @@ pub enum System {
     /// Loads a LogicType from all connected network devices, aggregating them via a
     /// batchMode
     /// ## In Game
-    /// lb r? deviceHash loggicType batchMode
+    /// lb r? deviceHash logicType batchMode
     /// ## Examples
     /// lb r0 HASH("StructureWallLight") On Minimum
     LoadBatch(LiteralOrVariable, Literal, Literal),
@@ -137,7 +137,7 @@ pub enum System {
     /// Represents a function which stores a setting to all devices that match
     /// the given deviceHash
     /// ## In Game
-    /// `sb deviceHash logictype r?`
+    /// `sb deviceHash logicType r?`
     /// ## Example
     /// `sb HASH("Doors") Lock 1`
     SetOnDeviceBatched(LiteralOrVariable, Literal, Box<Expression>),
