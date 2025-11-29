@@ -457,7 +457,11 @@ impl<'a> Iterator for Tokenizer<'a> {
     type Item = Result<Token, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        match self.next_token() {
+            Ok(Some(tok)) => Some(Ok(tok)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
     }
 }
 

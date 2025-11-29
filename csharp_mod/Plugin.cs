@@ -38,6 +38,7 @@ namespace Slang
     }
 
     [BepInPlugin(PluginGuid, PluginName, "0.1.0")]
+    [BepInDependency(StationeersIC10Editor.IC10EditorPlugin.PluginGuid)]
     public class SlangPlugin : BaseUnityPlugin
     {
         public const string PluginGuid = "com.biddydev.slang";
@@ -60,26 +61,15 @@ namespace Slang
 
         public static unsafe string Compile(string source)
         {
-            if (string.IsNullOrEmpty(source))
-                return "";
-
-            // Add a null terminator char at the end of the source string (turns into a CStr)
-            source += "\0";
-
-            var bytes = System.Text.Encoding.UTF8.GetBytes(source);
-
-            // don't move my memory around, C#!
-            fixed (byte* pBytes = bytes)
+            string compiled;
+            if (Marshal.CompileFromString(source, out compiled))
             {
-                var compiled = Ffi.compile_from_string(pBytes);
-                try
-                {
-                    return compiled.AsString();
-                }
-                finally
-                {
-                    Ffi.free_string(compiled);
-                }
+                // TODO: handle saving the original source code
+                return compiled;
+            }
+            else
+            {
+                return compiled;
             }
         }
 
@@ -99,13 +89,16 @@ namespace Slang
         private void Awake()
         {
             L.SetLogger(Logger);
-            ExtractNativeDll("slang.dll");
-            var harmony = new Harmony(PluginGuid);
-            harmony.PatchAll();
-            CodeFormatters.RegisterFormatter("slang", () => new SlangFormatter(), true);
+
+            if (ExtractNativeDll(Ffi.RustLib))
+            {
+                var harmony = new Harmony(PluginGuid);
+                harmony.PatchAll();
+                CodeFormatters.RegisterFormatter("slang", () => new SlangFormatter(), true);
+            }
         }
 
-        private void ExtractNativeDll(string fileName)
+        private bool ExtractNativeDll(string fileName)
         {
             string destinationPath = Path.Combine(Path.GetDirectoryName(Info.Location), fileName);
 
@@ -116,9 +109,9 @@ namespace Slang
                 if (stream == null)
                 {
                     L.Error(
-                        "slang.dll compiler not found. This means it was not embedded in the mod. Please contact the mod author!"
+                        $"{Ffi.RustLib} not found. This means it was not embedded in the mod. Please contact the mod author!"
                     );
-                    return;
+                    return false;
                 }
 
                 try
@@ -127,10 +120,12 @@ namespace Slang
                     {
                         stream.CopyTo(fileStream);
                     }
+                    return true;
                 }
                 catch (IOException e)
                 {
                     L.Warning($"Could not overwrite {fileName} (it might be in use): {e.Message}");
+                    return false;
                 }
             }
         }

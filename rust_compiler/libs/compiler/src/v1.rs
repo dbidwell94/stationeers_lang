@@ -1125,9 +1125,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }))
             }
 
-            _ => {
-                todo!()
-            }
+            t => Err(Error::Unknown(format!("{t:?}\n\nNot yet implemented"))),
         }
     }
 

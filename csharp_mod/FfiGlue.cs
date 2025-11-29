@@ -23,8 +23,40 @@ public unsafe partial class Ffi {
 #if IOS
     private const string RustLib = "slang.framework/slang";
 #else
-    private const string RustLib = "slang";
+    public const string RustLib = "slang_compiler.dll";
 #endif
+}
+
+/// <summary>
+/// <c>&'lt [T]</c> but with a guaranteed <c>#[repr(C)]</c> layout.
+///
+/// # C layout (for some given type T)
+///
+/// ```c
+/// typedef struct {
+/// // Cannot be NULL
+/// T * ptr;
+/// size_t len;
+/// } slice_T;
+/// ```
+///
+/// # Nullable pointer?
+///
+/// If you want to support the above typedef, but where the <c>ptr</c> field is
+/// allowed to be <c>NULL</c> (with the contents of <c>len</c> then being undefined)
+/// use the <c>Option< slice_ptr<_> ></c> type.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Size = 16)]
+public unsafe struct slice_ref_uint16_t {
+    /// <summary>
+    /// Pointer to the first element (if any).
+    /// </summary>
+    public UInt16 /*const*/ * ptr;
+
+    /// <summary>
+    /// Element count
+    /// </summary>
+    public UIntPtr len;
 }
 
 /// <summary>
@@ -40,9 +72,15 @@ public unsafe struct Vec_uint8_t {
 }
 
 public unsafe partial class Ffi {
+    /// <summary>
+    /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
+    /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
+    /// This should result in the ability to compile many times without triggering frame drops
+    /// from the GC from a <c>GetBytes()</c> call on a string in C#.
+    /// </summary>
     [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
     Vec_uint8_t compile_from_string (
-        byte /*const*/ * input);
+        slice_ref_uint16_t input);
 }
 
 [StructLayout(LayoutKind.Sequential, Size = 104)]
@@ -83,9 +121,15 @@ public unsafe partial class Ffi {
 }
 
 public unsafe partial class Ffi {
+    /// <summary>
+    /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
+    /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
+    /// This should result in the ability to tokenize many times without triggering frame drops
+    /// from the GC from a <c>GetBytes()</c> call on a string in C#.
+    /// </summary>
     [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
     Vec_FfiToken_t tokenize_line (
-        byte /*const*/ * input);
+        slice_ref_uint16_t input);
 }
 
 

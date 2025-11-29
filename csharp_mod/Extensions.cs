@@ -6,7 +6,12 @@ namespace Slang
 {
     public static unsafe class SlangExtensions
     {
-        // 1. Convert the Rust Byte Vector (Vec_uint8_t) to a C# String
+        /**
+         * <summary>
+         * This is a helper method to convert a Rust struct for a string pointer
+         * into a C# style string.
+         * </summary>
+         */
         public static string AsString(this Vec_uint8_t vec)
         {
             if (vec.ptr == null || vec.len == UIntPtr.Zero)
@@ -20,16 +25,28 @@ namespace Slang
             return toReturn;
         }
 
+        /**
+         * <summary>This will free a Rust string struct. Because this is a pointer to a struct, this memory
+         * is managed by Rust, therefor it must be freed by Rust
+         * </summary>
+         */
         public static void Drop(this Vec_uint8_t vec)
         {
             Ffi.free_string(vec);
         }
 
-        // 2. Convert Rust Token Vector to C# List
+        /**
+         * <summary>This helper converts a Rust vec to a C# List. This handles freeing the
+         * Rust allocation after the List is created, there is no need to Drop this memory.
+         * </summary>
+         */
         public static Line AsList(this Vec_FfiToken_t vec)
         {
+            L.Info("Converting output into a C# List.");
             var list = new Line();
+            L.Info("Created new `Line`.");
             list.Capacity = (int)vec.len;
+            L.Info("Changed `Capacity` to be returned Vec's len");
 
             var currentPtr = vec.ptr;
 
@@ -40,7 +57,6 @@ namespace Slang
                 FfiToken_t token = currentPtr[i];
 
                 var newToken = new Token(token.text.AsString(), token.column);
-                newToken.Error = token.error.AsString();
 
                 list.Add(newToken);
             }

@@ -1260,7 +1260,9 @@ impl<'a> Parser<'a> {
                 let arg = literal_or_variable!(invocation.arguments.first());
                 Ok(SysCall::Math(sys_call::Math::Trunc(arg)))
             }
-            _ => todo!(),
+            _ => Err(Error::UnsupportedKeyword(token_from_option!(
+                self.current_token
+            ))),
         }
     }
 }

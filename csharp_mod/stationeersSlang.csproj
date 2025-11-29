@@ -54,7 +54,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="../rust_compiler/target/x86_64-pc-windows-gnu/release/slang.dll">
-      <LogicalName>slang.compiler.dll</LogicalName>
+      <LogicalName>slang_compiler.dll</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

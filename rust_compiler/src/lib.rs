@@ -8,9 +8,9 @@ use tokenizer::{Error as TokenizerError, Tokenizer};
 #[repr(C)]
 pub struct FfiToken {
     pub text: safer_ffi::String,
-    pub tooltip: Option<safer_ffi::String>,
-    pub error: Option<safer_ffi::String>,
-    pub status: Option<safer_ffi::String>,
+    pub tooltip: safer_ffi::String,
+    pub error: safer_ffi::String,
+    pub status: safer_ffi::String,
     pub column: i32,
 }
 
@@ -56,18 +56,18 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
                 tokens.push(FfiToken {
                     column: col as i32,
                     text: "".into(),
-                    tooltip: None,
+                    tooltip: "".into(),
                     // Safety: it's okay to unwrap the err here because we are matching on the `Err` variant
-                    error: Some(token.unwrap_err().to_string().into()),
-                    status: None,
+                    error: token.unwrap_err().to_string().into(),
+                    status: "".into(),
                 });
             }
             Err(_) => return safer_ffi::Vec::EMPTY,
             Ok(token) => tokens.push(FfiToken {
                 text: token.token_type.to_string().into(),
-                tooltip: None,
-                error: None,
-                status: None,
+                tooltip: "".into(),
+                error: "".into(),
+                status: "".into(),
                 column: token.column as i32,
             }),
         }
@@ -88,8 +88,19 @@ pub fn free_string(s: safer_ffi::String) {
 
 #[cfg(feature = "headers")]
 pub fn generate_headers() -> std::io::Result<()> {
+    let file_name = "../csharp_mod/FfiGlue.cs";
     ::safer_ffi::headers::builder()
         .with_language(safer_ffi::headers::Language::CSharp)
-        .to_file("../csharp_mod/FfiGlue.cs")?
-        .generate()
+        .to_file(file_name)?
+        .generate()?;
+
+    let content = std::fs::read_to_string(file_name)?;
+
+    let content = content.replace(
+        "private const string RustLib = \"slang\";",
+        "public const string RustLib = \"slang_compiler.dll\";",
+    );
+
+    std::fs::write(file_name, content)?;
+    Ok(())
 }
