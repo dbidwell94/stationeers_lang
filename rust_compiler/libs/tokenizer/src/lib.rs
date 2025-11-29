@@ -18,18 +18,18 @@ quick_error! {
             display("IO Error: {}", err)
             source(err)
         }
-        NumberParseError(err: std::num::ParseIntError, line: usize, column: usize) {
+        NumberParseError(err: std::num::ParseIntError, line: usize, column: usize, original: String) {
             display("Number Parse Error: {}\nLine: {}, Column: {}", err, line, column)
             source(err)
         }
-        DecimalParseError(err: rust_decimal::Error, line: usize, column: usize) {
+        DecimalParseError(err: rust_decimal::Error, line: usize, column: usize, original: String) {
             display("Decimal Parse Error: {}\nLine: {}, Column: {}", err, line, column)
             source(err)
         }
-        UnknownSymbolError(char: char, line: usize, column: usize) {
+        UnknownSymbolError(char: char, line: usize, column: usize, original: String) {
             display("Unknown Symbol: {}\nLine: {}, Column: {}", char, line, column)
         }
-        UnknownKeywordOrIdentifierError(val: String, line: usize, column: usize) {
+        UnknownKeywordOrIdentifierError(val: String, line: usize, column: usize, original: String) {
             display("Unknown Keyword or Identifier: {}\nLine: {}, Column: {}", val, line, column)
         }
     }
@@ -45,6 +45,7 @@ pub struct Tokenizer<'a> {
     line: usize,
     column: usize,
     returned_eof: bool,
+    string_buffer: String,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -58,6 +59,7 @@ impl<'a> Tokenizer<'a> {
             column: 1,
             char_buffer: [0],
             returned_eof: false,
+            string_buffer: String::new(),
         })
     }
 }
@@ -72,6 +74,7 @@ impl<'a> From<String> for Tokenizer<'a> {
             column: 1,
             char_buffer: [0],
             returned_eof: false,
+            string_buffer: String::new(),
         }
     }
 }
@@ -84,6 +87,7 @@ impl<'a> From<&'a str> for Tokenizer<'a> {
             column: 1,
             line: 1,
             returned_eof: false,
+            string_buffer: String::new(),
         }
     }
 }
@@ -111,6 +115,7 @@ impl<'a> Tokenizer<'a> {
             self.column += 1;
         }
 
+        self.string_buffer.push(c);
         Ok(Some(c))
     }
 
@@ -177,7 +182,12 @@ impl<'a> Tokenizer<'a> {
                     return self.tokenize_keyword_or_identifier(next_char).map(Some);
                 }
                 _ => {
-                    return Err(Error::UnknownSymbolError(next_char, self.line, self.column));
+                    return Err(Error::UnknownSymbolError(
+                        next_char,
+                        self.line,
+                        self.column,
+                        std::mem::take(&mut self.string_buffer),
+                    ));
                 }
             }
         }
@@ -185,7 +195,12 @@ impl<'a> Tokenizer<'a> {
             Ok(None)
         } else {
             self.returned_eof = true;
-            Ok(Some(Token::new(TokenType::EOF, self.line, self.column)))
+            Ok(Some(Token::new(
+                TokenType::EOF,
+                self.line,
+                self.column,
+                Some(std::mem::take(&mut self.string_buffer)),
+            )))
         }
     }
 
@@ -212,6 +227,7 @@ impl<'a> Tokenizer<'a> {
                     TokenType::Symbol(Symbol::$symbol),
                     self.line,
                     self.column,
+                    Some(std::mem::take(&mut self.string_buffer)),
                 ))
             };
         }
@@ -279,6 +295,7 @@ impl<'a> Tokenizer<'a> {
                 first_symbol,
                 self.line,
                 self.column,
+                std::mem::take(&mut self.string_buffer),
             )),
         }
     }
@@ -328,17 +345,28 @@ impl<'a> Tokenizer<'a> {
             let decimal_scale = decimal.len() as u32;
             let number = format!("{}{}", primary, decimal)
                 .parse::<i128>()
-                .map_err(|e| Error::NumberParseError(e, self.line, self.column))?;
+                .map_err(|e| {
+                    Error::NumberParseError(
+                        e,
+                        self.line,
+                        self.column,
+                        std::mem::take(&mut self.string_buffer),
+                    )
+                })?;
             Number::Decimal(
-                Decimal::try_from_i128_with_scale(number, decimal_scale)
-                    .map_err(|e| Error::DecimalParseError(e, line, column))?,
+                Decimal::try_from_i128_with_scale(number, decimal_scale).map_err(|e| {
+                    Error::DecimalParseError(
+                        e,
+                        line,
+                        column,
+                        std::mem::take(&mut self.string_buffer),
+                    )
+                })?,
             )
         } else {
-            Number::Integer(
-                primary
-                    .parse()
-                    .map_err(|e| Error::NumberParseError(e, line, column))?,
-            )
+            Number::Integer(primary.parse().map_err(|e| {
+                Error::NumberParseError(e, line, column, std::mem::take(&mut self.string_buffer))
+            })?)
         };
 
         // check if the next char is a temperature suffix
@@ -347,14 +375,31 @@ impl<'a> Tokenizer<'a> {
                 'c' => Temperature::Celsius(number),
                 'f' => Temperature::Fahrenheit(number),
                 'k' => Temperature::Kelvin(number),
-                _ => return Ok(Token::new(TokenType::Number(number), line, column)),
+                _ => {
+                    return Ok(Token::new(
+                        TokenType::Number(number),
+                        line,
+                        column,
+                        Some(std::mem::take(&mut self.string_buffer)),
+                    ));
+                }
             }
             .to_kelvin();
 
             self.next_char()?;
-            Ok(Token::new(TokenType::Number(temperature), line, column))
+            Ok(Token::new(
+                TokenType::Number(temperature),
+                line,
+                column,
+                Some(std::mem::take(&mut self.string_buffer)),
+            ))
         } else {
-            Ok(Token::new(TokenType::Number(number), line, column))
+            Ok(Token::new(
+                TokenType::Number(number),
+                line,
+                column,
+                Some(std::mem::take(&mut self.string_buffer)),
+            ))
         }
     }
 
@@ -373,7 +418,12 @@ impl<'a> Tokenizer<'a> {
             buffer.push(next_char);
         }
 
-        Ok(Token::new(TokenType::String(buffer), line, column))
+        Ok(Token::new(
+            TokenType::String(buffer),
+            line,
+            column,
+            Some(std::mem::take(&mut self.string_buffer)),
+        ))
     }
 
     /// Tokenizes a keyword or an identifier. Also handles boolean literals
@@ -384,6 +434,7 @@ impl<'a> Tokenizer<'a> {
                     TokenType::Keyword(Keyword::$keyword),
                     self.line,
                     self.column,
+                    Some(std::mem::take(&mut self.string_buffer)),
                 ));
             }};
         }
@@ -426,13 +477,19 @@ impl<'a> Tokenizer<'a> {
 
                 // boolean literals
                 "true" if next_ws!() => {
-                    return Ok(Token::new(TokenType::Boolean(true), self.line, self.column));
+                    return Ok(Token::new(
+                        TokenType::Boolean(true),
+                        self.line,
+                        self.column,
+                        Some(std::mem::take(&mut self.string_buffer)),
+                    ));
                 }
                 "false" if next_ws!() => {
                     return Ok(Token::new(
                         TokenType::Boolean(false),
                         self.line,
                         self.column,
+                        Some(std::mem::take(&mut self.string_buffer)),
                     ));
                 }
                 // if the next character is whitespace or not alphanumeric, then we have an identifier
@@ -442,6 +499,7 @@ impl<'a> Tokenizer<'a> {
                         TokenType::Identifier(val.to_string()),
                         line,
                         column,
+                        Some(std::mem::take(&mut self.string_buffer)),
                     ));
                 }
                 _ => {}
@@ -449,7 +507,12 @@ impl<'a> Tokenizer<'a> {
 
             looped_char = self.next_char()?;
         }
-        Err(Error::UnknownKeywordOrIdentifierError(buffer, line, column))
+        Err(Error::UnknownKeywordOrIdentifierError(
+            buffer,
+            line,
+            column,
+            std::mem::take(&mut self.string_buffer),
+        ))
     }
 }
 

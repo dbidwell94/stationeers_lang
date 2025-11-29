@@ -49,13 +49,13 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
 
     for token in tokenizer {
         match token {
-            Err(TokenizerError::NumberParseError(_, _, col))
-            | Err(TokenizerError::UnknownSymbolError(_, _, col))
-            | Err(TokenizerError::DecimalParseError(_, _, col))
-            | Err(TokenizerError::UnknownKeywordOrIdentifierError(_, _, col)) => {
+            Err(TokenizerError::NumberParseError(_, _, col, ref original))
+            | Err(TokenizerError::UnknownSymbolError(_, _, col, ref original))
+            | Err(TokenizerError::DecimalParseError(_, _, col, ref original))
+            | Err(TokenizerError::UnknownKeywordOrIdentifierError(_, _, col, ref original)) => {
                 tokens.push(FfiToken {
                     column: col as i32,
-                    text: "".into(),
+                    text: original.to_string().into(),
                     tooltip: "".into(),
                     // Safety: it's okay to unwrap the err here because we are matching on the `Err` variant
                     error: token.unwrap_err().to_string().into(),
@@ -64,7 +64,10 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
             }
             Err(_) => return safer_ffi::Vec::EMPTY,
             Ok(token) if !matches!(token.token_type, TokenType::EOF) => tokens.push(FfiToken {
-                text: token.token_type.to_string().into(),
+                text: token
+                    .original_string
+                    .unwrap_or(token.token_type.to_string())
+                    .into(),
                 tooltip: "".into(),
                 error: "".into(),
                 status: "".into(),

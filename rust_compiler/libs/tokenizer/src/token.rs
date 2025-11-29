@@ -8,14 +8,21 @@ pub struct Token {
     pub line: usize,
     /// The column where the token was found
     pub column: usize,
+    pub original_string: Option<String>,
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, line: usize, column: usize) -> Self {
+    pub fn new(
+        token_type: TokenType,
+        line: usize,
+        column: usize,
+        original: Option<String>,
+    ) -> Self {
         Self {
             token_type,
             line,
             column,
+            original_string: original,
         }
     }
 }
