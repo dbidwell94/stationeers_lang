@@ -544,6 +544,7 @@ impl<'a> Parser<'a> {
         }
 
         let identifier_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let identifier_span = Self::token_to_span(identifier_token);
         let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
             _ => {
@@ -574,13 +575,18 @@ impl<'a> Parser<'a> {
         };
 
         Ok(DeviceDeclarationExpression {
-            name: identifier,
+            name: Spanned {
+                span: identifier_span,
+                node: identifier,
+            },
             device,
         })
     }
 
     fn assignment(&mut self) -> Result<AssignmentExpression, Error> {
-        let identifier = match self.current_token.as_ref().unwrap().token_type {
+        let identifier_token = self.current_token.as_ref().unwrap();
+        let identifier_span = Self::token_to_span(identifier_token);
+        let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
             _ => {
                 return Err(Error::UnexpectedToken(
@@ -602,7 +608,10 @@ impl<'a> Parser<'a> {
         let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
         Ok(AssignmentExpression {
-            identifier,
+            identifier: Spanned {
+                span: identifier_span,
+                node: identifier,
+            },
             expression: boxed!(expression),
         })
     }
@@ -905,7 +914,9 @@ impl<'a> Parser<'a> {
     }
 
     fn invocation(&mut self) -> Result<InvocationExpression, Error> {
-        let identifier = match self.current_token.as_ref().unwrap().token_type {
+        let identifier_token = self.current_token.as_ref().unwrap();
+        let identifier_span = Self::token_to_span(identifier_token);
+        let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
             _ => {
                 return Err(Error::UnexpectedToken(
@@ -956,7 +967,10 @@ impl<'a> Parser<'a> {
         }
 
         Ok(InvocationExpression {
-            name: identifier,
+            name: Spanned {
+                span: identifier_span,
+                node: identifier,
+            },
             arguments,
         })
     }
@@ -1022,13 +1036,6 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> Result<Expression, Error> {
-        // "let" consumed by unary before calling spanned(declaration).
-        // But spanned() peeks start. Unary did NOT consume let inside unary match...
-        // Wait, Unary DOES match on current_token. It is `Let`.
-        // Then Unary calls `self.spanned(|p| p.declaration())`.
-        // `declaration()` checks `self.current_token` is `Let`.
-        // So `declaration` expects `Let` to be current.
-
         let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Let)) {
             return Err(Error::UnexpectedToken(
@@ -1037,6 +1044,7 @@ impl<'a> Parser<'a> {
             ));
         }
         let identifier_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let identifier_span = Self::token_to_span(identifier_token);
         let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
             _ => {
@@ -1068,7 +1076,10 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Expression::Declaration(
-            identifier,
+            Spanned {
+                span: identifier_span,
+                node: identifier,
+            },
             boxed!(assignment_expression),
         ))
     }
@@ -1210,6 +1221,7 @@ impl<'a> Parser<'a> {
     fn function(&mut self) -> Result<FunctionExpression, Error> {
         // 'fn' is current
         let fn_ident_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let fn_ident_span = Self::token_to_span(fn_ident_token);
         let fn_ident = match fn_ident_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
             _ => {
@@ -1228,13 +1240,14 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let mut arguments = Vec::<String>::new();
+        let mut arguments = Vec::<Spanned<String>>::new();
 
         while !token_matches!(
             self.get_next()?.ok_or(Error::UnexpectedEOF)?,
             TokenType::Symbol(Symbol::RParen)
         ) {
             let current_token = self.current_token.as_ref().unwrap();
+            let arg_span = Self::token_to_span(current_token);
             let argument = match current_token.token_type {
                 TokenType::Identifier(ref id) => id.clone(),
                 _ => {
@@ -1245,14 +1258,19 @@ impl<'a> Parser<'a> {
                 }
             };
 
-            if arguments.contains(&argument) {
+            let spanned_arg = Spanned {
+                span: arg_span,
+                node: argument,
+            };
+
+            if arguments.contains(&spanned_arg) {
                 return Err(Error::DuplicateIdentifier(
                     Self::token_to_span(current_token),
                     current_token.clone(),
                 ));
             }
 
-            arguments.push(argument);
+            arguments.push(spanned_arg);
 
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
@@ -1278,7 +1296,10 @@ impl<'a> Parser<'a> {
         };
 
         Ok(FunctionExpression {
-            name: fn_ident,
+            name: Spanned {
+                span: fn_ident_span,
+                node: fn_ident,
+            },
             arguments,
             body: self.block()?,
         })
@@ -1305,9 +1326,7 @@ impl<'a> Parser<'a> {
                     Some(Expression::Literal(literal)) => {
                         LiteralOrVariable::Literal(literal.node.clone())
                     }
-                    Some(Expression::Variable(ident)) => {
-                        LiteralOrVariable::Variable(ident.node.clone())
-                    }
+                    Some(Expression::Variable(ident)) => LiteralOrVariable::Variable(ident),
                     _ => {
                         return Err(Error::UnexpectedToken(
                             self.current_span(),
@@ -1334,7 +1353,7 @@ impl<'a> Parser<'a> {
 
         let invocation = self.invocation()?;
 
-        match invocation.name.as_str() {
+        match invocation.name.node.as_str() {
             "yield" => {
                 check_length(self, &invocation.arguments, 0)?;
                 Ok(SysCall::System(sys_call::System::Yield))
@@ -1420,3 +1439,4 @@ impl<'a> Parser<'a> {
         }
     }
 }
+

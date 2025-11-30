@@ -74,7 +74,7 @@ impl std::fmt::Display for LogicalExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct AssignmentExpression {
-    pub identifier: String,
+    pub identifier: Spanned<String>,
     pub expression: Box<Spanned<Expression>>,
 }
 
@@ -86,8 +86,8 @@ impl std::fmt::Display for AssignmentExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FunctionExpression {
-    pub name: String,
-    pub arguments: Vec<String>,
+    pub name: Spanned<String>,
+    pub arguments: Vec<Spanned<String>>,
     pub body: BlockExpression,
 }
 
@@ -97,7 +97,11 @@ impl std::fmt::Display for FunctionExpression {
             f,
             "(fn {}({}) {{ {} }})",
             self.name,
-            self.arguments.to_vec().join(", "),
+            self.arguments
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
             self.body
         )
     }
@@ -122,7 +126,7 @@ impl std::fmt::Display for BlockExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct InvocationExpression {
-    pub name: String,
+    pub name: Spanned<String>,
     pub arguments: Vec<Expression>,
 }
 
@@ -144,7 +148,7 @@ impl std::fmt::Display for InvocationExpression {
 #[derive(Debug, PartialEq, Eq)]
 pub enum LiteralOrVariable {
     Literal(Literal),
-    Variable(String),
+    Variable(Spanned<String>),
 }
 
 impl std::fmt::Display for LiteralOrVariable {
@@ -159,7 +163,7 @@ impl std::fmt::Display for LiteralOrVariable {
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeviceDeclarationExpression {
     /// any variable-like name
-    pub name: String,
+    pub name: Spanned<String>,
     /// The device port, ex. (db, d0, d1, d2, d3, d4, d5)
     pub device: String,
 }
@@ -218,7 +222,7 @@ pub struct Span {
     pub end_col: usize,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spanned<T> {
     pub span: Span,
     pub node: T,
@@ -248,7 +252,7 @@ pub enum Expression {
     Block(Spanned<BlockExpression>),
     Break(Span),
     Continue(Span),
-    Declaration(String, Box<Spanned<Expression>>),
+    Declaration(Spanned<String>, Box<Spanned<Expression>>),
     DeviceDeclaration(Spanned<DeviceDeclarationExpression>),
     Function(Spanned<FunctionExpression>),
     If(Spanned<IfExpression>),
@@ -289,3 +293,4 @@ impl std::fmt::Display for Expression {
         }
     }
 }
+

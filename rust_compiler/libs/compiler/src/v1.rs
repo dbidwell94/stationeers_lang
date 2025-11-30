@@ -5,7 +5,7 @@ use parser::{
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, DeviceDeclarationExpression,
         Expression, FunctionExpression, IfExpression, InvocationExpression, Literal,
-        LiteralOrVariable, LogicalExpression, LoopExpression, WhileExpression,
+        LiteralOrVariable, LogicalExpression, LoopExpression, Span, Spanned, WhileExpression,
     },
 };
 use quick_error::quick_error;
@@ -18,6 +18,14 @@ macro_rules! debug {
     ($self: expr, $debug_value: expr) => {
         if $self.config.debug {
             format!($debug_value)
+        } else {
+            "".into()
+        }
+    };
+
+    ($self: expr, $debug_value: expr, $args: expr) => {
+        if $self.config.debug {
+            format!($debug_value, $args)
         } else {
             "".into()
         }
@@ -36,19 +44,19 @@ quick_error! {
         ScopeError(error: variable_manager::Error) {
             from()
         }
-        DuplicateIdentifier(func_name: String) {
+        DuplicateIdentifier(func_name: String, span: Span) {
             display("`{func_name}` has already been defined")
         }
-        UnknownIdentifier(ident: String) {
+        UnknownIdentifier(ident: String, span: Span) {
             display("`{ident}` is not found in the current scope.")
         }
-        InvalidDevice(device: String) {
+        InvalidDevice(device: String, span: Span) {
             display("`{device}` is not valid")
         }
-        AgrumentMismatch(func_name: String) {
+        AgrumentMismatch(func_name: String, span: Span) {
             display("Incorrect number of arguments passed into `{func_name}`")
         }
-        Unknown(reason: String) {
+        Unknown(reason: String, span: Option<Span>) {
             display("{reason}")
         }
     }
@@ -173,7 +181,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 Ok(None)
             }
             Expression::Declaration(var_name, expr) => {
-                self.expression_declaration(var_name, *expr, scope)
+                self.expression_declaration(var_name.node, *expr, scope)
             }
             Expression::Assignment(assign_expr) => {
                 self.expression_assignment(assign_expr, scope)?;
@@ -223,7 +231,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }))
             }
             Expression::Variable(name) => {
-                let loc = scope.get_location_of(&name)?;
+                let loc = scope.get_location_of(&name.node)?;
                 Ok(Some(CompilationResult {
                     location: loc,
                     temp_name: None, // User variable, do not free
@@ -368,7 +376,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 (var_loc, None)
             }
             Expression::Variable(name) => {
-                let src_loc = scope.get_location_of(&name)?;
+                let src_loc = scope.get_location_of(&name.node)?;
                 let var_loc = scope.add_variable(&var_name, LocationRequest::Persist)?;
 
                 // Handle loading from stack if necessary
@@ -417,11 +425,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             expression,
         } = expr;
 
-        let location = scope.get_location_of(&identifier)?;
+        let location = scope.get_location_of(&identifier.node)?;
         let (val_str, cleanup) = self.compile_operand(*expression, scope)?;
 
         let debug_tag = if self.config.debug {
-            format!(" #{}", identifier)
+            format!(" #{}", identifier.node)
         } else {
             String::new()
         };
@@ -456,16 +464,16 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         invoke_expr: InvocationExpression,
         stack: &mut VariableScope,
     ) -> Result<(), Error> {
-        if !self.function_locations.contains_key(&invoke_expr.name) {
-            return Err(Error::UnknownIdentifier(invoke_expr.name));
+        if !self.function_locations.contains_key(&invoke_expr.name.node) {
+            return Err(Error::UnknownIdentifier(invoke_expr.name.node));
         }
 
-        let Some(args) = self.function_metadata.get(&invoke_expr.name) else {
-            return Err(Error::UnknownIdentifier(invoke_expr.name));
+        let Some(args) = self.function_metadata.get(&invoke_expr.name.node) else {
+            return Err(Error::UnknownIdentifier(invoke_expr.name.node));
         };
 
         if args.len() != invoke_expr.arguments.len() {
-            return Err(Error::AgrumentMismatch(invoke_expr.name));
+            return Err(Error::AgrumentMismatch(invoke_expr.name.node));
         }
 
         // backup all used registers to the stack
@@ -484,7 +492,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     let val = if b { "1" } else { "0" };
                     self.write_output(format!("push {val}"))?;
                 }
-                Expression::Variable(var_name) => match stack.get_location_of(var_name)? {
+                Expression::Variable(var_name) => match stack.get_location_of(var_name.node)? {
                     VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
                         self.write_output(format!("push r{reg}"))?;
                     }
@@ -524,14 +532,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 _ => {
                     return Err(Error::Unknown(format!(
                         "Attempted to call `{}` with an unsupported argument type",
-                        invoke_expr.name
+                        invoke_expr.name.node
                     )));
                 }
             }
         }
 
         // jump to the function and store current line in ra
-        self.write_output(format!("jal {}", invoke_expr.name))?;
+        self.write_output(format!("jal {}", invoke_expr.name.node))?;
 
         for register in active_registers {
             let VariableLocation::Stack(stack_offset) =
@@ -557,10 +565,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     }
 
     fn expression_device(&mut self, expr: DeviceDeclarationExpression) -> Result<(), Error> {
-        if self.devices.contains_key(&expr.name) {
-            return Err(Error::DuplicateIdentifier(expr.name));
+        if self.devices.contains_key(&expr.name.node) {
+            return Err(Error::DuplicateIdentifier(expr.name.node));
         }
-        self.devices.insert(expr.name, expr.device);
+        self.devices.insert(expr.name.node, expr.device);
 
         Ok(())
     }
@@ -589,7 +597,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         // Compile Body
         // Scope variables in body are ephemeral to the block, handled by expression_block
-        self.expression_block(expr.body, scope)?;
+        self.expression_block(expr.body.node, scope)?;
 
         // If we have an else branch, we need to jump over it after the 'if' body
         if expr.else_branch.is_some() {
@@ -597,8 +605,8 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             self.write_output(format!("{else_label}:"))?;
 
             match *expr.else_branch.unwrap() {
-                Expression::Block(block) => self.expression_block(block, scope)?,
-                Expression::If(if_expr) => self.expression_if(if_expr, scope)?,
+                Expression::Block(block) => self.expression_block(block.node, scope)?,
+                Expression::If(if_expr) => self.expression_if(if_expr.node, scope)?,
                 _ => unreachable!("Parser ensures else branch is Block or If"),
             }
         }
@@ -623,7 +631,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         self.write_output(format!("{start_label}:"))?;
 
         // Compile Body
-        self.expression_block(expr.body, scope)?;
+        self.expression_block(expr.body.node, scope)?;
 
         // Jump back to start
         self.write_output(format!("j {start_label}"))?;
@@ -887,9 +895,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     ) -> Result<(), Error> {
         // First, sort the expressions to ensure functions are hoisted
         expr.0.sort_by(|a, b| {
-            if matches!(b, Expression::Function(_)) && matches!(a, Expression::Function(_)) {
+            if matches!(b.node, Expression::Function(_))
+                && matches!(a.node, Expression::Function(_))
+            {
                 std::cmp::Ordering::Equal
-            } else if matches!(a, Expression::Function(_)) {
+            } else if matches!(a.node, Expression::Function(_)) {
                 std::cmp::Ordering::Less
             } else {
                 std::cmp::Ordering::Greater
@@ -898,19 +908,19 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         for expr in expr.0 {
             if !self.declared_main
-                && !matches!(expr, Expression::Function(_))
+                && !matches!(expr.node, Expression::Function(_))
                 && !scope.has_parent()
             {
                 self.write_output("main:")?;
                 self.declared_main = true;
             }
 
-            match expr {
+            match expr.node {
                 Expression::Return(ret_expr) => {
                     self.expression_return(*ret_expr, scope)?;
                 }
                 _ => {
-                    let result = self.expression(expr, scope)?;
+                    let result = self.expression(expr.node, scope)?;
                     // If the expression was a statement that returned a temp result (e.g. `1 + 2;` line),
                     // we must free it to avoid leaking registers.
                     if let Some(comp_res) = result
@@ -940,7 +950,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         };
 
         match expr {
-            Expression::Variable(var_name) => match scope.get_location_of(var_name)? {
+            Expression::Variable(var_name) => match scope.get_location_of(var_name.node)? {
                 VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
                     self.write_output(format!(
                         "move r{} r{reg} {}",
@@ -1055,8 +1065,8 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     ));
                 };
 
-                let Some(device) = self.devices.get(&device) else {
-                    return Err(Error::InvalidDevice(device));
+                let Some(device) = self.devices.get(&device.node) else {
+                    return Err(Error::InvalidDevice(device.node));
                 };
 
                 let Literal::String(logic_type) = logic_type else {
@@ -1102,8 +1112,8 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     ));
                 };
 
-                let Some(device) = self.devices.get(&device) else {
-                    return Err(Error::InvalidDevice(device));
+                let Some(device) = self.devices.get(&device.node) else {
+                    return Err(Error::InvalidDevice(device.node));
                 };
 
                 let Literal::String(logic_type) = logic_type else {
@@ -1133,27 +1143,29 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     /// Calees are responsible for backing up any registers they wish to use.
     fn expression_function<'v>(
         &mut self,
-        expr: FunctionExpression,
+        expr: Spanned<FunctionExpression>,
         scope: &mut VariableScope<'v>,
     ) -> Result<(), Error> {
         let FunctionExpression {
             name,
             arguments,
             body,
-        } = expr;
+        } = *expr;
 
-        if self.function_locations.contains_key(&name) {
-            return Err(Error::DuplicateIdentifier(name));
+        if self.function_locations.contains_key(&name.node) {
+            return Err(Error::DuplicateIdentifier(name.node));
         }
 
-        self.function_metadata
-            .insert(name.clone(), arguments.clone());
+        self.function_metadata.insert(
+            name.node.clone(),
+            arguments.iter().map(|a| a.node.clone()).collect(),
+        );
 
         // Declare the function as a line identifier
-        self.write_output(format!("{}:", name))?;
+        self.write_output(format!("{}:", name.node))?;
 
         self.function_locations
-            .insert(name.clone(), self.current_line);
+            .insert(name.node.clone(), self.current_line);
 
         // Create a new block scope for the function body
         let mut block_scope = VariableScope::scoped(scope);
@@ -1166,13 +1178,16 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             .rev()
             .take(VariableScope::PERSIST_REGISTER_COUNT as usize)
         {
-            let loc = block_scope.add_variable(var_name, LocationRequest::Persist)?;
+            let loc = block_scope.add_variable(var_name.node.clone(), LocationRequest::Persist)?;
             // we don't need to imcrement the stack offset as it's already on the stack from the
             // previous scope
 
             match loc {
                 VariableLocation::Persistant(loc) => {
-                    self.write_output(format!("pop r{loc} {}", debug!(self, "#{var_name}")))?;
+                    self.write_output(format!(
+                        "pop r{loc} {}",
+                        debug!(self, "#{}", var_name.node)
+                    ))?;
                 }
                 VariableLocation::Stack(_) => {
                     return Err(Error::Unknown(
@@ -1194,19 +1209,19 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         // anything as they already exist on the stack, but we DO need to let our block_scope be
         // aware that the variables exist on the stack (left to right)
         for var_name in arguments.iter().take(arguments.len() - saved_variables) {
-            block_scope.add_variable(var_name, LocationRequest::Stack)?;
+            block_scope.add_variable(var_name.node.clone(), LocationRequest::Stack)?;
         }
 
         self.write_output("push ra")?;
-        block_scope.add_variable(format!("{name}_ra"), LocationRequest::Stack)?;
+        block_scope.add_variable(format!("{}_ra", name.node), LocationRequest::Stack)?;
 
         for expr in body.0 {
-            match expr {
+            match expr.node {
                 Expression::Return(ret_expr) => {
                     self.expression_return(*ret_expr, &mut block_scope)?;
                 }
                 _ => {
-                    let result = self.expression(expr, &mut block_scope)?;
+                    let result = self.expression(expr.node, &mut block_scope)?;
                     // Free unused statement results
                     if let Some(comp_res) = result
                         && let Some(name) = comp_res.temp_name
@@ -1219,7 +1234,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         // Get the saved return address and save it back into `ra`
         let VariableLocation::Stack(ra_stack_offset) =
-            block_scope.get_location_of(format!("{name}_ra"))?
+            block_scope.get_location_of(format!("{}_ra", name.node))?
         else {
             return Err(Error::Unknown(
                 "Stored return address not in stack as expected".into(),
