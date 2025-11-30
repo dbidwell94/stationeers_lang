@@ -83,7 +83,7 @@ fn incorrect_args_count() -> anyhow::Result<()> {
 
     assert!(matches!(
         compiled,
-        Err(super::super::Error::AgrumentMismatch(_))
+        Err(super::super::Error::AgrumentMismatch(_, _))
     ));
 
     Ok(())
