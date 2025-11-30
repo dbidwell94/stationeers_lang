@@ -129,17 +129,62 @@ impl<'a> Parser<'a> {
     /// Parses all the input from the tokenizer buffer and returns the resulting expression
     /// Expressions are returned in a root block expression node
     pub fn parse_all(&mut self) -> Result<Option<tree_node::Expression>, Error> {
-        let mut expressions = Vec::<Expression>::new();
+        // peek at what the first token would be and extract the line and col
+        let (start_line, start_col) = self
+            .tokenizer
+            .peek()?
+            .map(|tok| (tok.line, tok.column))
+            .unwrap_or((1, 1));
+
+        let mut expressions = Vec::<Spanned<Expression>>::new();
 
         while let Some(expression) = self.parse()? {
             expressions.push(expression);
         }
 
-        Ok(Some(Expression::Block(BlockExpression(expressions))))
+        if expressions.is_empty() {
+            let span = Span {
+                start_line,
+                end_line: start_line,
+                start_col,
+                end_col: start_col,
+            };
+
+            return Ok(Some(Expression::Block(Spanned {
+                node: BlockExpression(expressions),
+                span,
+            })));
+        }
+
+        self.tokenizer.seek(SeekFrom::Current(-1))?;
+
+        // Ignore the EOF, we want the previous token to define what the end of the source is.
+        let (end_line, end_col) = self
+            .tokenizer
+            .peek()?
+            .map(|tok| {
+                (
+                    tok.line,
+                    tok.column + tok.original_string.unwrap_or_default().len(),
+                )
+            })
+            .unwrap_or((start_line, start_col));
+
+        let span = Span {
+            start_line,
+            end_line,
+            start_col,
+            end_col,
+        };
+
+        Ok(Some(Expression::Block(Spanned {
+            node: BlockExpression(expressions),
+            span,
+        })))
     }
 
     /// Parses the input from the tokenizer buffer and returns the resulting expression
-    pub fn parse(&mut self) -> Result<Option<tree_node::Expression>, Error> {
+    pub fn parse(&mut self) -> Result<Option<Spanned<tree_node::Expression>>, Error> {
         self.assign_next()?;
         let expr = self.expression()?;
 
@@ -163,7 +208,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses an expression, handling binary operations with correct precedence.
-    fn expression(&mut self) -> Result<Option<tree_node::Expression>, Error> {
+    fn expression(&mut self) -> Result<Option<Spanned<tree_node::Expression>>, Error> {
+        let (start_line, end_line) = self
+            .current_token
+            .map(|tok| (tok.line, tok.column))
+            .ok_or(Error::UnexpectedEOF)?;
+
         // Parse the Left Hand Side (unary/primary expression)
         let lhs = self.unary()?;
 
