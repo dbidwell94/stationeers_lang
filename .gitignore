@@ -4,3 +4,4 @@ release
 csharp_mod/bin
 obj
 ref
+.envrc

@@ -1,6 +1,11 @@
+using System;
+using System.IO;
+using System.IO.Compression;
+using System.Text;
 using System.Text.RegularExpressions;
 using BepInEx;
 using HarmonyLib;
+using LaunchPadBooster;
 
 namespace Slang
 {
@@ -41,6 +46,8 @@ namespace Slang
         public const string PluginGuid = "com.biddydev.slang";
         public const string PluginName = "Slang";
 
+        public static Mod MOD = new Mod(PluginName, "0.1.0");
+
         private Harmony? _harmony;
 
         private static Regex? _slangSourceCheck = null;
@@ -58,26 +65,26 @@ namespace Slang
             }
         }
 
-        public static unsafe string Compile(string source)
-        {
-            string compiled;
-            if (Marshal.CompileFromString(source, out compiled))
-            {
-                // TODO: handle saving the original source code
-                return compiled;
-            }
-            else
-            {
-                return compiled;
-            }
-        }
-
-        /// <summary>Take original slang source code and copies it to a file
-        /// for use in restoring later.
+        /// <summary>
+        /// Encodes the original slang source code as base64 and uses gzip to compress it, returning the resulting string.
         /// </summary>
-        public static bool CopySourceToFile(string source)
+        public static string EncodeSource(string source)
         {
-            return true;
+            if (string.IsNullOrEmpty(source))
+            {
+                return "";
+            }
+
+            byte[] bytes = Encoding.UTF8.GetBytes(source);
+
+            using (var memoryStream = new MemoryStream())
+            {
+                using (var gzipStream = new GZipStream(memoryStream, CompressionMode.Compress))
+                {
+                    gzipStream.Write(bytes, 0, bytes.Length);
+                }
+                return Convert.ToBase64String(memoryStream.ToArray());
+            }
         }
 
         public static bool IsSlangSource(ref string input)
@@ -89,7 +96,6 @@ namespace Slang
         {
             L.SetLogger(Logger);
             this._harmony = new Harmony(PluginGuid);
-            L.Info("slang loaded");
 
             // If we failed to load the compiler, bail from the rest of the patches. It won't matter,
             // as the compiler itself has failed to load.
@@ -99,18 +105,6 @@ namespace Slang
             }
 
             this._harmony.PatchAll();
-        }
-
-        private void OnDestroy()
-        {
-            if (Marshal.Destroy())
-            {
-                L.Info("FFI references cleaned up.");
-            }
-            if (this._harmony is not null)
-            {
-                this._harmony.UnpatchSelf();
-            }
         }
     }
 }
