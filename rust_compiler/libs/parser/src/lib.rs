@@ -934,7 +934,7 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let mut arguments = Vec::<Expression>::new();
+        let mut arguments = Vec::<Spanned<Expression>>::new();
 
         while !token_matches!(
             self.get_next()?.ok_or(Error::UnexpectedEOF)?,
@@ -949,7 +949,7 @@ impl<'a> Parser<'a> {
                 ));
             }
 
-            arguments.push(expression.node);
+            arguments.push(expression);
 
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
@@ -1308,7 +1308,7 @@ impl<'a> Parser<'a> {
     fn syscall(&mut self) -> Result<SysCall, Error> {
         fn check_length(
             parser: &Parser,
-            arguments: &[Expression],
+            arguments: &[Spanned<Expression>],
             length: usize,
         ) -> Result<(), Error> {
             if arguments.len() != length {
@@ -1323,10 +1323,18 @@ impl<'a> Parser<'a> {
         macro_rules! literal_or_variable {
             ($iter:expr) => {
                 match $iter {
-                    Some(Expression::Literal(literal)) => {
-                        LiteralOrVariable::Literal(literal.node.clone())
-                    }
-                    Some(Expression::Variable(ident)) => LiteralOrVariable::Variable(ident),
+                    Some(expr) => match &expr.node {
+                        Expression::Literal(literal) => {
+                            LiteralOrVariable::Literal(literal.node.clone())
+                        }
+                        Expression::Variable(ident) => LiteralOrVariable::Variable(ident.clone()),
+                        _ => {
+                            return Err(Error::UnexpectedToken(
+                                self.current_span(),
+                                self.current_token.clone().unwrap(),
+                            ))
+                        }
+                    },
                     _ => {
                         return Err(Error::UnexpectedToken(
                             self.current_span(),
@@ -1360,18 +1368,8 @@ impl<'a> Parser<'a> {
             }
             "sleep" => {
                 check_length(self, &invocation.arguments, 1)?;
-                // arguments is Vec<Expression>.
                 let mut arg = invocation.arguments.into_iter();
                 let expr = arg.next().unwrap();
-
-                // We need to wrap `expr` into a `Box<Spanned<Expression>>`?
-                // Wait, System::Sleep takes Box<Expression>.
-                // Expression variants are Spanned.
-                // But Expression IS NOT Spanned<Expression>.
-                // Expression enum contains Spanned<BinaryExpression>, etc.
-                // But `Expression` itself is the node.
-                // The issue: `expr` is `Expression` (which is Spanned internally).
-                // `System::Sleep(Box<Expression>)`.
                 Ok(SysCall::System(System::Sleep(boxed!(expr))))
             }
             "hash" => {
@@ -1396,8 +1394,16 @@ impl<'a> Parser<'a> {
                 let next_arg = args.next();
 
                 let variable = match next_arg {
-                    Some(Expression::Literal(spanned_lit)) => match spanned_lit.node {
-                        Literal::String(s) => s,
+                    Some(expr) => match expr.node {
+                        Expression::Literal(spanned_lit) => match spanned_lit.node {
+                            Literal::String(s) => s,
+                            _ => {
+                                return Err(Error::UnexpectedToken(
+                                    self.current_span(),
+                                    self.current_token.clone().unwrap(),
+                                ));
+                            }
+                        },
                         _ => {
                             return Err(Error::UnexpectedToken(
                                 self.current_span(),
@@ -1431,11 +1437,35 @@ impl<'a> Parser<'a> {
                     boxed!(variable),
                 )))
             }
-            // Fallback for brevity in this response
-            _ => Err(Error::UnsupportedKeyword(
-                self.current_span(),
-                self.current_token.clone().unwrap(),
-            )),
+            "setOnDeviceBatched" => {
+                check_length(self, &invocation.arguments, 3)?;
+                let mut args = invocation.arguments.into_iter();
+                let device_hash = literal_or_variable!(args.next());
+                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let variable = args.next().unwrap();
+                Ok(SysCall::System(sys_call::System::SetOnDeviceBatched(
+                    device_hash,
+                    Literal::String(logic_type.to_string().replace("\"", "")),
+                    boxed!(variable),
+                )))
+            }
+            _ => {
+                // For Math functions or unknown functions
+                if SysCall::is_syscall(&invocation.name.node) {
+                    // Attempt to parse as math if applicable, or error if strict
+                    // Here we are falling back to simple handling or error.
+                    // Since Math isn't fully expanded in this snippet, we return Unsupported.
+                    Err(Error::UnsupportedKeyword(
+                        self.current_span(),
+                        self.current_token.clone().unwrap(),
+                    ))
+                } else {
+                    Err(Error::UnsupportedKeyword(
+                        self.current_span(),
+                        self.current_token.clone().unwrap(),
+                    ))
+                }
+            }
         }
     }
 }

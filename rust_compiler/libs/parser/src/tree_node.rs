@@ -127,7 +127,7 @@ impl std::fmt::Display for BlockExpression {
 #[derive(Debug, PartialEq, Eq)]
 pub struct InvocationExpression {
     pub name: Spanned<String>,
-    pub arguments: Vec<Expression>,
+    pub arguments: Vec<Spanned<Expression>>,
 }
 
 impl std::fmt::Display for InvocationExpression {

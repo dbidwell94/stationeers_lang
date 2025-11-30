@@ -1,4 +1,4 @@
-use crate::tree_node::{Expression, Literal};
+use crate::tree_node::{Expression, Literal, Spanned};
 
 use super::LiteralOrVariable;
 
@@ -102,7 +102,7 @@ pub enum System {
     /// Represents a function that can be called to sleep for a certain amount of time.
     /// ## In Game
     /// `sleep a(r?|num)`
-    Sleep(Box<Expression>),
+    Sleep(Box<Spanned<Expression>>),
     /// Gets the in-game hash for a specific prefab name.
     /// ## In Game
     /// `HASH("prefabName")`
@@ -120,7 +120,12 @@ pub enum System {
     /// lbn r? deviceHash nameHash logicType batchMode
     /// ## Examples
     /// lbn r0 HASH("StructureWallLight") HASH("wallLight") On Minimum
-    LoadBatchNamed(LiteralOrVariable, Box<Expression>, Literal, Literal),
+    LoadBatchNamed(
+        LiteralOrVariable,
+        Box<Spanned<Expression>>,
+        Literal,
+        Literal,
+    ),
     /// Loads a LogicType from all connected network devices, aggregating them via a
     /// batchMode
     /// ## In Game
@@ -133,14 +138,14 @@ pub enum System {
     /// `s d? logicType r?`
     /// ## Example
     /// `s d0 Setting r0`
-    SetOnDevice(LiteralOrVariable, Literal, Box<Expression>),
+    SetOnDevice(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
     /// Represents a function which stores a setting to all devices that match
     /// the given deviceHash
     /// ## In Game
     /// `sb deviceHash logicType r?`
     /// ## Example
     /// `sb HASH("Doors") Lock 1`
-    SetOnDeviceBatched(LiteralOrVariable, Literal, Box<Expression>),
+    SetOnDeviceBatched(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
     /// Represents a function which stores a setting to all devices that match
     /// both the given deviceHash AND the given nameHash
     /// ## In Game
@@ -151,7 +156,7 @@ pub enum System {
         LiteralOrVariable,
         LiteralOrVariable,
         Literal,
-        Box<Expression>,
+        Box<Spanned<Expression>>,
     ),
 }
 
@@ -224,3 +229,4 @@ impl SysCall {
         )
     }
 }
+

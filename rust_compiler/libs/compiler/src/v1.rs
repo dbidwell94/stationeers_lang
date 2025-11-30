@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
 use parser::{
     Parser as ASTParser,
@@ -115,9 +116,27 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         let Some(expr) = expr else { return Ok(()) };
 
+        // Wrap the root expression in a dummy span for consistency,
+        // since parse_all returns an unspanned Expression (usually Block)
+        // that contains spanned children.
+        // We know parse_all returns Expression::Block which has an internal span,
+        // but for type consistency we wrap it.
+        let span = if let Expression::Block(ref block) = expr {
+            block.span
+        } else {
+            Span {
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
+            }
+        };
+
+        let spanned_root = Spanned { node: expr, span };
+
         self.write_output("j main")?;
         // We ignore the result of the root expression (usually a block)
-        let _ = self.expression(expr, &mut VariableScope::default())?;
+        let _ = self.expression(spanned_root, &mut VariableScope::default())?;
         Ok(())
     }
 
@@ -141,10 +160,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
     fn expression<'v>(
         &mut self,
-        expr: Expression,
+        expr: Spanned<Expression>,
         scope: &mut VariableScope<'v>,
     ) -> Result<Option<CompilationResult>, Error> {
-        match expr {
+        match expr.node {
             Expression::Function(expr_func) => {
                 self.expression_function(expr_func, scope)?;
                 Ok(None)
@@ -161,9 +180,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 self.expression_loop(expr_loop.node, scope)?;
                 Ok(None)
             }
-            Expression::Syscall(spanned_syscall) => {
-                self.expression_syscall_system(spanned_syscall.node, spanned_syscall.span, scope)
-            }
+            Expression::Syscall(Spanned {
+                node: SysCall::System(system),
+                span,
+            }) => self.expression_syscall_system(system, span, scope),
             Expression::While(expr_while) => {
                 self.expression_while(expr_while.node, scope)?;
                 Ok(None)
@@ -180,8 +200,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 self.expression_device(expr_dev.node, expr_dev.span)?;
                 Ok(None)
             }
-            Expression::Declaration(var_name, expr) => {
-                self.expression_declaration(var_name, **expr, scope)
+            Expression::Declaration(var_name, decl_expr) => {
+                // decl_expr is Box<Spanned<Expression>>
+                self.expression_declaration(var_name, *decl_expr, scope)
             }
             Expression::Assignment(assign_expr) => {
                 self.expression_assignment(assign_expr.node, scope)?;
@@ -204,11 +225,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }))
             }
             Expression::Binary(bin_expr) => {
-                let result = self.expression_binary(bin_expr.node, scope)?;
+                let result = self.expression_binary(bin_expr, scope)?;
                 Ok(Some(result))
             }
             Expression::Logical(log_expr) => {
-                let result = self.expression_logical(log_expr.node, scope)?;
+                let result = self.expression_logical(log_expr, scope)?;
                 Ok(Some(result))
             }
             Expression::Literal(spanned_lit) => match spanned_lit.node {
@@ -242,7 +263,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     temp_name: None, // User variable, do not free
                 }))
             }
-            Expression::Priority(inner_expr) => self.expression(**inner_expr, scope),
+            Expression::Priority(inner_expr) => self.expression(*inner_expr, scope),
             Expression::Negation(inner_expr) => {
                 // Compile negation as 0 - inner
                 let (inner_str, cleanup) = self.compile_operand(*inner_expr, scope)?;
@@ -264,9 +285,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             _ => Err(Error::Unknown(
                 format!(
                     "Expression type not yet supported in general expression context: {:?}",
-                    expr
+                    expr.node
                 ),
-                None,
+                Some(expr.span),
             )),
         }
     }
@@ -298,15 +319,15 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_declaration<'v>(
         &mut self,
         var_name: Spanned<String>,
-        expr: Expression,
+        expr: Spanned<Expression>,
         scope: &mut VariableScope<'v>,
     ) -> Result<Option<CompilationResult>, Error> {
         let name_str = var_name.node;
         let name_span = var_name.span;
 
         // optimization. Check for a negated numeric literal
-        if let Expression::Negation(box_expr) = &expr
-            && let Expression::Literal(spanned_lit) = &**box_expr
+        if let Expression::Negation(box_expr) = &expr.node
+            && let Expression::Literal(spanned_lit) = &box_expr.node
             && let Literal::Number(neg_num) = &spanned_lit.node
         {
             let loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
@@ -317,7 +338,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }));
         }
 
-        let (loc, temp_name) = match expr {
+        let (loc, temp_name) = match expr.node {
             Expression::Literal(spanned_lit) => match spanned_lit.node {
                 Literal::Number(num) => {
                     let var_location =
@@ -379,7 +400,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
             // Support assigning binary expressions to variables directly
             Expression::Binary(bin_expr) => {
-                let result = self.expression_binary(bin_expr.node, scope)?;
+                let result = self.expression_binary(bin_expr, scope)?;
                 let var_loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
 
                 // Move result from temp to new persistent variable
@@ -393,7 +414,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 (var_loc, None)
             }
             Expression::Logical(log_expr) => {
-                let result = self.expression_logical(log_expr.node, scope)?;
+                let result = self.expression_logical(log_expr, scope)?;
                 let var_loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
 
                 // Move result from temp to new persistent variable
@@ -530,7 +551,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             self.write_output(format!("push r{register}"))?;
         }
         for arg in arguments {
-            match arg {
+            match arg.node {
                 Expression::Literal(spanned_lit) => match spanned_lit.node {
                     Literal::Number(num) => {
                         let num_str = num.to_string();
@@ -569,7 +590,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }
                 Expression::Binary(bin_expr) => {
                     // Compile the binary expression to a temp register
-                    let result = self.expression_binary(bin_expr.node, stack)?;
+                    let result = self.expression_binary(bin_expr, stack)?;
                     let reg_str = self.resolve_register(&result.location)?;
                     self.write_output(format!("push {reg_str}"))?;
                     if let Some(name) = result.temp_name {
@@ -578,7 +599,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }
                 Expression::Logical(log_expr) => {
                     // Compile the logical expression to a temp register
-                    let result = self.expression_logical(log_expr.node, stack)?;
+                    let result = self.expression_logical(log_expr, stack)?;
                     let reg_str = self.resolve_register(&result.location)?;
                     self.write_output(format!("push {reg_str}"))?;
                     if let Some(name) = result.temp_name {
@@ -603,7 +624,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         for register in active_registers {
             let VariableLocation::Stack(stack_offset) = stack
                 .get_location_of(format!("temp_{register}"))
-                .map_err(|e| Error::ScopeError(e))?
+                .map_err(Error::ScopeError)?
             else {
                 // This shouldn't happen if we just added it
                 return Err(Error::Unknown(
@@ -672,7 +693,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             self.write_output(format!("j {end_label}"))?;
             self.write_output(format!("{else_label}:"))?;
 
-            match *expr.else_branch.unwrap() {
+            match expr.else_branch.unwrap().node {
                 Expression::Block(block) => self.expression_block(block.node, scope)?,
                 Expression::If(if_expr) => self.expression_if(if_expr.node, scope)?,
                 _ => unreachable!("Parser ensures else branch is Block or If"),
@@ -789,11 +810,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     /// so the caller can free it.
     fn compile_operand(
         &mut self,
-        expr: Expression,
+        expr: Spanned<Expression>,
         scope: &mut VariableScope,
     ) -> Result<(String, Option<String>), Error> {
         // Optimization for literals
-        if let Expression::Literal(spanned_lit) = &expr {
+        if let Expression::Literal(spanned_lit) = &expr.node {
             if let Literal::Number(n) = spanned_lit.node {
                 return Ok((n.to_string(), None));
             }
@@ -804,8 +825,8 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         // Optimization for negated literals used as operands.
         // E.g., `1 + -2` -> return "-2" string, no register used.
-        if let Expression::Negation(inner) = &expr
-            && let Expression::Literal(spanned_lit) = &**inner
+        if let Expression::Negation(inner) = &expr.node
+            && let Expression::Literal(spanned_lit) = &inner.node
             && let Literal::Number(n) = spanned_lit.node
         {
             return Ok((format!("-{}", n), None));
@@ -848,36 +869,35 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         val: LiteralOrVariable,
         scope: &mut VariableScope,
     ) -> Result<(String, Option<String>), Error> {
+        let dummy_span = Span {
+            start_line: 0,
+            start_col: 0,
+            end_line: 0,
+            end_col: 0,
+        };
+
         let expr = match val {
-            LiteralOrVariable::Literal(l) => {
-                // We need to manufacture a spanned literal
-                // Since this method is usually called from contexts where we lost the original span
-                // (Syscall enums don't keep span on inner literals usually, but we passed span to expression_syscall_system)
-                // Actually, LiteralOrVariable stores Spanned<String> for variables, but Literals are just Literal.
-                // We'll create a dummy span for the Literal if we have to wrap it back in Expression.
-                // Or better, just handle logic here.
-                let dummy_span = Span {
-                    start_line: 0,
-                    start_col: 0,
-                    end_line: 0,
-                    end_col: 0,
-                };
-                Expression::Literal(Spanned {
-                    node: l,
-                    span: dummy_span,
-                })
-            }
+            LiteralOrVariable::Literal(l) => Expression::Literal(Spanned {
+                node: l,
+                span: dummy_span,
+            }),
             LiteralOrVariable::Variable(v) => Expression::Variable(v),
         };
-        self.compile_operand(expr, scope)
+        self.compile_operand(
+            Spanned {
+                node: expr,
+                span: dummy_span,
+            },
+            scope,
+        )
     }
 
     fn expression_binary<'v>(
         &mut self,
-        expr: BinaryExpression,
+        expr: Spanned<BinaryExpression>,
         scope: &mut VariableScope<'v>,
     ) -> Result<CompilationResult, Error> {
-        let (op_str, left_expr, right_expr) = match expr {
+        let (op_str, left_expr, right_expr) = match expr.node {
             BinaryExpression::Add(l, r) => ("add", l, r),
             BinaryExpression::Multiply(l, r) => ("mul", l, r),
             BinaryExpression::Divide(l, r) => ("div", l, r),
@@ -915,10 +935,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
     fn expression_logical<'v>(
         &mut self,
-        expr: LogicalExpression,
+        expr: Spanned<LogicalExpression>,
         scope: &mut VariableScope<'v>,
     ) -> Result<CompilationResult, Error> {
-        match expr {
+        match expr.node {
             LogicalExpression::Not(inner) => {
                 let (inner_str, cleanup) = self.compile_operand(*inner, scope)?;
 
@@ -939,7 +959,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 })
             }
             _ => {
-                let (op_str, left_expr, right_expr) = match expr {
+                let (op_str, left_expr, right_expr) = match expr.node {
                     LogicalExpression::And(l, r) => ("and", l, r),
                     LogicalExpression::Or(l, r) => ("or", l, r),
                     LogicalExpression::Equal(l, r) => ("seq", l, r),
@@ -1012,7 +1032,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     self.expression_return(*ret_expr, scope)?;
                 }
                 _ => {
-                    let result = self.expression(expr.node, scope)?;
+                    let result = self.expression(expr, scope)?;
                     // If the expression was a statement that returned a temp result (e.g. `1 + 2;` line),
                     // we must free it to avoid leaking registers.
                     if let Some(comp_res) = result
@@ -1030,11 +1050,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     /// Takes the result of the expression and stores it in VariableScope::RETURN_REGISTER
     fn expression_return<'v>(
         &mut self,
-        expr: Expression,
+        expr: Spanned<Expression>,
         scope: &mut VariableScope<'v>,
     ) -> Result<VariableLocation, Error> {
-        if let Expression::Negation(neg_expr) = &expr
-            && let Expression::Literal(spanned_lit) = &**neg_expr
+        if let Expression::Negation(neg_expr) = &expr.node
+            && let Expression::Literal(spanned_lit) = &neg_expr.node
             && let Literal::Number(neg_num) = &spanned_lit.node
         {
             let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
@@ -1042,7 +1062,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             return Ok(loc);
         };
 
-        match expr {
+        match expr.node {
             Expression::Variable(var_name) => match scope
                 .get_location_of(&var_name.node)
                 .map_err(|_| Error::UnknownIdentifier(var_name.node, var_name.span))?
@@ -1085,7 +1105,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 _ => {}
             },
             Expression::Binary(bin_expr) => {
-                let result = self.expression_binary(bin_expr.node, scope)?;
+                let result = self.expression_binary(bin_expr, scope)?;
                 let result_reg = self.resolve_register(&result.location)?;
                 self.write_output(format!(
                     "move r{} {}",
@@ -1097,7 +1117,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }
             }
             Expression::Logical(log_expr) => {
-                let result = self.expression_logical(log_expr.node, scope)?;
+                let result = self.expression_logical(log_expr, scope)?;
                 let result_reg = self.resolve_register(&result.location)?;
                 self.write_output(format!(
                     "move r{} {}",
@@ -1336,7 +1356,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     self.expression_return(*ret_expr, &mut block_scope)?;
                 }
                 _ => {
-                    let result = self.expression(expr.node, &mut block_scope)?;
+                    let result = self.expression(expr, &mut block_scope)?;
                     // Free unused statement results
                     if let Some(comp_res) = result
                         && let Some(name) = comp_res.temp_name
@@ -1350,7 +1370,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         // Get the saved return address and save it back into `ra`
         let VariableLocation::Stack(ra_stack_offset) = block_scope
             .get_location_of(format!("{}_ra", name.node))
-            .map_err(|e| Error::ScopeError(e))?
+            .map_err(Error::ScopeError)?
         else {
             return Err(Error::Unknown(
                 "Stored return address not in stack as expected".into(),
@@ -1375,4 +1395,3 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 }
-
