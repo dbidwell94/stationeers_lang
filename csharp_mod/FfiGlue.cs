@@ -15,122 +15,127 @@
 #pragma warning disable SA1500, SA1505, SA1507,
 #pragma warning disable SA1600, SA1601, SA1604, SA1605, SA1611, SA1615, SA1649,
 
-namespace Slang {
-using System;
-using System.Runtime.InteropServices;
+namespace Slang
+{
+    using System;
+    using System.Runtime.InteropServices;
 
-public unsafe partial class Ffi {
+    public unsafe partial class Ffi
+    {
 #if IOS
-    private const string RustLib = "slang.framework/slang";
+        private const string RustLib = "slang.framework/slang";
 #else
-    public const string RustLib = "slang_compiler.dll";
+        public const string RustLib = "slang_compiler.dll";
 #endif
-}
-
-/// <summary>
-/// <c>&'lt [T]</c> but with a guaranteed <c>#[repr(C)]</c> layout.
-///
-/// # C layout (for some given type T)
-///
-/// ```c
-/// typedef struct {
-/// // Cannot be NULL
-/// T * ptr;
-/// size_t len;
-/// } slice_T;
-/// ```
-///
-/// # Nullable pointer?
-///
-/// If you want to support the above typedef, but where the <c>ptr</c> field is
-/// allowed to be <c>NULL</c> (with the contents of <c>len</c> then being undefined)
-/// use the <c>Option< slice_ptr<_> ></c> type.
-/// </summary>
-[StructLayout(LayoutKind.Sequential, Size = 16)]
-public unsafe struct slice_ref_uint16_t {
-    /// <summary>
-    /// Pointer to the first element (if any).
-    /// </summary>
-    public UInt16 /*const*/ * ptr;
+    }
 
     /// <summary>
-    /// Element count
+    /// <c>&'lt [T]</c> but with a guaranteed <c>#[repr(C)]</c> layout.
+    ///
+    /// # C layout (for some given type T)
+    ///
+    /// ```c
+    /// typedef struct {
+    /// // Cannot be NULL
+    /// T * ptr;
+    /// size_t len;
+    /// } slice_T;
+    /// ```
+    ///
+    /// # Nullable pointer?
+    ///
+    /// If you want to support the above typedef, but where the <c>ptr</c> field is
+    /// allowed to be <c>NULL</c> (with the contents of <c>len</c> then being undefined)
+    /// use the <c>Option< slice_ptr<_> ></c> type.
     /// </summary>
-    public UIntPtr len;
-}
+    [StructLayout(LayoutKind.Sequential, Size = 16)]
+    public unsafe struct slice_ref_uint16_t
+    {
+        /// <summary>
+        /// Pointer to the first element (if any).
+        /// </summary>
+        public UInt16 /*const*/
+        * ptr;
 
-/// <summary>
-/// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
-/// </summary>
-[StructLayout(LayoutKind.Sequential, Size = 24)]
-public unsafe struct Vec_uint8_t {
-    public byte * ptr;
+        /// <summary>
+        /// Element count
+        /// </summary>
+        public UIntPtr len;
+    }
 
-    public UIntPtr len;
-
-    public UIntPtr cap;
-}
-
-public unsafe partial class Ffi {
     /// <summary>
-    /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
-    /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
-    /// This should result in the ability to compile many times without triggering frame drops
-    /// from the GC from a <c>GetBytes()</c> call on a string in C#.
+    /// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
     /// </summary>
-    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
-    Vec_uint8_t compile_from_string (
-        slice_ref_uint16_t input);
-}
+    [StructLayout(LayoutKind.Sequential, Size = 24)]
+    public unsafe struct Vec_uint8_t
+    {
+        public byte* ptr;
 
-[StructLayout(LayoutKind.Sequential, Size = 64)]
-public unsafe struct FfiToken_t {
-    public Vec_uint8_t tooltip;
+        public UIntPtr len;
 
-    public Vec_uint8_t error;
+        public UIntPtr cap;
+    }
 
-    public Int32 column;
+    public unsafe partial class Ffi
+    {
+        /// <summary>
+        /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
+        /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
+        /// This should result in the ability to compile many times without triggering frame drops
+        /// from the GC from a <c>GetBytes()</c> call on a string in C#.
+        /// </summary>
+        [DllImport(RustLib, ExactSpelling = true)]
+        public static extern unsafe Vec_uint8_t compile_from_string(slice_ref_uint16_t input);
+    }
 
-    public Int32 length;
+    [StructLayout(LayoutKind.Sequential, Size = 64)]
+    public unsafe struct FfiToken_t
+    {
+        public Vec_uint8_t tooltip;
 
-    public UInt32 token_kind;
-}
+        public Vec_uint8_t error;
 
-/// <summary>
-/// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
-/// </summary>
-[StructLayout(LayoutKind.Sequential, Size = 24)]
-public unsafe struct Vec_FfiToken_t {
-    public FfiToken_t * ptr;
+        public Int32 column;
 
-    public UIntPtr len;
+        public Int32 length;
 
-    public UIntPtr cap;
-}
+        public UInt32 token_kind;
+    }
 
-public unsafe partial class Ffi {
-    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
-    void free_ffi_token_vec (
-        Vec_FfiToken_t v);
-}
-
-public unsafe partial class Ffi {
-    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
-    void free_string (
-        Vec_uint8_t s);
-}
-
-public unsafe partial class Ffi {
     /// <summary>
-    /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
-    /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
-    /// This should result in the ability to tokenize many times without triggering frame drops
-    /// from the GC from a <c>GetBytes()</c> call on a string in C#.
+    /// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
     /// </summary>
-    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
-    Vec_FfiToken_t tokenize_line (
-        slice_ref_uint16_t input);
-}
+    [StructLayout(LayoutKind.Sequential, Size = 24)]
+    public unsafe struct Vec_FfiToken_t
+    {
+        public FfiToken_t* ptr;
 
+        public UIntPtr len;
 
+        public UIntPtr cap;
+    }
+
+    public unsafe partial class Ffi
+    {
+        [DllImport(RustLib, ExactSpelling = true)]
+        public static extern unsafe void free_ffi_token_vec(Vec_FfiToken_t v);
+    }
+
+    public unsafe partial class Ffi
+    {
+        [DllImport(RustLib, ExactSpelling = true)]
+        public static extern unsafe void free_string(Vec_uint8_t s);
+    }
+
+    public unsafe partial class Ffi
+    {
+        /// <summary>
+        /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
+        /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
+        /// This should result in the ability to tokenize many times without triggering frame drops
+        /// from the GC from a <c>GetBytes()</c> call on a string in C#.
+        /// </summary>
+        [DllImport(RustLib, ExactSpelling = true)]
+        public static extern unsafe Vec_FfiToken_t tokenize_line(slice_ref_uint16_t input);
+    }
 } /* Slang */

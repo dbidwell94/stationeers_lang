@@ -92,7 +92,7 @@ fn test_priority_expression() -> Result<()> {
 
     let expression = parser.parse()?.unwrap();
 
-    assert_eq!("(let x = (4))", expression.to_string());
+    assert_eq!("(let x = 4)", expression.to_string());
 
     Ok(())
 }
@@ -109,7 +109,7 @@ fn test_binary_expression() -> Result<()> {
     assert_eq!("(((45 * 2) - (15 / 5)) + (5 ** 2))", expr.to_string());
 
     let expr = parser!("(5 - 2) * 10").parse()?.unwrap();
-    assert_eq!("(((5 - 2)) * 10)", expr.to_string());
+    assert_eq!("((5 - 2) * 10)", expr.to_string());
 
     Ok(())
 }
