@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net46</TargetFramework>
+    <TargetFramework>net48</TargetFramework>
     <Nullable>enable</Nullable>
     <AssemblyName>StationeersSlang</AssemblyName>
     <Description>Slang Compiler Bridge</Description>
@@ -11,9 +11,8 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <GameDir>/home/dbidwell/.local/share/Steam/steamapps/common/Stationeers/</GameDir>
-    <ManagedDir>$(GameDir)/rocketstation_Data/Managed</ManagedDir>
-    <BepInExDir>$(GameDir)/BepInEx/core</BepInExDir>
+    <ManagedDir>$(STATIONEERS_DIR)/rocketstation_Data/Managed</ManagedDir>
+    <BepInExDir>$(STATIONEERS_DIR)/BepInEx/core</BepInExDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -42,12 +41,17 @@
         <HintPath>$(ManagedDir)/Assembly-CSharp.dll</HintPath>
         <Private>False</Private>
       </Reference>
-      <Reference Include="Assembly-CSharp-firstpass">
-        <HintPath>$(ManagedDir)/Assembly-CSharp-firstpass.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
+
       <Reference Include="IC10Editor.dll">
         <HintPath>./ref/IC10Editor.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="LaunchPadBooster.dll">
+        <HintPath>$(STATIONEERS_DIR)/BepInEx/plugins/StationeersLaunchPad/LaunchPadBooster.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="StationeersMods.Interface.dll">
+        <HintPath>$(STATIONEERS_DIR)/BepInEx/plugins/StationeersLaunchPad/StationeersMods.Interface.dll</HintPath>
         <Private>False</Private>
       </Reference>
     </ItemGroup>

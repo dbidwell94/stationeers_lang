@@ -14,11 +14,7 @@ public class SlangFormatter : ICodeFormatter
 
     public override string Compile()
     {
-        if (Marshal.CompileFromString(this.Lines.RawText, out string compiled))
-        {
-            return compiled;
-        }
-
-        return string.Empty;
+        L.Info("ICodeFormatter attempted to compile source code.");
+        return this.Lines.RawText;
     }
 }

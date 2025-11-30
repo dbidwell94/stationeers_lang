@@ -38,8 +38,8 @@ echo "--------------------"
 
 RUST_WIN_EXE="$RUST_DIR/target/x86_64-pc-windows-gnu/release/slang.exe"
 RUST_LINUX_BIN="$RUST_DIR/target/x86_64-unknown-linux-gnu/release/slang"
-CHARP_DLL="$CSHARP_DIR/bin/Release/net46/StationeersSlang.dll"
-CHARP_PDB="$CSHARP_DIR/bin/Release/net46/StationeersSlang.pdb"
+CHARP_DLL="$CSHARP_DIR/bin/Release/net48/StationeersSlang.dll"
+CHARP_PDB="$CSHARP_DIR/bin/Release/net48/StationeersSlang.pdb"
 
 # Check if the release dir exists, if not: create it.
 if [[ ! -d "$RELEASE_DIR" ]]; then
