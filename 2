@@ -996,7 +996,7 @@ impl<'a> Parser<'a> {
     }
 
     fn invocation(&mut self) -> Result<InvocationExpression, Error> {
-        let identifier_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let identifier_token = self.current_token.as_ref().unwrap();
         let identifier_span = Self::token_to_span(identifier_token);
         let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
@@ -1036,7 +1036,7 @@ impl<'a> Parser<'a> {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                let next_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let next_token = self.get_next()?.unwrap();
                 return Err(Error::UnexpectedToken(
                     Self::token_to_span(next_token),
                     next_token.clone(),
@@ -1233,7 +1233,7 @@ impl<'a> Parser<'a> {
                     node: Expression::Block(block),
                 }))
             } else {
-                let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let next = self.get_next()?.unwrap();
                 return Err(Error::UnexpectedToken(
                     Self::token_to_span(next),
                     next.clone(),
@@ -1328,7 +1328,7 @@ impl<'a> Parser<'a> {
             self.get_next()?.ok_or(Error::UnexpectedEOF)?,
             TokenType::Symbol(Symbol::RParen)
         ) {
-            let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+            let current_token = self.current_token.as_ref().unwrap();
             let arg_span = Self::token_to_span(current_token);
             let argument = match current_token.token_type {
                 TokenType::Identifier(ref id) => id.clone(),
