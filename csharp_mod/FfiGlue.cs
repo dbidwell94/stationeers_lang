@@ -15,162 +15,160 @@
 #pragma warning disable SA1500, SA1505, SA1507,
 #pragma warning disable SA1600, SA1601, SA1604, SA1605, SA1611, SA1615, SA1649,
 
-namespace Slang
-{
-    using System;
-    using System.Runtime.InteropServices;
+namespace Slang {
+using System;
+using System.Runtime.InteropServices;
 
-    public unsafe partial class Ffi
-    {
+public unsafe partial class Ffi {
 #if IOS
-        private const string RustLib = "slang.framework/slang";
+    private const string RustLib = "slang.framework/slang";
 #else
-        public const string RustLib = "slang_compiler.dll";
+    public const string RustLib = "slang_compiler.dll";
 #endif
-    }
+}
+
+/// <summary>
+/// <c>&'lt [T]</c> but with a guaranteed <c>#[repr(C)]</c> layout.
+///
+/// # C layout (for some given type T)
+///
+/// ```c
+/// typedef struct {
+/// // Cannot be NULL
+/// T * ptr;
+/// size_t len;
+/// } slice_T;
+/// ```
+///
+/// # Nullable pointer?
+///
+/// If you want to support the above typedef, but where the <c>ptr</c> field is
+/// allowed to be <c>NULL</c> (with the contents of <c>len</c> then being undefined)
+/// use the <c>Option< slice_ptr<_> ></c> type.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Size = 16)]
+public unsafe struct slice_ref_uint16_t {
+    /// <summary>
+    /// Pointer to the first element (if any).
+    /// </summary>
+    public UInt16 /*const*/ * ptr;
 
     /// <summary>
-    /// <c>&'lt [T]</c> but with a guaranteed <c>#[repr(C)]</c> layout.
-    ///
-    /// # C layout (for some given type T)
-    ///
-    /// ```c
-    /// typedef struct {
-    /// // Cannot be NULL
-    /// T * ptr;
-    /// size_t len;
-    /// } slice_T;
-    /// ```
-    ///
-    /// # Nullable pointer?
-    ///
-    /// If you want to support the above typedef, but where the <c>ptr</c> field is
-    /// allowed to be <c>NULL</c> (with the contents of <c>len</c> then being undefined)
-    /// use the <c>Option< slice_ptr<_> ></c> type.
+    /// Element count
     /// </summary>
-    [StructLayout(LayoutKind.Sequential, Size = 16)]
-    public unsafe struct slice_ref_uint16_t
-    {
-        /// <summary>
-        /// Pointer to the first element (if any).
-        /// </summary>
-        public UInt16 /*const*/
-        * ptr;
+    public UIntPtr len;
+}
 
-        /// <summary>
-        /// Element count
-        /// </summary>
-        public UIntPtr len;
-    }
+/// <summary>
+/// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Size = 24)]
+public unsafe struct Vec_uint8_t {
+    public byte * ptr;
 
+    public UIntPtr len;
+
+    public UIntPtr cap;
+}
+
+public unsafe partial class Ffi {
     /// <summary>
-    /// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
+    /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
+    /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
+    /// This should result in the ability to compile many times without triggering frame drops
+    /// from the GC from a <c>GetBytes()</c> call on a string in C#.
     /// </summary>
-    [StructLayout(LayoutKind.Sequential, Size = 24)]
-    public unsafe struct Vec_uint8_t
-    {
-        public byte* ptr;
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    Vec_uint8_t compile_from_string (
+        slice_ref_uint16_t input);
+}
 
-        public UIntPtr len;
+[StructLayout(LayoutKind.Sequential, Size = 16)]
+public unsafe struct FfiRange_t {
+    public UInt32 start_col;
 
-        public UIntPtr cap;
-    }
+    public UInt32 end_col;
 
-    public unsafe partial class Ffi
-    {
-        /// <summary>
-        /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
-        /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
-        /// This should result in the ability to compile many times without triggering frame drops
-        /// from the GC from a <c>GetBytes()</c> call on a string in C#.
-        /// </summary>
-        [DllImport(RustLib, ExactSpelling = true)]
-        public static extern unsafe Vec_uint8_t compile_from_string(slice_ref_uint16_t input);
-    }
+    public UInt32 start_line;
 
-    [StructLayout(LayoutKind.Sequential, Size = 16)]
-    public unsafe struct FfiRange_t
-    {
-        public UInt32 start_col;
+    public UInt32 end_line;
+}
 
-        public UInt32 end_col;
+[StructLayout(LayoutKind.Sequential, Size = 48)]
+public unsafe struct FfiDiagnostic_t {
+    public Vec_uint8_t message;
 
-        public UInt32 start_line;
+    public Int32 severity;
 
-        public UInt32 end_line;
-    }
+    public FfiRange_t range;
+}
 
-    [StructLayout(LayoutKind.Sequential, Size = 48)]
-    public unsafe struct FfiDiagnostic_t
-    {
-        public Vec_uint8_t message;
+/// <summary>
+/// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Size = 24)]
+public unsafe struct Vec_FfiDiagnostic_t {
+    public FfiDiagnostic_t * ptr;
 
-        public Int32 severity;
+    public UIntPtr len;
 
-        public FfiRange_t range;
-    }
+    public UIntPtr cap;
+}
 
-    /// <summary>
-    /// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential, Size = 24)]
-    public unsafe struct Vec_FfiDiagnostic_t
-    {
-        public FfiDiagnostic_t* ptr;
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    Vec_FfiDiagnostic_t diagnose_source (
+        slice_ref_uint16_t input);
+}
 
-        public UIntPtr len;
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    void free_ffi_diagnostic_vec (
+        Vec_FfiDiagnostic_t v);
+}
 
-        public UIntPtr cap;
-    }
+[StructLayout(LayoutKind.Sequential, Size = 64)]
+public unsafe struct FfiToken_t {
+    public Vec_uint8_t tooltip;
 
-    public unsafe partial class Ffi
-    {
-        [DllImport(RustLib, ExactSpelling = true)]
-        public static extern unsafe Vec_FfiDiagnostic_t diagnose_source();
-    }
+    public Vec_uint8_t error;
 
-    public unsafe partial class Ffi
-    {
-        [DllImport(RustLib, ExactSpelling = true)]
-        public static extern unsafe void free_ffi_diagnostic_vec(Vec_FfiDiagnostic_t v);
-    }
+    public Int32 column;
 
-    [StructLayout(LayoutKind.Sequential, Size = 64)]
-    public unsafe struct FfiToken_t
-    {
-        public Vec_uint8_t tooltip;
+    public Int32 length;
 
-        public Vec_uint8_t error;
+    public UInt32 token_kind;
+}
 
-        public Int32 column;
+/// <summary>
+/// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Size = 24)]
+public unsafe struct Vec_FfiToken_t {
+    public FfiToken_t * ptr;
 
-        public Int32 length;
+    public UIntPtr len;
 
-        public UInt32 token_kind;
-    }
+    public UIntPtr cap;
+}
 
-    /// <summary>
-    /// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential, Size = 24)]
-    public unsafe struct Vec_FfiToken_t
-    {
-        public FfiToken_t* ptr;
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    void free_ffi_token_vec (
+        Vec_FfiToken_t v);
+}
 
-        public UIntPtr len;
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    void free_string (
+        Vec_uint8_t s);
+}
 
-        public UIntPtr cap;
-    }
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    Vec_FfiToken_t tokenize_line (
+        slice_ref_uint16_t input);
+}
 
-    public unsafe partial class Ffi
-    {
-        [DllImport(RustLib, ExactSpelling = true)]
-        public static extern unsafe void free_ffi_token_vec(Vec_FfiToken_t v);
-    }
 
-    public unsafe partial class Ffi
-    {
-        [DllImport(RustLib, ExactSpelling = true)]
-        public static extern unsafe void free_string(Vec_uint8_t s);
-    }
 } /* Slang */

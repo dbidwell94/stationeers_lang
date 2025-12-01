@@ -1,10 +1,26 @@
 namespace Slang;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using StationeersIC10Editor;
+
+public struct Range
+{
+    public uint StartCol;
+    public uint EndCol;
+    public uint StartLine;
+    public uint EndLine;
+}
+
+public struct Diagnostic
+{
+    public string Message;
+    public int Severity;
+    public Range Range;
+}
 
 public static class Marshal
 {
@@ -63,13 +79,7 @@ public static class Marshal
 
     public static unsafe bool CompileFromString(string inputString, out string compiledString)
     {
-        if (String.IsNullOrEmpty(inputString))
-        {
-            compiledString = String.Empty;
-            return false;
-        }
-
-        if (!EnsureLibLoaded())
+        if (String.IsNullOrEmpty(inputString) || !EnsureLibLoaded())
         {
             compiledString = String.Empty;
             return false;
@@ -98,6 +108,46 @@ public static class Marshal
             {
                 result.Drop();
             }
+        }
+    }
+
+    public static unsafe List<Diagnostic> DiagnoseSource(string inputString)
+    {
+        if (string.IsNullOrEmpty(inputString) || !EnsureLibLoaded())
+        {
+            return new();
+        }
+
+        fixed (char* ptrInput = inputString)
+        {
+            var input = new slice_ref_uint16_t
+            {
+                ptr = (ushort*)ptrInput,
+                len = (UIntPtr)inputString.Length,
+            };
+
+            return Ffi.diagnose_source(input).ToList();
+        }
+    }
+
+    public static unsafe Line TokenizeLine(string inputString)
+    {
+        if (string.IsNullOrEmpty(inputString) || !EnsureLibLoaded())
+        {
+            return new Line(inputString);
+        }
+
+        fixed (char* ptrInputStr = inputString)
+        {
+            var strRef = new slice_ref_uint16_t
+            {
+                len = (UIntPtr)inputString.Length,
+                ptr = (ushort*)ptrInputStr,
+            };
+
+            var tokens = Ffi.tokenize_line(strRef);
+
+            return tokens.ToLine(inputString);
         }
     }
 

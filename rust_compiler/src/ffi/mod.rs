@@ -2,7 +2,10 @@ use compiler::Compiler;
 use parser::Parser;
 use safer_ffi::prelude::*;
 use std::io::BufWriter;
-use tokenizer::Tokenizer;
+use tokenizer::{
+    token::{Token, TokenType},
+    Tokenizer,
+};
 
 #[derive_ReprC]
 #[repr(C)]
@@ -98,6 +101,56 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::
 }
 
 #[ffi_export]
-pub fn diagnose_source() -> safer_ffi::Vec<FfiDiagnostic> {
-    vec![].into()
+pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<FfiToken> {
+    let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
+
+    let mut tokens = Vec::new();
+
+    // Error reporting is handled in `diagnose_source`. We only care about successful tokens here
+    // for syntax highlighting
+    for token in tokenizer {
+        if matches!(
+            token,
+            Ok(Token {
+                token_type: TokenType::EOF,
+                ..
+            })
+        ) {
+            continue;
+        }
+        match token {
+            Err(_) => {}
+            Ok(Token {
+                column,
+                original_string,
+                token_type,
+                ..
+            }) => tokens.push(FfiToken {
+                column: column as i32,
+                error: "".into(),
+                length: (original_string.unwrap_or_default().len()) as i32,
+                token_kind: token_type.into(),
+                tooltip: "".into(),
+            }),
+        }
+    }
+
+    tokens.into()
+}
+
+#[ffi_export]
+pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<FfiDiagnostic> {
+    let mut writer = BufWriter::new(Vec::new());
+    let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
+    let compiler = Compiler::new(Parser::new(tokenizer), &mut writer, None);
+
+    let diagnosis = compiler.compile();
+
+    let mut result_vec: Vec<FfiDiagnostic> = Vec::with_capacity(diagnosis.len());
+
+    for err in diagnosis {
+        result_vec.push(lsp_types::Diagnostic::from(err).into());
+    }
+
+    result_vec.into()
 }

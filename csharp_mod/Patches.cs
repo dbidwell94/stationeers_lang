@@ -1,11 +1,9 @@
 namespace Slang;
 
 using System;
-using Assets.Scripts;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Motherboards;
-using Assets.Scripts.UI;
 using HarmonyLib;
 
 [HarmonyPatch]
