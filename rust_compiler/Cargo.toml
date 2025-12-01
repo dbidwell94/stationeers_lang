@@ -10,6 +10,7 @@ members = ["libs/*"]
 quick-error = "2"
 rust_decimal = "1"
 safer-ffi = { version = "0.1" }
+lsp-types = { version = "0.97" }
 
 [features]
 headers = ["safer-ffi/headers"]
@@ -33,6 +34,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 clap = { version = "^4.5", features = ["derive"] }
+lsp-types = { workspace = true }
 quick-error = { workspace = true }
 rust_decimal = { workspace = true }
 tokenizer = { path = "libs/tokenizer" }

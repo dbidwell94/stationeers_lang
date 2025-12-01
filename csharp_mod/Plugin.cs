@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using System.IO.Compression;
-using System.Text;
 using System.Text.RegularExpressions;
 using BepInEx;
 using HarmonyLib;
@@ -62,28 +58,6 @@ namespace Slang
                 }
 
                 return _slangSourceCheck;
-            }
-        }
-
-        /// <summary>
-        /// Encodes the original slang source code as base64 and uses gzip to compress it, returning the resulting string.
-        /// </summary>
-        public static string EncodeSource(string source)
-        {
-            if (string.IsNullOrEmpty(source))
-            {
-                return "";
-            }
-
-            byte[] bytes = Encoding.UTF8.GetBytes(source);
-
-            using (var memoryStream = new MemoryStream())
-            {
-                using (var gzipStream = new GZipStream(memoryStream, CompressionMode.Compress))
-                {
-                    gzipStream.Write(bytes, 0, bytes.Length);
-                }
-                return Convert.ToBase64String(memoryStream.ToArray());
             }
         }
 

@@ -19,18 +19,51 @@ quick_error! {
             source(err)
         }
         NumberParseError(err: std::num::ParseIntError, line: usize, column: usize, original: String) {
-            display("Number Parse Error: {}\nLine: {}, Column: {}", err, line, column)
+            display("Number Parse Error: {}", err)
             source(err)
         }
         DecimalParseError(err: rust_decimal::Error, line: usize, column: usize, original: String) {
-            display("Decimal Parse Error: {}\nLine: {}, Column: {}", err, line, column)
+            display("Decimal Parse Error: {}", err)
             source(err)
         }
         UnknownSymbolError(char: char, line: usize, column: usize, original: String) {
-            display("Unknown Symbol: {}\nLine: {}, Column: {}", char, line, column)
+            display("Unknown Symbol: {}", char)
         }
         UnknownKeywordOrIdentifierError(val: String, line: usize, column: usize, original: String) {
-            display("Unknown Keyword or Identifier: {}\nLine: {}, Column: {}", val, line, column)
+            display("Unknown Keyword or Identifier: {}", val)
+        }
+    }
+}
+
+impl From<Error> for lsp_types::Diagnostic {
+    fn from(value: Error) -> Self {
+        use Error::*;
+        use lsp_types::*;
+
+        match value {
+            IOError(e) => Diagnostic {
+                message: e.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                ..Default::default()
+            },
+            NumberParseError(_, l, c, ref og)
+            | DecimalParseError(_, l, c, ref og)
+            | UnknownSymbolError(_, l, c, ref og)
+            | UnknownKeywordOrIdentifierError(_, l, c, ref og) => Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: l as u32,
+                        character: c as u32,
+                    },
+                    end: Position {
+                        line: l as u32,
+                        character: (c + og.len()) as u32,
+                    },
+                },
+                message: value.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                ..Default::default()
+            },
         }
     }
 }

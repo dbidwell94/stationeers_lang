@@ -1,6 +1,7 @@
 namespace Slang;
 
 using System;
+using System.Collections.Generic;
 using System.Text;
 using StationeersIC10Editor;
 
@@ -53,7 +54,7 @@ public static unsafe class SlangExtensions
 
             var color = GetColorForKind(token.token_kind);
 
-            int colIndex = token.column;
+            int colIndex = token.column - 1;
             if (colIndex < 0)
                 colIndex = 0;
 
@@ -80,20 +81,50 @@ public static unsafe class SlangExtensions
         return list;
     }
 
+    public static unsafe List<Diagnostic> ToList(this Vec_FfiDiagnostic_t vec)
+    {
+        var toReturn = new List<Diagnostic>((int)vec.len);
+
+        var currentPtr = vec.ptr;
+
+        for (int i = 0; i < (int)vec.len; i++)
+        {
+            var item = currentPtr[i];
+
+            toReturn.Add(
+                new Slang.Diagnostic
+                {
+                    Message = item.message.AsString(),
+                    Severity = item.severity,
+                    Range = new Slang.Range
+                    {
+                        EndCol = Math.Max(item.range.end_col - 2, 0),
+                        EndLine = item.range.end_line - 1,
+                        StartCol = Math.Max(item.range.start_col - 2, 0),
+                        StartLine = item.range.end_line - 1,
+                    },
+                }
+            );
+        }
+
+        Ffi.free_ffi_diagnostic_vec(vec);
+        return toReturn;
+    }
+
     private static uint GetColorForKind(uint kind)
     {
         switch (kind)
         {
             case 1:
-                return SlangFormatter.ColorInstruction; // Keyword
-            case 2:
-                return SlangFormatter.ColorDefault; // Identifier
-            case 3:
-                return SlangFormatter.ColorNumber; // Number
-            case 4:
                 return SlangFormatter.ColorString; // String
-            case 5:
+            case 2:
+                return SlangFormatter.ColorString; // Number
+            case 3:
                 return SlangFormatter.ColorInstruction; // Boolean
+            case 4:
+                return SlangFormatter.ColorSelection; // Keyword
+            case 5:
+                return SlangFormatter.ColorLineNumber; // Identifier
             case 6:
                 return SlangFormatter.ColorDefault; // Symbol
             default:

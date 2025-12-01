@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 #[macro_use]
 extern crate quick_error;
 
@@ -6,7 +8,7 @@ use compiler::Compiler;
 use parser::Parser as ASTParser;
 use std::{
     fs::File,
-    io::{BufWriter, Read, Write},
+    io::{stderr, BufWriter, Read, Write},
     path::PathBuf,
 };
 use tokenizer::{self, Tokenizer};
@@ -73,7 +75,22 @@ fn run_logic() -> Result<(), StationlangError> {
 
     let compiler = Compiler::new(parser, &mut writer, None);
 
-    compiler.compile()?;
+    let mut errors = compiler.compile();
+
+    if !errors.is_empty() {
+        let mut std_error = stderr();
+        let last = errors.pop();
+        let errors = errors.into_iter().map(StationlangError::from);
+
+        std_error.write_all(b"Compilation error:\n")?;
+
+        for err in errors {
+            std_error.write_all(format!("{}\n", err).as_bytes())?;
+        }
+
+        return Err(StationlangError::from(last.unwrap()));
+    }
+
     writer.flush()?;
 
     Ok(())

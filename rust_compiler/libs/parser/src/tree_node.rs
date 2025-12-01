@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use super::sys_call::SysCall;
 use tokenizer::token::Number;
 
@@ -20,12 +22,12 @@ impl std::fmt::Display for Literal {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum BinaryExpression {
-    Add(Box<Expression>, Box<Expression>),
-    Multiply(Box<Expression>, Box<Expression>),
-    Divide(Box<Expression>, Box<Expression>),
-    Subtract(Box<Expression>, Box<Expression>),
-    Exponent(Box<Expression>, Box<Expression>),
-    Modulo(Box<Expression>, Box<Expression>),
+    Add(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Multiply(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Divide(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Subtract(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Exponent(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Modulo(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
 }
 
 impl std::fmt::Display for BinaryExpression {
@@ -43,15 +45,15 @@ impl std::fmt::Display for BinaryExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum LogicalExpression {
-    And(Box<Expression>, Box<Expression>),
-    Or(Box<Expression>, Box<Expression>),
-    Not(Box<Expression>),
-    Equal(Box<Expression>, Box<Expression>),
-    NotEqual(Box<Expression>, Box<Expression>),
-    GreaterThan(Box<Expression>, Box<Expression>),
-    GreaterThanOrEqual(Box<Expression>, Box<Expression>),
-    LessThan(Box<Expression>, Box<Expression>),
-    LessThanOrEqual(Box<Expression>, Box<Expression>),
+    And(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Or(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Not(Box<Spanned<Expression>>),
+    Equal(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    NotEqual(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    GreaterThan(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    GreaterThanOrEqual(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    LessThan(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    LessThanOrEqual(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
 }
 
 impl std::fmt::Display for LogicalExpression {
@@ -72,8 +74,8 @@ impl std::fmt::Display for LogicalExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct AssignmentExpression {
-    pub identifier: String,
-    pub expression: Box<Expression>,
+    pub identifier: Spanned<String>,
+    pub expression: Box<Spanned<Expression>>,
 }
 
 impl std::fmt::Display for AssignmentExpression {
@@ -84,8 +86,8 @@ impl std::fmt::Display for AssignmentExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FunctionExpression {
-    pub name: String,
-    pub arguments: Vec<String>,
+    pub name: Spanned<String>,
+    pub arguments: Vec<Spanned<String>>,
     pub body: BlockExpression,
 }
 
@@ -95,14 +97,18 @@ impl std::fmt::Display for FunctionExpression {
             f,
             "(fn {}({}) {{ {} }})",
             self.name,
-            self.arguments.to_vec().join(", "),
+            self.arguments
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
             self.body
         )
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct BlockExpression(pub Vec<Expression>);
+pub struct BlockExpression(pub Vec<Spanned<Expression>>);
 
 impl std::fmt::Display for BlockExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -120,8 +126,8 @@ impl std::fmt::Display for BlockExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct InvocationExpression {
-    pub name: String,
-    pub arguments: Vec<Expression>,
+    pub name: Spanned<String>,
+    pub arguments: Vec<Spanned<Expression>>,
 }
 
 impl std::fmt::Display for InvocationExpression {
@@ -142,7 +148,7 @@ impl std::fmt::Display for InvocationExpression {
 #[derive(Debug, PartialEq, Eq)]
 pub enum LiteralOrVariable {
     Literal(Literal),
-    Variable(String),
+    Variable(Spanned<String>),
 }
 
 impl std::fmt::Display for LiteralOrVariable {
@@ -157,7 +163,7 @@ impl std::fmt::Display for LiteralOrVariable {
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeviceDeclarationExpression {
     /// any variable-like name
-    pub name: String,
+    pub name: Spanned<String>,
     /// The device port, ex. (db, d0, d1, d2, d3, d4, d5)
     pub device: String,
 }
@@ -170,9 +176,9 @@ impl std::fmt::Display for DeviceDeclarationExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct IfExpression {
-    pub condition: Box<Expression>,
-    pub body: BlockExpression,
-    pub else_branch: Option<Box<Expression>>,
+    pub condition: Box<Spanned<Expression>>,
+    pub body: Spanned<BlockExpression>,
+    pub else_branch: Option<Box<Spanned<Expression>>>,
 }
 
 impl std::fmt::Display for IfExpression {
@@ -187,7 +193,7 @@ impl std::fmt::Display for IfExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LoopExpression {
-    pub body: BlockExpression,
+    pub body: Spanned<BlockExpression>,
 }
 
 impl std::fmt::Display for LoopExpression {
@@ -198,7 +204,7 @@ impl std::fmt::Display for LoopExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct WhileExpression {
-    pub condition: Box<Expression>,
+    pub condition: Box<Spanned<Expression>>,
     pub body: BlockExpression,
 }
 
@@ -208,27 +214,88 @@ impl std::fmt::Display for WhileExpression {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start_line: usize,
+    pub end_line: usize,
+    pub start_col: usize,
+    pub end_col: usize,
+}
+
+impl From<Span> for lsp_types::Range {
+    fn from(value: Span) -> Self {
+        Self {
+            start: lsp_types::Position {
+                line: value.start_line as u32,
+                character: value.start_col as u32,
+            },
+            end: lsp_types::Position {
+                line: value.end_line as u32,
+                character: value.end_col as u32,
+            },
+        }
+    }
+}
+
+impl From<&Span> for lsp_types::Range {
+    fn from(value: &Span) -> Self {
+        Self {
+            start: lsp_types::Position {
+                line: value.start_line as u32,
+                character: value.start_col as u32,
+            },
+            end: lsp_types::Position {
+                line: value.end_line as u32,
+                character: value.end_col as u32,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Spanned<T> {
+    pub span: Span,
+    pub node: T,
+}
+
+impl<T> std::fmt::Display for Spanned<T>
+where
+    T: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.node)
+    }
+}
+
+impl<T> Deref for Spanned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
-    Assignment(AssignmentExpression),
-    Binary(BinaryExpression),
-    Block(BlockExpression),
-    Break,
-    Continue,
-    Declaration(String, Box<Expression>),
-    DeviceDeclaration(DeviceDeclarationExpression),
-    Function(FunctionExpression),
-    If(IfExpression),
-    Invocation(InvocationExpression),
-    Literal(Literal),
-    Logical(LogicalExpression),
-    Loop(LoopExpression),
-    Negation(Box<Expression>),
-    Priority(Box<Expression>),
-    Return(Box<Expression>),
-    Syscall(SysCall),
-    Variable(String),
-    While(WhileExpression),
+    Assignment(Spanned<AssignmentExpression>),
+    Binary(Spanned<BinaryExpression>),
+    Block(Spanned<BlockExpression>),
+    Break(Span),
+    Continue(Span),
+    Declaration(Spanned<String>, Box<Spanned<Expression>>),
+    DeviceDeclaration(Spanned<DeviceDeclarationExpression>),
+    Function(Spanned<FunctionExpression>),
+    If(Spanned<IfExpression>),
+    Invocation(Spanned<InvocationExpression>),
+    Literal(Spanned<Literal>),
+    Logical(Spanned<LogicalExpression>),
+    Loop(Spanned<LoopExpression>),
+    Negation(Box<Spanned<Expression>>),
+    Priority(Box<Spanned<Expression>>),
+    Return(Box<Spanned<Expression>>),
+    Syscall(Spanned<SysCall>),
+    Variable(Spanned<String>),
+    While(Spanned<WhileExpression>),
 }
 
 impl std::fmt::Display for Expression {
@@ -237,8 +304,8 @@ impl std::fmt::Display for Expression {
             Expression::Assignment(e) => write!(f, "{}", e),
             Expression::Binary(e) => write!(f, "{}", e),
             Expression::Block(e) => write!(f, "{}", e),
-            Expression::Break => write!(f, "break"),
-            Expression::Continue => write!(f, "continue"),
+            Expression::Break(_) => write!(f, "break"),
+            Expression::Continue(_) => write!(f, "continue"),
             Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
             Expression::DeviceDeclaration(e) => write!(f, "{}", e),
             Expression::Function(e) => write!(f, "{}", e),

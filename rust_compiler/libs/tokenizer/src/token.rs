@@ -87,6 +87,21 @@ pub enum TokenType {
     EOF,
 }
 
+impl From<TokenType> for u32 {
+    fn from(value: TokenType) -> Self {
+        use TokenType::*;
+        match value {
+            String(_) => 1,
+            Number(_) => 2,
+            Boolean(_) => 3,
+            Keyword(_) => 4,
+            Identifier(_) => 5,
+            Symbol(_) => 6,
+            EOF => 0,
+        }
+    }
+}
+
 impl std::fmt::Display for TokenType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
