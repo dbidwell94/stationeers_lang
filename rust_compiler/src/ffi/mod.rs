@@ -82,90 +82,104 @@ pub fn free_string(s: safer_ffi::String) {
 /// from the GC from a `GetBytes()` call on a string in C#.
 #[ffi_export]
 pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::String {
-    let mut writer = BufWriter::new(Vec::new());
+    let res = std::panic::catch_unwind(|| {
+        let mut writer = BufWriter::new(Vec::new());
 
-    let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
-    let parser = Parser::new(tokenizer);
-    let compiler = Compiler::new(parser, &mut writer, None);
+        let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
+        let parser = Parser::new(tokenizer);
+        let compiler = Compiler::new(parser, &mut writer, None);
 
-    if !compiler.compile().is_empty() {
-        return safer_ffi::String::EMPTY;
-    }
+        if !compiler.compile().is_empty() {
+            return safer_ffi::String::EMPTY;
+        }
 
-    let Ok(compiled_vec) = writer.into_inner() else {
-        return safer_ffi::String::EMPTY;
-    };
+        let Ok(compiled_vec) = writer.into_inner() else {
+            return safer_ffi::String::EMPTY;
+        };
 
-    // Safety: I know the compiler only outputs valid utf8
-    safer_ffi::String::from(unsafe { String::from_utf8_unchecked(compiled_vec) })
+        // Safety: I know the compiler only outputs valid utf8
+        safer_ffi::String::from(unsafe { String::from_utf8_unchecked(compiled_vec) })
+    });
+
+    res.unwrap_or("".into())
 }
 
 #[ffi_export]
 pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<FfiToken> {
-    let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
+    let res = std::panic::catch_unwind(|| {
+        let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
 
-    let mut tokens = Vec::new();
+        let mut tokens = Vec::new();
 
-    for token in tokenizer {
-        if matches!(
-            token,
-            Ok(Token {
-                token_type: TokenType::EOF,
-                ..
-            })
-        ) {
-            continue;
-        }
-        match token {
-            Err(ref e) => {
-                use tokenizer::Error::*;
-                let (err_str, col, og) = match e {
-                    NumberParseError(_, _, col, og)
-                    | DecimalParseError(_, _, col, og)
-                    | UnknownSymbolError(_, _, col, og)
-                    | UnknownKeywordOrIdentifierError(_, _, col, og) => (e.to_string(), col, og),
-                    _ => continue,
-                };
-
-                tokens.push(FfiToken {
-                    column: *col as i32,
-                    error: err_str.into(),
-                    tooltip: "".into(),
-                    length: og.len() as i32,
-                    token_kind: 0,
+        for token in tokenizer {
+            if matches!(
+                token,
+                Ok(Token {
+                    token_type: TokenType::EOF,
+                    ..
                 })
+            ) {
+                continue;
             }
-            Ok(Token {
-                column,
-                original_string,
-                token_type,
-                ..
-            }) => tokens.push(FfiToken {
-                column: column as i32,
-                error: "".into(),
-                length: (original_string.unwrap_or_default().len()) as i32,
-                token_kind: token_type.into(),
-                tooltip: "".into(),
-            }),
-        }
-    }
+            match token {
+                Err(ref e) => {
+                    use tokenizer::Error::*;
+                    let (err_str, col, og) = match e {
+                        NumberParseError(_, _, col, og)
+                        | DecimalParseError(_, _, col, og)
+                        | UnknownSymbolError(_, _, col, og)
+                        | UnknownKeywordOrIdentifierError(_, _, col, og) => {
+                            (e.to_string(), col, og)
+                        }
+                        _ => continue,
+                    };
 
-    tokens.into()
+                    tokens.push(FfiToken {
+                        column: *col as i32,
+                        error: err_str.into(),
+                        tooltip: "".into(),
+                        length: og.len() as i32,
+                        token_kind: 0,
+                    })
+                }
+                Ok(Token {
+                    column,
+                    original_string,
+                    token_type,
+                    ..
+                }) => tokens.push(FfiToken {
+                    column: column as i32,
+                    error: "".into(),
+                    length: (original_string.unwrap_or_default().len()) as i32,
+                    token_kind: token_type.into(),
+                    tooltip: "".into(),
+                }),
+            }
+        }
+
+        tokens.into()
+    });
+
+    res.unwrap_or(vec![].into())
 }
 
 #[ffi_export]
 pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<FfiDiagnostic> {
-    let mut writer = BufWriter::new(Vec::new());
-    let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
-    let compiler = Compiler::new(Parser::new(tokenizer), &mut writer, None);
+    let res = std::panic::catch_unwind(|| {
+        let mut writer = BufWriter::new(Vec::new());
+        let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
+        let compiler = Compiler::new(Parser::new(tokenizer), &mut writer, None);
 
-    let diagnosis = compiler.compile();
+        let diagnosis = compiler.compile();
 
-    let mut result_vec: Vec<FfiDiagnostic> = Vec::with_capacity(diagnosis.len());
+        let mut result_vec: Vec<FfiDiagnostic> = Vec::with_capacity(diagnosis.len());
 
-    for err in diagnosis {
-        result_vec.push(lsp_types::Diagnostic::from(err).into());
-    }
+        for err in diagnosis {
+            result_vec.push(lsp_types::Diagnostic::from(err).into());
+        }
 
-    result_vec.into()
+        result_vec.into()
+    });
+
+    res.unwrap_or(vec![].into())
 }

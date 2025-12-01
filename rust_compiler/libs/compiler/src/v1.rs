@@ -797,7 +797,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             self.write_output(format!("j {end_label}"))?;
             self.write_output(format!("{else_label}:"))?;
 
-            match expr.else_branch.unwrap().node {
+            match expr
+                .else_branch
+                .ok_or(Error::Unknown("Missing else branch. This should not happen and indicates a Compiler Error. Please report to the author.".into(), None))?
+                .node
+            {
                 Expression::Block(block) => self.expression_block(block.node, scope)?,
                 Expression::If(if_expr) => self.expression_if(if_expr.node, scope)?,
                 _ => unreachable!("Parser ensures else branch is Block or If"),
