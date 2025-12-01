@@ -31,16 +31,16 @@ quick_error! {
             source(err)
         }
         UnexpectedToken(span: Span, token: Token) {
-            display("Unexpected token: {:?}", token)
+            display("Unexpected token: {}", token.token_type)
         }
         DuplicateIdentifier(span: Span, token: Token) {
-            display("Duplicate identifier: {:?}", token)
+            display("Duplicate identifier: {}", token.token_type)
         }
         InvalidSyntax(span: Span, reason: String) {
-            display("Invalid syntax: {:?}, Reason: {}", span, reason)
+            display("Invalid syntax: {}", reason)
         }
         UnsupportedKeyword(span: Span, token: Token) {
-            display("Unsupported keyword: {:?}", token)
+            display("Unsupported keyword: {}", token.token_type)
         }
         UnexpectedEOF {
             display("Unexpected EOF")

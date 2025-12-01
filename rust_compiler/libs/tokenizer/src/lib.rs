@@ -19,18 +19,18 @@ quick_error! {
             source(err)
         }
         NumberParseError(err: std::num::ParseIntError, line: usize, column: usize, original: String) {
-            display("Number Parse Error: {}\nLine: {}, Column: {}", err, line, column)
+            display("Number Parse Error: {}", err)
             source(err)
         }
         DecimalParseError(err: rust_decimal::Error, line: usize, column: usize, original: String) {
-            display("Decimal Parse Error: {}\nLine: {}, Column: {}", err, line, column)
+            display("Decimal Parse Error: {}", err)
             source(err)
         }
         UnknownSymbolError(char: char, line: usize, column: usize, original: String) {
-            display("Unknown Symbol: {}\nLine: {}, Column: {}", char, line, column)
+            display("Unknown Symbol: {}", char)
         }
         UnknownKeywordOrIdentifierError(val: String, line: usize, column: usize, original: String) {
-            display("Unknown Keyword or Identifier: {}\nLine: {}, Column: {}", val, line, column)
+            display("Unknown Keyword or Identifier: {}", val)
         }
     }
 }

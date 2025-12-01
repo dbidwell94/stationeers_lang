@@ -1,5 +1,6 @@
 namespace Slang;
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -9,7 +10,6 @@ using StationeersIC10Editor;
 
 public class SlangFormatter : ICodeFormatter
 {
-    private System.Timers.Timer _timer;
     private CancellationTokenSource? _lspCancellationToken;
     private readonly SynchronizationContext? _mainThreadContext;
     private volatile bool IsDiagnosing = false;
@@ -17,16 +17,13 @@ public class SlangFormatter : ICodeFormatter
     public static readonly uint ColorInstruction = ColorFromHTML("#ffff00");
     public static readonly uint ColorString = ColorFromHTML("#ce9178");
 
-    private object _textLock = new();
+    private HashSet<uint> _linesWithErrors = new();
 
     public SlangFormatter()
     {
         // 1. Capture the Main Thread context.
         // This works because the Editor instantiates this class on the main thread.
         _mainThreadContext = SynchronizationContext.Current;
-
-        _timer = new System.Timers.Timer(250);
-        _timer.AutoReset = false;
     }
 
     public override string Compile()
@@ -50,89 +47,94 @@ public class SlangFormatter : ICodeFormatter
 
         _lspCancellationToken = new CancellationTokenSource();
 
-        _ = HandleLsp(_lspCancellationToken.Token, this.RawText);
+        _ = Task.Run(() => HandleLsp(_lspCancellationToken.Token), _lspCancellationToken.Token);
     }
 
     private void OnTimerElapsed(object sender, ElapsedEventArgs e) { }
 
-    private async Task HandleLsp(CancellationToken cancellationToken, string text)
+    private async Task HandleLsp(CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(500, cancellationToken);
+            await Task.Delay(200, cancellationToken);
 
             if (cancellationToken.IsCancellationRequested)
+            {
                 return;
-
-            List<Diagnostic> diagnosis = Marshal.DiagnoseSource(text);
-
-            var dict = diagnosis
-                .GroupBy(d => d.Range.StartLine)
-                .ToDictionary(g => g.Key, g => g.ToList());
+            }
 
             // 3. Dispatch the UI update to the Main Thread
             if (_mainThreadContext != null)
             {
                 // Post ensures ApplyDiagnostics runs on the captured thread (Main Thread)
-                _mainThreadContext.Post(_ => ApplyDiagnostics(dict), null);
+                _mainThreadContext.Post(_ => ApplyDiagnostics(), null);
             }
             else
             {
                 // Fallback: If context is null (rare in Unity), try running directly
                 // but warn, as this might crash if not thread-safe.
                 L.Warning("SynchronizationContext was null. Attempting direct update (risky).");
-                ApplyDiagnostics(dict);
+                ApplyDiagnostics();
             }
         }
         finally { }
     }
 
     // This runs on the Main Thread
-    private void ApplyDiagnostics(Dictionary<uint, List<Diagnostic>> dict)
+    private void ApplyDiagnostics()
     {
+        List<Diagnostic> diagnosis = Marshal.DiagnoseSource(this.RawText);
+
+        var dict = diagnosis.GroupBy(d => d.Range.StartLine).ToDictionary(g => g.Key);
+
+        var linesToRefresh = new HashSet<uint>(dict.Keys);
+        linesToRefresh.UnionWith(_linesWithErrors);
+
         IsDiagnosing = true;
-        // Standard LSP uses 0-based indexing.
-        for (int i = 0; i < this.Lines.Count; i++)
+
+        foreach (var lineIndex in linesToRefresh)
         {
-            uint lineIndex = (uint)i;
+            // safety check for out of bounds (in case lines were deleted)
+            if (lineIndex >= this.Lines.Count)
+                continue;
 
-            if (dict.TryGetValue(lineIndex, out var lineDiagnostics))
+            var line = this.Lines[(int)lineIndex];
+
+            if (line is null)
+                continue;
+
+            line.ClearTokens();
+
+            Dictionary<int, SemanticToken> lineDict = Marshal
+                .TokenizeLine(line.Text)
+                .Tokens.ToDictionary((t) => t.Column);
+
+            if (dict.ContainsKey(lineIndex))
             {
-                var line = this.Lines[i];
-                if (line is null)
+                foreach (var lineDiagnostic in dict[lineIndex])
                 {
-                    continue;
-                }
-
-                var tokenMap = line.Tokens.ToDictionary((t) => t.Column);
-
-                foreach (var diag in lineDiagnostics)
-                {
-                    var newToken = new SemanticToken
+                    lineDict[(int)lineDiagnostic.Range.StartCol] = new SemanticToken
                     {
-                        Column = (int)diag.Range.StartCol,
-                        Length = (int)(diag.Range.EndCol - diag.Range.StartCol),
-                        Line = i,
+                        Column = Math.Abs((int)lineDiagnostic.Range.StartCol),
+                        Length = Math.Abs(
+                            (int)(lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol)
+                        ),
+                        Line = (int)lineIndex,
                         IsError = true,
-                        Data = diag.Message,
-                        Color = ICodeFormatter.ColorError,
+                        Data = lineDiagnostic.Message,
+                        Color = SlangFormatter.ColorError,
                     };
-
-                    L.Info(
-                        $"Col: {newToken.Column} -- Length: {newToken.Length} -- Msg: {newToken.Data}"
-                    );
-
-                    tokenMap[newToken.Column] = newToken;
-                }
-
-                line.ClearTokens();
-
-                foreach (var token in tokenMap.Values)
-                {
-                    line.AddToken(token);
                 }
             }
+
+            foreach (var token in lineDict.Values)
+            {
+                line.AddToken(token);
+            }
         }
+
+        _linesWithErrors = new HashSet<uint>(dict.Keys);
+
         IsDiagnosing = false;
     }
 }

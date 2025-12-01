@@ -106,8 +106,6 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
 
     let mut tokens = Vec::new();
 
-    // Error reporting is handled in `diagnose_source`. We only care about successful tokens here
-    // for syntax highlighting
     for token in tokenizer {
         if matches!(
             token,
@@ -119,7 +117,24 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
             continue;
         }
         match token {
-            Err(_) => {}
+            Err(ref e) => {
+                use tokenizer::Error::*;
+                let (err_str, col, og) = match e {
+                    NumberParseError(_, _, col, og)
+                    | DecimalParseError(_, _, col, og)
+                    | UnknownSymbolError(_, _, col, og)
+                    | UnknownKeywordOrIdentifierError(_, _, col, og) => (e.to_string(), col, og),
+                    _ => continue,
+                };
+
+                tokens.push(FfiToken {
+                    column: *col as i32,
+                    error: err_str.into(),
+                    tooltip: "".into(),
+                    length: og.len() as i32,
+                    token_kind: 0,
+                })
+            }
             Ok(Token {
                 column,
                 original_string,

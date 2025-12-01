@@ -98,9 +98,9 @@ public static unsafe class SlangExtensions
                     Severity = item.severity,
                     Range = new Slang.Range
                     {
-                        EndCol = item.range.end_col - 1,
+                        EndCol = Math.Max(item.range.end_col - 2, 0),
                         EndLine = item.range.end_line - 1,
-                        StartCol = item.range.start_col - 1,
+                        StartCol = Math.Max(item.range.start_col - 2, 0),
                         StartLine = item.range.end_line - 1,
                     },
                 }
@@ -122,9 +122,9 @@ public static unsafe class SlangExtensions
             case 3:
                 return SlangFormatter.ColorInstruction; // Boolean
             case 4:
-                return SlangFormatter.ColorInstruction; // Keyword
+                return SlangFormatter.ColorSelection; // Keyword
             case 5:
-                return SlangFormatter.ColorInstruction; // Identifier
+                return SlangFormatter.ColorLineNumber; // Identifier
             case 6:
                 return SlangFormatter.ColorDefault; // Symbol
             default:
