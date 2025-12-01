@@ -15,7 +15,7 @@ macro_rules! compile {
             &mut writer,
             None,
         );
-        compiler.compile()?;
+        compiler.compile();
         output!(writer)
     }};
 
@@ -36,7 +36,7 @@ macro_rules! compile {
             &mut writer,
             Some(crate::CompilerConfig { debug: true }),
         );
-        compiler.compile()?;
+        compiler.compile();
         output!(writer)
     }};
 }

@@ -88,6 +88,53 @@ namespace Slang
         public static extern unsafe Vec_uint8_t compile_from_string(slice_ref_uint16_t input);
     }
 
+    [StructLayout(LayoutKind.Sequential, Size = 16)]
+    public unsafe struct FfiRange_t
+    {
+        public UInt32 start_col;
+
+        public UInt32 end_col;
+
+        public UInt32 start_line;
+
+        public UInt32 end_line;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Size = 48)]
+    public unsafe struct FfiDiagnostic_t
+    {
+        public Vec_uint8_t message;
+
+        public Int32 severity;
+
+        public FfiRange_t range;
+    }
+
+    /// <summary>
+    /// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Size = 24)]
+    public unsafe struct Vec_FfiDiagnostic_t
+    {
+        public FfiDiagnostic_t* ptr;
+
+        public UIntPtr len;
+
+        public UIntPtr cap;
+    }
+
+    public unsafe partial class Ffi
+    {
+        [DllImport(RustLib, ExactSpelling = true)]
+        public static extern unsafe Vec_FfiDiagnostic_t diagnose_source();
+    }
+
+    public unsafe partial class Ffi
+    {
+        [DllImport(RustLib, ExactSpelling = true)]
+        public static extern unsafe void free_ffi_diagnostic_vec(Vec_FfiDiagnostic_t v);
+    }
+
     [StructLayout(LayoutKind.Sequential, Size = 64)]
     public unsafe struct FfiToken_t
     {
@@ -125,17 +172,5 @@ namespace Slang
     {
         [DllImport(RustLib, ExactSpelling = true)]
         public static extern unsafe void free_string(Vec_uint8_t s);
-    }
-
-    public unsafe partial class Ffi
-    {
-        /// <summary>
-        /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
-        /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
-        /// This should result in the ability to tokenize many times without triggering frame drops
-        /// from the GC from a <c>GetBytes()</c> call on a string in C#.
-        /// </summary>
-        [DllImport(RustLib, ExactSpelling = true)]
-        public static extern unsafe Vec_FfiToken_t tokenize_line(slice_ref_uint16_t input);
     }
 } /* Slang */

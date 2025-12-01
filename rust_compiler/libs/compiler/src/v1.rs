@@ -39,8 +39,8 @@ quick_error! {
         ParseError(error: parser::Error) {
             from()
         }
-        IoError(error: std::io::Error) {
-            from()
+        IoError(error: String) {
+            display("IO Error: {}", error)
         }
         ScopeError(error: variable_manager::Error) {
             from()
@@ -63,6 +63,49 @@ quick_error! {
     }
 }
 
+impl From<Error> for lsp_types::Diagnostic {
+    fn from(value: Error) -> Self {
+        use Error::*;
+        use lsp_types::*;
+        match value {
+            ParseError(e) => e.into(),
+            IoError(e) => Diagnostic {
+                message: e.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                ..Default::default()
+            },
+            ScopeError(e) => Diagnostic {
+                message: e.to_string(),
+                range: Range::default(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                ..Default::default()
+            },
+            DuplicateIdentifier(_, span)
+            | UnknownIdentifier(_, span)
+            | InvalidDevice(_, span)
+            | AgrumentMismatch(_, span) => Diagnostic {
+                range: span.into(),
+                message: value.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                ..Default::default()
+            },
+            Unknown(msg, span) => Diagnostic {
+                message: msg.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                range: span.map(lsp_types::Range::from).unwrap_or_default(),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+// Map io::Error to Error manually since we can't clone io::Error
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::IoError(err.to_string())
+    }
+}
+
 #[derive(Default)]
 #[repr(C)]
 pub struct CompilerConfig {
@@ -77,7 +120,7 @@ struct CompilationResult {
 }
 
 pub struct Compiler<'a, W: std::io::Write> {
-    parser: ASTParser<'a>,
+    pub parser: ASTParser<'a>,
     function_locations: HashMap<String, usize>,
     function_metadata: HashMap<String, Vec<String>>,
     devices: HashMap<String, String>,
@@ -88,6 +131,7 @@ pub struct Compiler<'a, W: std::io::Write> {
     temp_counter: usize,
     label_counter: usize,
     loop_stack: Vec<(String, String)>, // Stores (start_label, end_label)
+    pub errors: Vec<Error>,
 }
 
 impl<'a, W: std::io::Write> Compiler<'a, W> {
@@ -108,19 +152,30 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             temp_counter: 0,
             label_counter: 0,
             loop_stack: Vec::new(),
+            errors: Vec::new(),
         }
     }
 
-    pub fn compile(mut self) -> Result<(), Error> {
-        let expr = self.parser.parse_all()?;
+    pub fn compile(mut self) -> Vec<Error> {
+        let expr = self.parser.parse_all();
 
-        let Some(expr) = expr else { return Ok(()) };
+        // Copy errors from parser
+        for e in std::mem::take(&mut self.parser.errors) {
+            self.errors.push(Error::ParseError(e));
+        }
 
-        // Wrap the root expression in a dummy span for consistency,
-        // since parse_all returns an unspanned Expression (usually Block)
-        // that contains spanned children.
-        // We know parse_all returns Expression::Block which has an internal span,
-        // but for type consistency we wrap it.
+        // We treat parse_all result as potentially partial
+        let expr = match expr {
+            Ok(Some(expr)) => expr,
+            Ok(None) => return self.errors,
+            Err(e) => {
+                // Should be covered by parser.errors, but just in case
+                self.errors.push(Error::ParseError(e));
+                return self.errors;
+            }
+        };
+
+        // Wrap the root expression in a dummy span for consistency
         let span = if let Expression::Block(ref block) = expr {
             block.span
         } else {
@@ -134,10 +189,17 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         let spanned_root = Spanned { node: expr, span };
 
-        self.write_output("j main")?;
+        if let Err(e) = self.write_output("j main") {
+            self.errors.push(e);
+            return self.errors;
+        }
+
         // We ignore the result of the root expression (usually a block)
-        let _ = self.expression(spanned_root, &mut VariableScope::default())?;
-        Ok(())
+        if let Err(e) = self.expression(spanned_root, &mut VariableScope::default()) {
+            self.errors.push(e);
+        }
+
+        self.errors
     }
 
     fn write_output(&mut self, output: impl Into<String>) -> Result<(), Error> {
@@ -255,13 +317,20 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 _ => Ok(None), // String literals don't return values in this context typically
             },
             Expression::Variable(name) => {
-                let loc = scope
-                    .get_location_of(&name.node)
-                    .map_err(|_| Error::UnknownIdentifier(name.node.clone(), name.span))?;
-                Ok(Some(CompilationResult {
-                    location: loc,
-                    temp_name: None, // User variable, do not free
-                }))
+                match scope.get_location_of(&name.node) {
+                    Ok(loc) => Ok(Some(CompilationResult {
+                        location: loc,
+                        temp_name: None, // User variable, do not free
+                    })),
+                    Err(_) => {
+                        self.errors
+                            .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+                        Ok(Some(CompilationResult {
+                            location: VariableLocation::Temporary(0),
+                            temp_name: None,
+                        }))
+                    }
+                }
             }
             Expression::Priority(inner_expr) => self.expression(*inner_expr, scope),
             Expression::Negation(inner_expr) => {
@@ -428,9 +497,16 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 (var_loc, None)
             }
             Expression::Variable(name) => {
-                let src_loc = scope
-                    .get_location_of(&name.node)
-                    .map_err(|_| Error::UnknownIdentifier(name.node.clone(), name.span))?;
+                let src_loc_res = scope.get_location_of(&name.node);
+
+                let src_loc = match src_loc_res {
+                    Ok(l) => l,
+                    Err(_) => {
+                        self.errors
+                            .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+                        VariableLocation::Temporary(0)
+                    }
+                };
 
                 let var_loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
 
@@ -488,9 +564,16 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             expression,
         } = expr;
 
-        let location = scope
-            .get_location_of(&identifier.node)
-            .map_err(|_| Error::UnknownIdentifier(identifier.node.clone(), identifier.span))?;
+        let location = match scope.get_location_of(&identifier.node) {
+            Ok(l) => l,
+            Err(_) => {
+                self.errors.push(Error::UnknownIdentifier(
+                    identifier.node.clone(),
+                    identifier.span,
+                ));
+                VariableLocation::Temporary(0)
+            }
+        };
 
         let (val_str, cleanup) = self.compile_operand(*expression, scope)?;
 
@@ -533,15 +616,26 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         let InvocationExpression { name, arguments } = invoke_expr.node;
 
         if !self.function_locations.contains_key(&name.node) {
-            return Err(Error::UnknownIdentifier(name.node.clone(), name.span));
+            self.errors
+                .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+            // Don't emit call, just pretend we did?
+            // Actually, we should probably emit a dummy call or just skip to avoid logic errors
+            // But if we skip, registers might be unbalanced if something expected a return.
+            // For now, let's just return early.
+            return Ok(());
         }
 
         let Some(args) = self.function_metadata.get(&name.node) else {
+            // Should be covered by check above
             return Err(Error::UnknownIdentifier(name.node.clone(), name.span));
         };
 
         if args.len() != arguments.len() {
-            return Err(Error::AgrumentMismatch(name.node, name.span));
+            self.errors
+                .push(Error::AgrumentMismatch(name.node.clone(), name.span));
+            // Proceed anyway? The assembly will likely crash or act weird.
+            // Best to skip generation of this call to prevent bad IC10
+            return Ok(());
         }
 
         // backup all used registers to the stack
@@ -564,9 +658,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     _ => {}
                 },
                 Expression::Variable(var_name) => {
-                    let loc = stack
-                        .get_location_of(var_name.node.clone())
-                        .map_err(|_| Error::UnknownIdentifier(var_name.node, var_name.span))?;
+                    let loc = match stack.get_location_of(var_name.node.clone()) {
+                        Ok(l) => l,
+                        Err(_) => {
+                            self.errors
+                                .push(Error::UnknownIdentifier(var_name.node, var_name.span));
+                            VariableLocation::Temporary(0)
+                        }
+                    };
 
                     match loc {
                         VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
@@ -655,7 +754,12 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         span: Span,
     ) -> Result<(), Error> {
         if self.devices.contains_key(&expr.name.node) {
-            return Err(Error::DuplicateIdentifier(expr.name.node, span));
+            self.errors
+                .push(Error::DuplicateIdentifier(expr.name.node.clone(), span));
+            // We can overwrite or ignore. Let's ignore new declaration to avoid cascading errors?
+            // Actually, for recovery, maybe we want to allow it so subsequent uses work?
+            // But we already have it.
+            return Ok(());
         }
         self.devices.insert(expr.name.node, expr.device);
 
@@ -832,10 +936,15 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             return Ok((format!("-{}", n), None));
         }
 
-        let result = self.expression(expr, scope)?.ok_or(Error::Unknown(
-            "Expression did not return a value".into(),
-            None,
-        ))?;
+        let result_opt = self.expression(expr, scope)?;
+
+        let result = match result_opt {
+            Some(r) => r,
+            None => {
+                // Expression failed or returned void. Recover with dummy.
+                return Ok(("r0".to_string(), None));
+            }
+        };
 
         match result.location {
             VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
@@ -1032,13 +1141,18 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     self.expression_return(*ret_expr, scope)?;
                 }
                 _ => {
-                    let result = self.expression(expr, scope)?;
-                    // If the expression was a statement that returned a temp result (e.g. `1 + 2;` line),
-                    // we must free it to avoid leaking registers.
-                    if let Some(comp_res) = result
-                        && let Some(name) = comp_res.temp_name
-                    {
-                        scope.free_temp(name)?;
+                    // Swallow errors within expressions so block can continue
+                    if let Err(e) = self.expression(expr, scope).and_then(|result| {
+                        // If the expression was a statement that returned a temp result (e.g. `1 + 2;` line),
+                        // we must free it to avoid leaking registers.
+                        if let Some(comp_res) = result
+                            && let Some(name) = comp_res.temp_name
+                        {
+                            scope.free_temp(name)?;
+                        }
+                        Ok(())
+                    }) {
+                        self.errors.push(e);
                     }
                 }
             }
@@ -1063,27 +1177,33 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         };
 
         match expr.node {
-            Expression::Variable(var_name) => match scope
-                .get_location_of(&var_name.node)
-                .map_err(|_| Error::UnknownIdentifier(var_name.node, var_name.span))?
-            {
-                VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
-                    self.write_output(format!(
-                        "move r{} r{reg} {}",
-                        VariableScope::RETURN_REGISTER,
-                        debug!(self, "#returnValue")
-                    ))?;
-                }
-                VariableLocation::Stack(offset) => {
-                    self.write_output(format!(
-                        "sub r{} sp {offset}",
-                        VariableScope::TEMP_STACK_REGISTER
-                    ))?;
-                    self.write_output(format!(
-                        "get r{} db r{}",
-                        VariableScope::RETURN_REGISTER,
-                        VariableScope::TEMP_STACK_REGISTER
-                    ))?;
+            Expression::Variable(var_name) => match scope.get_location_of(&var_name.node) {
+                Ok(loc) => match loc {
+                    VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
+                        self.write_output(format!(
+                            "move r{} r{reg} {}",
+                            VariableScope::RETURN_REGISTER,
+                            debug!(self, "#returnValue")
+                        ))?;
+                    }
+                    VariableLocation::Stack(offset) => {
+                        self.write_output(format!(
+                            "sub r{} sp {offset}",
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                        self.write_output(format!(
+                            "get r{} db r{}",
+                            VariableScope::RETURN_REGISTER,
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                    }
+                },
+                Err(_) => {
+                    self.errors.push(Error::UnknownIdentifier(
+                        var_name.node.clone(),
+                        var_name.span,
+                    ));
+                    // Proceed with dummy
                 }
             },
             Expression::Literal(spanned_lit) => match spanned_lit.node {
@@ -1189,9 +1309,18 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 let device_name = device_spanned.node;
 
-                let Some(device_val) = self.devices.get(&device_name) else {
-                    return Err(Error::InvalidDevice(device_name, device_spanned.span));
-                };
+                if !self.devices.contains_key(&device_name) {
+                    self.errors.push(Error::InvalidDevice(
+                        device_name.clone(),
+                        device_spanned.span,
+                    ));
+                }
+
+                let device_val = self
+                    .devices
+                    .get(&device_name)
+                    .cloned()
+                    .unwrap_or("d0".to_string());
 
                 let Literal::String(logic_type) = logic_type else {
                     return Err(Error::AgrumentMismatch(
@@ -1241,9 +1370,18 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 let device_name = device_spanned.node;
 
-                let Some(device_val) = self.devices.get(&device_name) else {
-                    return Err(Error::InvalidDevice(device_name, device_spanned.span));
-                };
+                if !self.devices.contains_key(&device_name) {
+                    self.errors.push(Error::InvalidDevice(
+                        device_name.clone(),
+                        device_spanned.span,
+                    ));
+                }
+
+                let device_val = self
+                    .devices
+                    .get(&device_name)
+                    .cloned()
+                    .unwrap_or("d0".to_string());
 
                 let Literal::String(logic_type) = logic_type else {
                     return Err(Error::AgrumentMismatch(
@@ -1286,7 +1424,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         } = expr.node;
 
         if self.function_locations.contains_key(&name.node) {
-            return Err(Error::DuplicateIdentifier(name.node.clone(), name.span));
+            self.errors
+                .push(Error::DuplicateIdentifier(name.node.clone(), name.span));
+            // Fallthrough to allow compiling the body anyway?
+            // It might be useful to check body for errors.
         }
 
         self.function_metadata.insert(
@@ -1356,26 +1497,33 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     self.expression_return(*ret_expr, &mut block_scope)?;
                 }
                 _ => {
-                    let result = self.expression(expr, &mut block_scope)?;
-                    // Free unused statement results
-                    if let Some(comp_res) = result
-                        && let Some(name) = comp_res.temp_name
-                    {
-                        block_scope.free_temp(name)?;
+                    // Swallow internal errors
+                    if let Err(e) = self.expression(expr, &mut block_scope).and_then(|result| {
+                        if let Some(comp_res) = result
+                            && let Some(name) = comp_res.temp_name
+                        {
+                            block_scope.free_temp(name)?;
+                        }
+                        Ok(())
+                    }) {
+                        self.errors.push(e);
                     }
                 }
             }
         }
 
         // Get the saved return address and save it back into `ra`
-        let VariableLocation::Stack(ra_stack_offset) = block_scope
-            .get_location_of(format!("{}_ra", name.node))
-            .map_err(Error::ScopeError)?
-        else {
-            return Err(Error::Unknown(
-                "Stored return address not in stack as expected".into(),
-                Some(name.span),
-            ));
+        let ra_res = block_scope.get_location_of(format!("{}_ra", name.node));
+        let ra_stack_offset = match ra_res {
+            Ok(VariableLocation::Stack(offset)) => offset,
+            _ => {
+                // If we can't find RA, we can't return properly.
+                // This usually implies a compiler bug or scope tracking error.
+                return Err(Error::Unknown(
+                    "Stored return address not in stack as expected".into(),
+                    Some(name.span),
+                ));
+            }
         };
 
         self.write_output(format!(

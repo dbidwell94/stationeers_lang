@@ -48,6 +48,30 @@ quick_error! {
     }
 }
 
+impl From<Error> for lsp_types::Diagnostic {
+    fn from(value: Error) -> Self {
+        use Error::*;
+        use lsp_types::*;
+        match value {
+            TokenizerError(e) => e.into(),
+            UnexpectedToken(span, _)
+            | DuplicateIdentifier(span, _)
+            | InvalidSyntax(span, _)
+            | UnsupportedKeyword(span, _) => Diagnostic {
+                message: value.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                range: span.into(),
+                ..Default::default()
+            },
+            UnexpectedEOF => Diagnostic {
+                message: value.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                ..Default::default()
+            },
+        }
+    }
+}
+
 macro_rules! self_matches_peek {
     ($self:ident, $pattern:pat) => {
         matches!($self.tokenizer.peek()?, Some(Token { token_type: $pattern, .. }))
@@ -84,6 +108,7 @@ macro_rules! self_matches_current {
 pub struct Parser<'a> {
     tokenizer: TokenizerBuffer<'a>,
     current_token: Option<Token>,
+    pub errors: Vec<Error>,
 }
 
 impl<'a> Parser<'a> {
@@ -91,6 +116,7 @@ impl<'a> Parser<'a> {
         Parser {
             tokenizer: TokenizerBuffer::new(tokenizer),
             current_token: None,
+            errors: Vec::new(),
         }
     }
 
@@ -158,8 +184,45 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Skips tokens until a statement boundary is found to recover from errors.
+    fn synchronize(&mut self) -> Result<(), Error> {
+        // We advance once to consume the error-causing token if we haven't already
+        // But often the error happens after we consumed something.
+        // Safe bet: consume current, then look.
+
+        // If we assign next, we might be skipping the very token we want to sync on if the error didn't consume it?
+        // Usually, in recursive descent, the error is raised when `current` is unexpected.
+        // We want to discard `current` and move on.
+        self.assign_next()?;
+
+        while let Some(token) = &self.current_token {
+            if token.token_type == TokenType::Symbol(Symbol::Semicolon) {
+                // Consuming the semicolon is a good place to stop and resume parsing next statement
+                self.assign_next()?;
+                return Ok(());
+            }
+
+            // Check if the token looks like the start of a statement.
+            // If so, we don't consume it; we return so the loop in parse_all can try to parse it.
+            match token.token_type {
+                TokenType::Keyword(Keyword::Fn)
+                | TokenType::Keyword(Keyword::Let)
+                | TokenType::Keyword(Keyword::If)
+                | TokenType::Keyword(Keyword::While)
+                | TokenType::Keyword(Keyword::Loop)
+                | TokenType::Keyword(Keyword::Device)
+                | TokenType::Keyword(Keyword::Return) => return Ok(()),
+                _ => {}
+            }
+
+            self.assign_next()?;
+        }
+
+        Ok(())
+    }
+
     pub fn parse_all(&mut self) -> Result<Option<tree_node::Expression>, Error> {
-        let first_token = self.tokenizer.peek()?;
+        let first_token = self.tokenizer.peek().unwrap_or(None);
         let (start_line, start_col) = first_token
             .as_ref()
             .map(|tok| (tok.line, tok.column))
@@ -167,28 +230,38 @@ impl<'a> Parser<'a> {
 
         let mut expressions = Vec::<Spanned<Expression>>::new();
 
-        while let Some(expression) = self.parse()? {
-            expressions.push(expression);
+        loop {
+            // Check EOF without unwrapping error
+            match self.tokenizer.peek() {
+                Ok(None) => break,
+                Err(e) => {
+                    self.errors.push(Error::TokenizerError(e));
+                    break;
+                }
+                _ => {}
+            }
+
+            match self.parse() {
+                Ok(Some(expression)) => {
+                    expressions.push(expression);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    self.errors.push(e);
+                    // Recover
+                    if self.synchronize().is_err() {
+                        // If sync failed (e.g. EOF during sync), break
+                        break;
+                    }
+                }
+            }
         }
 
-        if expressions.is_empty() {
-            let span = Span {
-                start_line,
-                end_line: start_line,
-                start_col,
-                end_col: start_col,
-            };
+        // Even if we had errors, we return whatever partial AST we managed to build.
+        // If expressions is empty and we had errors, it's a failed parse, but we return a block.
 
-            return Ok(Some(Expression::Block(Spanned {
-                node: BlockExpression(vec![]),
-                span,
-            })));
-        }
-
-        self.tokenizer.seek(SeekFrom::Current(-1))?;
-
-        let end_token_opt = self.tokenizer.peek()?;
-
+        // Use the last token position for end span, or start if nothing parsed
+        let end_token_opt = self.tokenizer.peek().unwrap_or(None);
         let (end_line, end_col) = end_token_opt
             .map(|tok| {
                 let len = tok.original_string.as_ref().map(|s| s.len()).unwrap_or(0);
@@ -211,6 +284,12 @@ impl<'a> Parser<'a> {
 
     pub fn parse(&mut self) -> Result<Option<Spanned<tree_node::Expression>>, Error> {
         self.assign_next()?;
+
+        // If assign_next hit EOF or error?
+        if self.current_token.is_none() {
+            return Ok(None);
+        }
+
         let expr = self.expression()?;
 
         if self_matches_peek!(self, TokenType::Symbol(Symbol::Semicolon)) {
@@ -1469,4 +1548,3 @@ impl<'a> Parser<'a> {
         }
     }
 }
-

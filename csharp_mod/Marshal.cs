@@ -61,29 +61,6 @@ public static class Marshal
         }
     }
 
-    public static unsafe Line TokenizeLine(string source)
-    {
-        if (String.IsNullOrEmpty(source))
-        {
-            return new Line(source);
-        }
-
-        if (!EnsureLibLoaded())
-        {
-            return new Line(source);
-        }
-
-        fixed (char* ptrString = source)
-        {
-            var input = new slice_ref_uint16_t
-            {
-                ptr = (ushort*)ptrString,
-                len = (UIntPtr)source.Length,
-            };
-            return Ffi.tokenize_line(input).ToLine(source);
-        }
-    }
-
     public static unsafe bool CompileFromString(string inputString, out string compiledString)
     {
         if (String.IsNullOrEmpty(inputString))

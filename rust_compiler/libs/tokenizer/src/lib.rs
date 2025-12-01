@@ -35,6 +35,39 @@ quick_error! {
     }
 }
 
+impl From<Error> for lsp_types::Diagnostic {
+    fn from(value: Error) -> Self {
+        use Error::*;
+        use lsp_types::*;
+
+        match value {
+            IOError(e) => Diagnostic {
+                message: e.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                ..Default::default()
+            },
+            NumberParseError(_, l, c, ref og)
+            | DecimalParseError(_, l, c, ref og)
+            | UnknownSymbolError(_, l, c, ref og)
+            | UnknownKeywordOrIdentifierError(_, l, c, ref og) => Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: l as u32,
+                        character: c as u32,
+                    },
+                    end: Position {
+                        line: l as u32,
+                        character: (c + og.len()) as u32,
+                    },
+                },
+                message: value.to_string(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                ..Default::default()
+            },
+        }
+    }
+}
+
 pub trait Tokenize: Read + Seek {}
 
 impl<T> Tokenize for T where T: Read + Seek {}

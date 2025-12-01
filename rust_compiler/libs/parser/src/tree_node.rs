@@ -222,6 +222,36 @@ pub struct Span {
     pub end_col: usize,
 }
 
+impl From<Span> for lsp_types::Range {
+    fn from(value: Span) -> Self {
+        Self {
+            start: lsp_types::Position {
+                line: value.start_line as u32,
+                character: value.start_col as u32,
+            },
+            end: lsp_types::Position {
+                line: value.end_line as u32,
+                character: value.end_col as u32,
+            },
+        }
+    }
+}
+
+impl From<&Span> for lsp_types::Range {
+    fn from(value: &Span) -> Self {
+        Self {
+            start: lsp_types::Position {
+                line: value.start_line as u32,
+                character: value.start_col as u32,
+            },
+            end: lsp_types::Position {
+                line: value.end_line as u32,
+                character: value.end_col as u32,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spanned<T> {
     pub span: Span,
@@ -293,4 +323,3 @@ impl std::fmt::Display for Expression {
         }
     }
 }
-
