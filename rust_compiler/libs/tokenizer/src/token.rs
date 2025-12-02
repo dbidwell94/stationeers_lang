@@ -88,6 +88,15 @@ pub enum TokenType {
     EOF,
 }
 
+impl Documentation for TokenType {
+    fn docs(&self) -> String {
+        match self {
+            Self::Keyword(k) => k.docs(),
+            _ => "".into(),
+        }
+    }
+}
+
 impl From<TokenType> for u32 {
     fn from(value: TokenType) -> Self {
         use TokenType::*;

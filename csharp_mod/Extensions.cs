@@ -63,7 +63,9 @@ public static unsafe class SlangExtensions
                 colIndex,
                 token.length,
                 color,
-                token.token_kind
+                token.token_kind,
+                0,
+                token.tooltip.AsString()
             );
 
             string errMsg = token.error.AsString();

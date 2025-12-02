@@ -1,4 +1,5 @@
 use compiler::Compiler;
+use helpers::Documentation;
 use parser::Parser;
 use safer_ffi::prelude::*;
 use std::io::BufWriter;
@@ -151,8 +152,8 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
                     column: column as i32,
                     error: "".into(),
                     length: (original_string.unwrap_or_default().len()) as i32,
+                    tooltip: token_type.docs().into(),
                     token_kind: token_type.into(),
-                    tooltip: "".into(),
                 }),
             }
         }
