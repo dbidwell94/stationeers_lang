@@ -4,11 +4,15 @@ using System;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Motherboards;
+using Assets.Scripts.UI;
 using HarmonyLib;
 
 [HarmonyPatch]
 public static class SlangPatches
 {
+    private static ProgrammableChipMotherboard? _currentlyEditingMotherboard;
+    private static AsciiString? _motherboardCachedCode;
+
     [HarmonyPatch(
         typeof(ProgrammableChipMotherboard),
         nameof(ProgrammableChipMotherboard.InputFinished)
@@ -16,6 +20,8 @@ public static class SlangPatches
     [HarmonyPrefix]
     public static void pgmb_InputFinished(ref string result)
     {
+        _currentlyEditingMotherboard = null;
+        _motherboardCachedCode = null;
         // guard to ensure we have valid IC10 before continuing
         if (
             !SlangPlugin.IsSlangSource(ref result)
@@ -31,6 +37,7 @@ public static class SlangPatches
         // Ensure we cache this compiled code for later retreival.
         GlobalCode.SetSource(thisRef, result);
 
+        // Append REF to the bottom
         compiled += $"\n{GlobalCode.SLANG_REF}{thisRef}";
         result = compiled;
     }
@@ -39,6 +46,8 @@ public static class SlangPatches
     [HarmonyPrefix]
     public static void isc_OnEdit(ProgrammableChipMotherboard __instance)
     {
+        _currentlyEditingMotherboard = __instance;
+        _motherboardCachedCode = __instance.GetSourceCode();
         var sourceCode = System.Text.Encoding.UTF8.GetString(
             System.Text.Encoding.ASCII.GetBytes(__instance.GetSourceCode())
         );
@@ -48,6 +57,7 @@ public static class SlangPatches
             return;
         }
 
+        // Look for REF at the bottom
         var tagIndex = sourceCode.LastIndexOf(GlobalCode.SLANG_REF);
 
         if (tagIndex == -1)
@@ -58,7 +68,7 @@ public static class SlangPatches
 
         if (
             !Guid.TryParse(
-                sourceCode.Substring(tagIndex + GlobalCode.SLANG_REF.Length),
+                sourceCode.Substring(tagIndex + GlobalCode.SLANG_REF.Length).Trim(),
                 out Guid sourceRef
             )
         )
@@ -78,83 +88,141 @@ public static class SlangPatches
         __instance.SetSourceCode(slangSource);
     }
 
+    private static void HandleSerialization(ref string sourceCode)
+    {
+        if (string.IsNullOrEmpty(sourceCode))
+            return;
+
+        // Check if the file ends with the Reference Tag
+        var tagIndex = sourceCode.LastIndexOf(GlobalCode.SLANG_REF);
+
+        if (tagIndex == -1)
+            return;
+
+        string guidString = sourceCode.Substring(tagIndex + GlobalCode.SLANG_REF.Length).Trim();
+
+        if (!Guid.TryParse(guidString, out Guid slangRefGuid))
+        {
+            L.Warning($"Found SLANG_REF but failed to parse GUID: {guidString}");
+            return;
+        }
+
+        var slangEncoded = GlobalCode.GetEncoded(slangRefGuid);
+
+        if (string.IsNullOrEmpty(slangEncoded))
+        {
+            L.Warning(
+                $"Could not find encoded source for ref {slangRefGuid}. Save will contain compiled IC10 only."
+            );
+            return;
+        }
+
+        // Extract the clean IC10 code (everything before the tag)
+        var cleanIc10 = sourceCode.Substring(0, tagIndex).TrimEnd();
+
+        // Append the encoded source tag to the bottom
+        sourceCode = $"{cleanIc10}\n{GlobalCode.SLANG_SRC}{slangEncoded}";
+    }
+
     [HarmonyPatch(typeof(ProgrammableChip), nameof(ProgrammableChip.SerializeSave))]
     [HarmonyPostfix]
     public static void pgc_SerializeSave(ProgrammableChip __instance, ref ThingSaveData __result)
     {
         if (__result is not ProgrammableChipSaveData chipData)
             return;
-        if (string.IsNullOrEmpty(chipData.SourceCode))
+
+        string code = chipData.SourceCode;
+        HandleSerialization(ref code);
+        chipData.SourceCode = code;
+    }
+
+    [HarmonyPatch(
+        typeof(ProgrammableChipMotherboard),
+        nameof(ProgrammableChipMotherboard.SerializeSave)
+    )]
+    [HarmonyPostfix]
+    public static void pgmb_SerializeSave(
+        ProgrammableChipMotherboard __instance,
+        ref ThingSaveData __result
+    )
+    {
+        if (__result is not ProgrammableChipMotherboardSaveData chipData)
             return;
 
-        var firstLine = chipData.SourceCode.Split('\n')[0].Trim();
+        string code = chipData.SourceCode;
+        HandleSerialization(ref code);
+        chipData.SourceCode = code;
+    }
 
-        // Check if the file starts with the Reference Tag
-        if (!firstLine.StartsWith(GlobalCode.SLANG_REF))
+    private static void HandleDeserialization(ref string sourceCode)
+    {
+        // Safety check for null/empty code
+        if (string.IsNullOrEmpty(sourceCode))
             return;
 
-        string guidString = firstLine.Substring(GlobalCode.SLANG_REF.Length).Trim();
+        // Check for the #SLANG_SRC: footer
+        int tagIndex = sourceCode.LastIndexOf(GlobalCode.SLANG_SRC);
 
-        if (!Guid.TryParse(guidString, out Guid slangRefGuid))
+        // If the tag is missing, this is just a normal IC10 script. Do nothing.
+        if (tagIndex == -1)
             return;
 
-        var slangEncoded = GlobalCode.GetEncoded(slangRefGuid);
+        // Extract the Encoded Source (Base64)
+        string encodedSource = sourceCode.Substring(tagIndex + GlobalCode.SLANG_SRC.Length).Trim();
 
-        if (string.IsNullOrEmpty(slangEncoded))
-            return;
+        // Extract the IC10 Code (strip off the tag and the newline before it)
+        string ic10Code = sourceCode.Substring(0, tagIndex).TrimEnd();
 
-        // We add 1 to length to remove the '\n' character as well
-        // Handle edge case where there is only one line
-        int removeLength = firstLine.Length;
-        if (chipData.SourceCode.Length > firstLine.Length)
-            removeLength++;
+        // Generate a new Runtime GUID for this session
+        Guid runtimeGuid = Guid.NewGuid();
 
-        var cleanIc10 = chipData.SourceCode.Remove(0, removeLength);
+        // Hydrate the Cache
+        GlobalCode.SetEncoded(runtimeGuid, encodedSource);
 
-        chipData.SourceCode = $"{cleanIc10}\n{GlobalCode.SLANG_SRC}{slangEncoded}";
+        // Rewrite the SourceCode to the "Runtime" format (REF at bottom)
+        sourceCode = $"{ic10Code}\n{GlobalCode.SLANG_REF}{runtimeGuid}";
     }
 
     [HarmonyPatch(typeof(ProgrammableChip), nameof(ProgrammableChip.DeserializeSave))]
     [HarmonyPrefix]
     public static void pgc_DeserializeSave(ref ThingSaveData savedData)
     {
-        // 1. Ensure we are looking at a Programmable Chip
         if (savedData is not ProgrammableChipSaveData pcSaveData)
+            return;
+
+        string code = pcSaveData.SourceCode;
+        HandleDeserialization(ref code);
+        pcSaveData.SourceCode = code;
+    }
+
+    [HarmonyPatch(
+        typeof(ProgrammableChipMotherboard),
+        nameof(ProgrammableChipMotherboard.DeserializeSave)
+    )]
+    [HarmonyPrefix]
+    public static void pgmb_DeserializeSave(ref ThingSaveData savedData)
+    {
+        if (savedData is not ProgrammableChipMotherboardSaveData pcSaveData)
+            return;
+
+        string code = pcSaveData.SourceCode;
+        HandleDeserialization(ref code);
+        pcSaveData.SourceCode = code;
+    }
+
+    [HarmonyPatch(typeof(InputSourceCode), nameof(InputSourceCode.ButtonInputCancel))]
+    [HarmonyPrefix]
+    public static void isc_ButtonInputCancel()
+    {
+        L.Info("ButtonInputCancel called on the InputSourceCode static instance.");
+        if (_currentlyEditingMotherboard is null || _motherboardCachedCode is null)
         {
             return;
         }
 
-        // 2. Safety check for null/empty code
-        if (string.IsNullOrEmpty(pcSaveData.SourceCode))
-            return;
+        _currentlyEditingMotherboard.SetSourceCode(_motherboardCachedCode);
 
-        // 3. Check for the #SLANG_SRC: footer we added during serialization
-        int tagIndex = pcSaveData.SourceCode.LastIndexOf(GlobalCode.SLANG_SRC);
-
-        // If the tag is missing, this is just a normal IC10 script. Do nothing.
-        if (tagIndex == -1)
-            return;
-
-        // 4. Extract the Encoded Source (Base64)
-        // The format in the file is: <IC10_CODE>\n#SLANG_SRC:<BASE64>
-        string encodedSource = pcSaveData.SourceCode.Substring(
-            tagIndex + GlobalCode.SLANG_SRC.Length
-        );
-
-        // 5. Extract the IC10 Code
-        // We strip off the tag and the newline we added before it.
-        // Using TrimEnd() helps clean up that specific newline.
-        string ic10Code = pcSaveData.SourceCode.Substring(0, tagIndex).TrimEnd();
-
-        // 6. Generate a new Runtime GUID
-        // We don't need to persist the GUID from the last session; we just need a key for *this* session.
-        Guid runtimeGuid = Guid.NewGuid();
-
-        // 7. Hydrate the Cache
-        GlobalCode.SetEncoded(runtimeGuid, encodedSource);
-
-        // 8. Rewrite the SourceCode to the "Runtime" format
-        // This ensures that when the user opens the editor, SlangPlugin.TryRestoreSourceCode matches the header.
-        pcSaveData.SourceCode = $"{GlobalCode.SLANG_REF} {runtimeGuid}\n{ic10Code}";
+        _currentlyEditingMotherboard = null;
+        _motherboardCachedCode = null;
     }
 }
