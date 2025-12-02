@@ -100,9 +100,6 @@ public class SlangFormatter : ICodeFormatter
                 .GroupBy(d => d.Range.StartLine)
                 .ToDictionary(g => g.Key);
 
-            if (cancellationToken.IsCancellationRequested)
-                return;
-
             await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
 
             ApplyDiagnostics(dict);
