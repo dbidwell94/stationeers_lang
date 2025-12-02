@@ -6,7 +6,8 @@ use parser::{
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, DeviceDeclarationExpression,
         Expression, FunctionExpression, IfExpression, InvocationExpression, Literal,
-        LiteralOrVariable, LogicalExpression, LoopExpression, Span, Spanned, WhileExpression,
+        LiteralOrVariable, LogicalExpression, LoopExpression, MethodCallExpression, Span, Spanned,
+        WhileExpression,
     },
 };
 use quick_error::quick_error;
@@ -351,6 +352,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     temp_name: Some(result_name),
                 }))
             }
+            Expression::MethodCall(method_expr) => {
+                self.expression_method_call(method_expr.node, scope, method_expr.span)
+            }
             _ => Err(Error::Unknown(
                 format!(
                     "Expression type not yet supported in general expression context: {:?}",
@@ -539,6 +543,28 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     *inner,
                     scope,
                 );
+            }
+            Expression::MethodCall(method_expr) => {
+                if let Some(result) =
+                    self.expression_method_call(method_expr.node, scope, method_expr.span)?
+                {
+                    let var_loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
+
+                    // Move result from temp to new persistent variable
+                    let result_reg = self.resolve_register(&result.location)?;
+                    self.emit_variable_assignment(&name_str, &var_loc, result_reg)?;
+
+                    // Free the temp result
+                    if let Some(name) = result.temp_name {
+                        scope.free_temp(name)?;
+                    }
+                    (var_loc, None)
+                } else {
+                    return Err(Error::Unknown(
+                        "Method call did not return a value".into(),
+                        Some(method_expr.span),
+                    ));
+                }
             }
             _ => {
                 return Err(Error::Unknown(
@@ -1252,6 +1278,25 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     scope.free_temp(name)?;
                 }
             }
+            Expression::Invocation(invoke_expr) => {
+                self.expression_function_invocation(invoke_expr, scope)?;
+                // The result is already in RETURN_REGISTER from the call
+            }
+            Expression::MethodCall(method_expr) => {
+                if let Some(result) =
+                    self.expression_method_call(method_expr.node, scope, method_expr.span)?
+                {
+                    let result_reg = self.resolve_register(&result.location)?;
+                    self.write_output(format!(
+                        "move r{} {}",
+                        VariableScope::RETURN_REGISTER,
+                        result_reg
+                    ))?;
+                    if let Some(name) = result.temp_name {
+                        scope.free_temp(name)?;
+                    }
+                }
+            }
             _ => {
                 return Err(Error::Unknown(
                     format!("Unsupported `return` statement: {:?}", expr),
@@ -1546,4 +1591,117 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         self.write_output("j ra")?;
         Ok(())
     }
+
+    fn expression_method_call<'v>(
+        &mut self,
+        expr: MethodCallExpression,
+        scope: &mut VariableScope<'v>,
+        span: Span,
+    ) -> Result<Option<CompilationResult>, Error> {
+        let object_name = expr.object.node;
+
+        if let Some(device_val) = self.devices.get(&object_name).cloned() {
+            match expr.method.node.as_str() {
+                "load" => {
+                    if expr.arguments.len() != 1 {
+                        return Err(Error::AgrumentMismatch(
+                            "load expects 1 argument".into(),
+                            span,
+                        ));
+                    }
+                    let arg = expr.arguments.into_iter().next().unwrap();
+                    let logic_type = match arg.node {
+                        Expression::Literal(l) => match l.node {
+                            Literal::String(s) => s,
+                            _ => {
+                                return Err(Error::AgrumentMismatch(
+                                    "load argument must be a string literal".into(),
+                                    arg.span,
+                                ));
+                            }
+                        },
+                        _ => {
+                            return Err(Error::AgrumentMismatch(
+                                "load argument must be a string literal".into(),
+                                arg.span,
+                            ));
+                        }
+                    };
+
+                    self.write_output(format!(
+                        "l r{} {} {}",
+                        VariableScope::RETURN_REGISTER,
+                        device_val,
+                        logic_type
+                    ))?;
+
+                    // Move result to a temp register to be safe for use in expressions
+                    let temp_name = self.next_temp_name();
+                    let temp_loc = scope.add_variable(&temp_name, LocationRequest::Temp)?;
+                    self.emit_variable_assignment(
+                        &temp_name,
+                        &temp_loc,
+                        format!("r{}", VariableScope::RETURN_REGISTER),
+                    )?;
+
+                    return Ok(Some(CompilationResult {
+                        location: temp_loc,
+                        temp_name: Some(temp_name),
+                    }));
+                }
+                "set" => {
+                    if expr.arguments.len() != 2 {
+                        return Err(Error::AgrumentMismatch(
+                            "set expects 2 arguments".into(),
+                            span,
+                        ));
+                    }
+
+                    let mut args_iter = expr.arguments.into_iter();
+                    let logic_type_arg = args_iter.next().unwrap();
+                    let value_arg = args_iter.next().unwrap();
+
+                    let logic_type = match logic_type_arg.node {
+                        Expression::Literal(l) => match l.node {
+                            Literal::String(s) => s,
+                            _ => {
+                                return Err(Error::AgrumentMismatch(
+                                    "set expects a string literal as first argument".into(),
+                                    logic_type_arg.span,
+                                ));
+                            }
+                        },
+                        _ => {
+                            return Err(Error::AgrumentMismatch(
+                                "set expects a string literal as first argument".into(),
+                                logic_type_arg.span,
+                            ));
+                        }
+                    };
+
+                    let (val_str, cleanup) = self.compile_operand(value_arg, scope)?;
+
+                    self.write_output(format!("s {} {} {}", device_val, logic_type, val_str))?;
+
+                    if let Some(name) = cleanup {
+                        scope.free_temp(name)?;
+                    }
+
+                    return Ok(None);
+                }
+                _ => {
+                    return Err(Error::Unknown(
+                        format!(
+                            "Unknown method '{}' on device '{}'",
+                            expr.method.node, object_name
+                        ),
+                        Some(span),
+                    ));
+                }
+            }
+        }
+
+        Err(Error::UnknownIdentifier(object_name, expr.object.span))
+    }
 }
+

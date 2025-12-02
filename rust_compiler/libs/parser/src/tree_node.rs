@@ -74,13 +74,13 @@ impl std::fmt::Display for LogicalExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct AssignmentExpression {
-    pub identifier: Spanned<String>,
+    pub assignee: Box<Spanned<Expression>>,
     pub expression: Box<Spanned<Expression>>,
 }
 
 impl std::fmt::Display for AssignmentExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({} = {})", self.identifier, self.expression)
+        write!(f, "({} = {})", self.assignee, self.expression)
     }
 }
 
@@ -136,6 +136,41 @@ impl std::fmt::Display for InvocationExpression {
             f,
             "{}({})",
             self.name,
+            self.arguments
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct MemberAccessExpression {
+    pub object: Box<Spanned<Expression>>,
+    pub member: Spanned<String>,
+}
+
+impl std::fmt::Display for MemberAccessExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.object, self.member)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct MethodCallExpression {
+    pub object: Box<Spanned<Expression>>,
+    pub method: Spanned<String>,
+    pub arguments: Vec<Spanned<Expression>>,
+}
+
+impl std::fmt::Display for MethodCallExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}.{}({})",
+            self.object,
+            self.method,
             self.arguments
                 .iter()
                 .map(|e| e.to_string())
@@ -290,6 +325,8 @@ pub enum Expression {
     Literal(Spanned<Literal>),
     Logical(Spanned<LogicalExpression>),
     Loop(Spanned<LoopExpression>),
+    MemberAccess(Spanned<MemberAccessExpression>),
+    MethodCall(Spanned<MethodCallExpression>),
     Negation(Box<Spanned<Expression>>),
     Priority(Box<Spanned<Expression>>),
     Return(Box<Spanned<Expression>>),
@@ -314,6 +351,8 @@ impl std::fmt::Display for Expression {
             Expression::Literal(l) => write!(f, "{}", l),
             Expression::Logical(e) => write!(f, "{}", e),
             Expression::Loop(e) => write!(f, "{}", e),
+            Expression::MemberAccess(e) => write!(f, "{}", e),
+            Expression::MethodCall(e) => write!(f, "{}", e),
             Expression::Negation(e) => write!(f, "(-{})", e),
             Expression::Priority(e) => write!(f, "({})", e),
             Expression::Return(e) => write!(f, "(return {})", e),
@@ -323,3 +362,4 @@ impl std::fmt::Display for Expression {
         }
     }
 }
+
