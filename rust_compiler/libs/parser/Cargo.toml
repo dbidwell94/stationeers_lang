@@ -11,3 +11,4 @@ lsp-types = { workspace = true }
 
 [dev-dependencies]
 anyhow = { version = "1" }
+pretty_assertions = "1.4"

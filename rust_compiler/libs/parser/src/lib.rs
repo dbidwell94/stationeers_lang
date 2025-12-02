@@ -1,3 +1,4 @@
+mod macros;
 #[cfg(test)]
 mod test;
 
@@ -13,6 +14,10 @@ use tokenizer::{
     token::{Keyword, Symbol, Token, TokenType},
 };
 use tree_node::*;
+
+pub trait Documentation {
+    fn docs(&self) -> String;
+}
 
 #[macro_export]
 /// A macro to create a boxed value.

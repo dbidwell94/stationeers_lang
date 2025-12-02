@@ -6,9 +6,11 @@ macro_rules! parser {
 }
 
 mod blocks;
+mod docs;
 use super::Parser;
 use super::Tokenizer;
 use anyhow::Result;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn test_unsupported_keywords() -> Result<()> {
@@ -99,16 +101,16 @@ fn test_priority_expression() -> Result<()> {
 
 #[test]
 fn test_binary_expression() -> Result<()> {
-    let expr = parser!("4 ** 2 + 5 ** 2").parse()?.unwrap();
+    let expr = parser!("4 ** 2 + 5 ** 2;").parse()?.unwrap();
     assert_eq!("((4 ** 2) + (5 ** 2))", expr.to_string());
 
-    let expr = parser!("2 ** 3 ** 4").parse()?.unwrap();
+    let expr = parser!("2 ** 3 ** 4;").parse()?.unwrap();
     assert_eq!("(2 ** (3 ** 4))", expr.to_string());
 
-    let expr = parser!("45 * 2 - 15 / 5 + 5 ** 2").parse()?.unwrap();
+    let expr = parser!("45 * 2 - 15 / 5 + 5 ** 2;").parse()?.unwrap();
     assert_eq!("(((45 * 2) - (15 / 5)) + (5 ** 2))", expr.to_string());
 
-    let expr = parser!("(5 - 2) * 10").parse()?.unwrap();
+    let expr = parser!("(5 - 2) * 10;").parse()?.unwrap();
     assert_eq!("((5 - 2) * 10)", expr.to_string());
 
     Ok(())

@@ -1,73 +1,107 @@
-use crate::tree_node::{Expression, Literal, Spanned};
-
 use super::LiteralOrVariable;
+use crate::tree_node::{Expression, Literal, Spanned};
+use crate::{Documentation, documented};
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Math {
-    /// Returns the angle in radians whose cosine is the specified number.
-    /// ## In Game
-    /// `acos r? a(r?|num)`
-    Acos(LiteralOrVariable),
-    /// Returns the angle in radians whose sine is the specified number.
-    /// ## In Game
-    /// `asin r? a(r?|num)`
-    Asin(LiteralOrVariable),
-    /// Returns the angle in radians whose tangent is the specified number.
-    /// ## In Game
-    /// `atan r? a(r?|num)`
-    Atan(LiteralOrVariable),
-    /// Returns the angle in radians whose tangent is the quotient of the specified numbers.
-    /// ## In Game
-    /// `atan2 r? a(r?|num) b(r?|num)`
-    Atan2(LiteralOrVariable, LiteralOrVariable),
-    /// Gets the absolute value of a number.
-    /// ## In Game
-    /// `abs r? a(r?|num)`
-    Abs(LiteralOrVariable),
-    /// Rounds a number up to the nearest whole number.
-    /// ## In Game
-    /// `ceil r? a(r?|num)`
-    Ceil(LiteralOrVariable),
-    /// Returns the cosine of the specified angle in radians.
-    /// ## In Game
-    /// cos r? a(r?|num)
-    Cos(LiteralOrVariable),
-    /// Rounds a number down to the nearest whole number.
-    /// ## In Game
-    /// `floor r? a(r?|num)`
-    Floor(LiteralOrVariable),
-    /// Computes the natural logarithm of a number.
-    /// ## In Game
-    /// `log r? a(r?|num)`
-    Log(LiteralOrVariable),
-    /// Computes the maximum of two numbers.
-    /// ## In Game
-    /// `max r? a(r?|num) b(r?|num)`
-    Max(LiteralOrVariable, LiteralOrVariable),
-    /// Computes the minimum of two numbers.
-    /// ## In Game
-    /// `min r? a(r?|num) b(r?|num)`
-    Min(LiteralOrVariable, LiteralOrVariable),
-    /// Gets a random number between 0 and 1.
-    /// ## In Game
-    /// `rand r?`
-    Rand,
-    /// Returns the sine of the specified angle in radians.
-    /// ## In Game
-    /// `sin r? a(r?|num)`
-    Sin(LiteralOrVariable),
-    /// Computes the square root of a number.
-    /// ## In Game
-    /// `sqrt r? a(r?|num)`
-    Sqrt(LiteralOrVariable),
-    /// Returns the tangent of the specified angle in radians.
-    /// ## In Game
-    /// `tan r? a(r?|num)`
-    Tan(LiteralOrVariable),
-    /// Truncates a number by removing the decimal portion.
-    /// ## In Game
-    /// `trunc r? a(r?|num)`
-    Trunc(LiteralOrVariable),
+documented! {
+    #[derive(Debug, PartialEq, Eq)]
+    pub enum Math {
+        /// Returns the angle in radians whose cosine is the specified number.
+        /// ## IC10
+        /// `acos r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).acos();`
+        Acos(LiteralOrVariable),
+        /// Returns the angle in radians whose sine is the specified number.
+        /// ## IC10
+        /// `asin r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).asin();`
+        Asin(LiteralOrVariable),
+        /// Returns the angle in radians whose tangent is the specified number.
+        /// ## IC10
+        /// `atan r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).atan();`
+        Atan(LiteralOrVariable),
+        /// Returns the angle in radians whose tangent is the quotient of the specified numbers.
+        /// ## IC10
+        /// `atan2 r? a(r?|num) b(r?|num)`
+        /// ## Slang
+        /// `(number|var).atan2((number|var));`
+        Atan2(LiteralOrVariable, LiteralOrVariable),
+        /// Gets the absolute value of a number.
+        /// ## IC10
+        /// `abs r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).abs();`
+        Abs(LiteralOrVariable),
+        /// Rounds a number up to the nearest whole number.
+        /// ## IC10
+        /// `ceil r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).ceil();`
+        Ceil(LiteralOrVariable),
+        /// Returns the cosine of the specified angle in radians.
+        /// ## IC10
+        /// `cos r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).cos();`
+        Cos(LiteralOrVariable),
+        /// Rounds a number down to the nearest whole number.
+        /// ## In Game
+        /// `floor r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).floor();`
+        Floor(LiteralOrVariable),
+        /// Computes the natural logarithm of a number.
+        /// ## IC10
+        /// `log r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).log();`
+        Log(LiteralOrVariable),
+        /// Computes the maximum of two numbers.
+        /// ## IC10
+        /// `max r? a(r?|num) b(r?|num)`
+        /// ## Slang
+        /// `(number|var).max((number|var));`
+        Max(LiteralOrVariable, LiteralOrVariable),
+        /// Computes the minimum of two numbers.
+        /// ## IC10
+        /// `min r? a(r?|num) b(r?|num)`
+        /// ## Slang
+        /// `(number|var).min((number|var));`
+        Min(LiteralOrVariable, LiteralOrVariable),
+        /// Gets a random number between 0 and 1.
+        /// ## IC10
+        /// `rand r?`
+        /// ## Slang
+        /// `rand();`
+        Rand,
+        /// Returns the sine of the specified angle in radians.
+        /// ## IC10
+        /// `sin r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).sin();`
+        Sin(LiteralOrVariable),
+        /// Computes the square root of a number.
+        /// ## IC10
+        /// `sqrt r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).sqrt();`
+        Sqrt(LiteralOrVariable),
+        /// Returns the tangent of the specified angle in radians.
+        /// ## IC10
+        /// `tan r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).tan();`
+        Tan(LiteralOrVariable),
+        /// Truncates a number by removing the decimal portion.
+        /// ## IC10
+        /// `trunc r? a(r?|num)`
+        /// ## Slang
+        /// `(number|var).trunc();`
+        Trunc(LiteralOrVariable),
+    }
 }
 
 impl std::fmt::Display for Math {
@@ -93,71 +127,73 @@ impl std::fmt::Display for Math {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum System {
-    /// Pauses execution for exactly 1 tick and then resumes.
-    /// ## In Game
-    /// yield
-    Yield,
-    /// Represents a function that can be called to sleep for a certain amount of time.
-    /// ## In Game
-    /// `sleep a(r?|num)`
-    Sleep(Box<Spanned<Expression>>),
-    /// Gets the in-game hash for a specific prefab name.
-    /// ## In Game
-    /// `HASH("prefabName")`
-    Hash(Literal),
-    /// Represents a function which loads a device variable into a register.
-    /// ## In Game
-    /// `l r? d? var`
-    /// ## Examples
-    /// `l r0 d0 Setting`
-    /// `l r1 d5 Pressure`
-    LoadFromDevice(LiteralOrVariable, Literal),
-    /// Function which gets a LogicType from all connected network devices that match
-    /// the provided device hash and name, aggregating them via a batchMode
-    /// ## In Game
-    /// lbn r? deviceHash nameHash logicType batchMode
-    /// ## Examples
-    /// lbn r0 HASH("StructureWallLight") HASH("wallLight") On Minimum
-    LoadBatchNamed(
-        LiteralOrVariable,
-        Box<Spanned<Expression>>,
-        Literal,
-        Literal,
-    ),
-    /// Loads a LogicType from all connected network devices, aggregating them via a
-    /// batchMode
-    /// ## In Game
-    /// lb r? deviceHash logicType batchMode
-    /// ## Examples
-    /// lb r0 HASH("StructureWallLight") On Minimum
-    LoadBatch(LiteralOrVariable, Literal, Literal),
-    /// Represents a function which stores a setting into a specific device.
-    /// ## In Game
-    /// `s d? logicType r?`
-    /// ## Example
-    /// `s d0 Setting r0`
-    SetOnDevice(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
-    /// Represents a function which stores a setting to all devices that match
-    /// the given deviceHash
-    /// ## In Game
-    /// `sb deviceHash logicType r?`
-    /// ## Example
-    /// `sb HASH("Doors") Lock 1`
-    SetOnDeviceBatched(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
-    /// Represents a function which stores a setting to all devices that match
-    /// both the given deviceHash AND the given nameHash
-    /// ## In Game
-    /// `sbn deviceHash nameHash logicType r?`
-    /// ## Example
-    /// `sbn HASH("Doors") HASH("Exterior") Lock 1`
-    SetOnDeviceBatchedNamed(
-        LiteralOrVariable,
-        LiteralOrVariable,
-        Literal,
-        Box<Spanned<Expression>>,
-    ),
+documented! {
+    #[derive(Debug, PartialEq, Eq)]
+    pub enum System {
+        /// Pauses execution for exactly 1 tick and then resumes.
+        /// ## In Game
+        /// yield
+        Yield,
+        /// Represents a function that can be called to sleep for a certain amount of time.
+        /// ## In Game
+        /// `sleep a(r?|num)`
+        Sleep(Box<Spanned<Expression>>),
+        /// Gets the in-game hash for a specific prefab name.
+        /// ## In Game
+        /// `HASH("prefabName")`
+        Hash(Literal),
+        /// Represents a function which loads a device variable into a register.
+        /// ## In Game
+        /// `l r? d? var`
+        /// ## Examples
+        /// `l r0 d0 Setting`
+        /// `l r1 d5 Pressure`
+        LoadFromDevice(LiteralOrVariable, Literal),
+        /// Function which gets a LogicType from all connected network devices that match
+        /// the provided device hash and name, aggregating them via a batchMode
+        /// ## In Game
+        /// lbn r? deviceHash nameHash logicType batchMode
+        /// ## Examples
+        /// lbn r0 HASH("StructureWallLight") HASH("wallLight") On Minimum
+        LoadBatchNamed(
+            LiteralOrVariable,
+            Box<Spanned<Expression>>,
+            Literal,
+            Literal,
+        ),
+        /// Loads a LogicType from all connected network devices, aggregating them via a
+        /// batchMode
+        /// ## In Game
+        /// lb r? deviceHash logicType batchMode
+        /// ## Examples
+        /// lb r0 HASH("StructureWallLight") On Minimum
+        LoadBatch(LiteralOrVariable, Literal, Literal),
+        /// Represents a function which stores a setting into a specific device.
+        /// ## In Game
+        /// `s d? logicType r?`
+        /// ## Example
+        /// `s d0 Setting r0`
+        SetOnDevice(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
+        /// Represents a function which stores a setting to all devices that match
+        /// the given deviceHash
+        /// ## In Game
+        /// `sb deviceHash logicType r?`
+        /// ## Example
+        /// `sb HASH("Doors") Lock 1`
+        SetOnDeviceBatched(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
+        /// Represents a function which stores a setting to all devices that match
+        /// both the given deviceHash AND the given nameHash
+        /// ## In Game
+        /// `sbn deviceHash nameHash logicType r?`
+        /// ## Example
+        /// `sbn HASH("Doors") HASH("Exterior") Lock 1`
+        SetOnDeviceBatchedNamed(
+            LiteralOrVariable,
+            LiteralOrVariable,
+            Literal,
+            Box<Spanned<Expression>>,
+        ),
+    }
 }
 
 impl std::fmt::Display for System {
@@ -229,4 +265,3 @@ impl SysCall {
         )
     }
 }
-
