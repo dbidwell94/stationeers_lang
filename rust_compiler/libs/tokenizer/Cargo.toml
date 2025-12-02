@@ -7,6 +7,7 @@ edition = "2024"
 rust_decimal = { workspace = true }
 quick-error = { workspace = true }
 lsp-types = { workspace = true }
+helpers = { path = "../helpers" }
 
 [dev-dependencies]
 anyhow = { version = "^1" }

@@ -82,4 +82,3 @@ macro_rules! documented {
         }
     };
 }
-

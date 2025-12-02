@@ -1,3 +1,4 @@
+use helpers::prelude::*;
 use rust_decimal::Decimal;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -264,28 +265,130 @@ impl std::fmt::Display for Symbol {
     }
 }
 
-#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
-pub enum Keyword {
-    /// Represents the `continue` keyword
-    Continue,
-    /// Represents the `let` keyword
-    Let,
-    /// Represents the `fn` keyword
-    Fn,
-    /// Represents the `if` keyword
-    If,
-    /// Represents the `device` keyword. Useful for defining a device at a specific address (ex. d0, d1, d2, etc.)
-    Device,
-    /// Represents the `else` keyword
-    Else,
-    /// Represents the `return` keyword
-    Return,
-    /// Represents the `enum` keyword
-    Enum,
-    /// Represents the `loop` keyword
-    Loop,
-    /// Represents the `break` keyword
-    Break,
-    /// Represents the `while` keyword
-    While,
+documented! {
+    #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
+    pub enum Keyword {
+        /// Represents the `continue` keyword. This will allow you to bypass the current iteration in a loop and start the next one.
+        /// ## Example
+        /// ```
+        /// let item = 0;
+        /// loop {
+        ///   if (item % 2 == 0) {
+        ///     // This will NOT increment `item` and will continue with the next iteration of the
+        ///     // loop
+        ///     continue;
+        ///   }
+        ///   item = item + 1;
+        /// }
+        /// ```
+        Continue,
+        /// Represents the `let` keyword, used to declare variables within Slang.
+        /// ## Example
+        /// ```
+        /// // This variable now exists either in a register or the stack depending on how many
+        /// // free registers were available when declaring it.
+        /// let item = 0;
+        /// ```
+        Let,
+        /// Represents the `fn` keyword, used to declare functions within Slang.
+        /// ## Example
+        /// ```
+        ///  // This allows you to now call `doSomething` with specific arguments.
+        ///  fn doSomething(arg1, arg2) {
+        ///
+        ///  }
+        /// ```
+        Fn,
+        /// Represents the `if` keyword, allowing you to create branched logic.
+        /// ## Example
+        /// ```
+        /// let i = 0;
+        /// if (i == 0) {
+        ///   i = 1;
+        /// }
+        /// // At this line, `i` is now `1`
+        /// ```
+        If,
+        /// Represents the `device` keyword. Useful for defining a device at a specific address
+        /// (ex. d0, d1, d2, etc.). This also allows you to perform direct operations ON a device.
+        /// ## Example
+        /// ```
+        /// device self = "db";
+        ///
+        /// // This is the same as `s db Setting 123`
+        /// self.Setting = 123;
+        /// ```
+        Device,
+        /// Represents the `else` keyword. Useful if you want to check a condition but run run
+        /// seperate logic in case that condition fails.
+        /// ## Example
+        /// ```
+        /// device self = "db";
+        /// let i = 0;
+        /// if (i < 0) {
+        ///   self.Setting = 0;
+        /// } else {
+        ///   self.Setting = 1;
+        /// }
+        /// // Here, the `Setting` on the current housing is `1` because i was NOT less than 0
+        /// ```
+        Else,
+        /// Represents the `return` keyword. Allows you to pass values from a function back to
+        /// the caller.
+        /// ## Example
+        /// ```
+        /// fn doSomething() {
+        ///   return 1 + 2;
+        /// }
+        ///
+        /// // `returnedValue` now holds the value `3`
+        /// let returnedValue = doSomething();
+        /// ```
+        Return,
+        /// Represents the `enum` keyword. This is currently not supported, but is kept as a
+        /// reserved keyword in the future case that this is implemented.
+        Enum,
+        /// Represents the `loop` keyword. This allows you to create an infinate loop, but can be
+        /// broken with the `break` keyword.
+        /// ## Example
+        /// ```
+        /// device self = "db";
+        /// let i = 0;
+        /// loop {
+        ///   i = i + 1;
+        ///   // The current housing will infinately increment it's `Setting` value.
+        ///   self.Setting = i;
+        /// }
+        /// ```
+        Loop,
+        /// Represents the `break` keyword. This allows you to "break out of" a loop prematurely,
+        /// such as when an if() conditon is true, etc.
+        /// ## Example
+        /// ```
+        /// let i = 0;
+        /// // This loop will run until the value of `i` is greater than 10,000,
+        /// // which will then trigger the `break` keyword and it will stop looping
+        /// loop {
+        ///  if (i > 10_000) {
+        ///    break;
+        ///  }
+        ///  i = i + 1;
+        /// }
+        /// ```
+        Break,
+        /// Represents the `while` keyword. This is similar to the `loop` keyword but different in
+        /// that you don't need an `if` statement to break out of a loop, that is handled
+        /// automatically when invoking `while`
+        /// ## Example
+        /// ```
+        /// let i = 0;
+        /// // This loop will run until the value of `i` is greater than 10,000, in which case the
+        /// // while loop will automatically stop running and code will continue AFTER the last
+        /// // bracket.
+        /// while (i < 10_000) {
+        ///   i = i + 1;
+        /// }
+        /// ```
+        While,
+    }
 }

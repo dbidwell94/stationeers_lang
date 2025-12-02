@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 quick-error = { workspace = true }
 tokenizer = { path = "../tokenizer" }
+helpers = { path = "../helpers" }
 lsp-types = { workspace = true }
 
 

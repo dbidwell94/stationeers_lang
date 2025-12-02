@@ -40,6 +40,7 @@ rust_decimal = { workspace = true }
 tokenizer = { path = "libs/tokenizer" }
 parser = { path = "libs/parser" }
 compiler = { path = "libs/compiler" }
+helpers = { path = "libs/helpers" }
 safer-ffi = { workspace = true }
 
 [dev-dependencies]

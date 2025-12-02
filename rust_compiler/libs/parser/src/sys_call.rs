@@ -1,6 +1,6 @@
 use super::LiteralOrVariable;
 use crate::tree_node::{Expression, Literal, Spanned};
-use crate::{Documentation, documented};
+use helpers::prelude::*;
 
 documented! {
     #[derive(Debug, PartialEq, Eq)]
@@ -48,7 +48,7 @@ documented! {
         /// `(number|var).cos();`
         Cos(LiteralOrVariable),
         /// Rounds a number down to the nearest whole number.
-        /// ## In Game
+        /// ## IC10
         /// `floor r? a(r?|num)`
         /// ## Slang
         /// `(number|var).floor();`
@@ -131,30 +131,35 @@ documented! {
     #[derive(Debug, PartialEq, Eq)]
     pub enum System {
         /// Pauses execution for exactly 1 tick and then resumes.
-        /// ## In Game
-        /// yield
+        /// ## IC10
+        /// `yield`
+        /// ## Slang
+        /// `yield();`
         Yield,
         /// Represents a function that can be called to sleep for a certain amount of time.
-        /// ## In Game
+        /// ## IC10
         /// `sleep a(r?|num)`
+        /// ## Slang
+        /// `sleep(number|var);`
         Sleep(Box<Spanned<Expression>>),
         /// Gets the in-game hash for a specific prefab name.
-        /// ## In Game
+        /// ## IC10
         /// `HASH("prefabName")`
+        /// ## Slang
+        /// `HASH("prefabName");`
         Hash(Literal),
         /// Represents a function which loads a device variable into a register.
-        /// ## In Game
+        /// ## IC10
         /// `l r? d? var`
-        /// ## Examples
-        /// `l r0 d0 Setting`
-        /// `l r1 d5 Pressure`
+        /// ## Slang
+        /// `loadFromDevice(deviceType, "LogicType");`
         LoadFromDevice(LiteralOrVariable, Literal),
         /// Function which gets a LogicType from all connected network devices that match
         /// the provided device hash and name, aggregating them via a batchMode
-        /// ## In Game
-        /// lbn r? deviceHash nameHash logicType batchMode
-        /// ## Examples
-        /// lbn r0 HASH("StructureWallLight") HASH("wallLight") On Minimum
+        /// ## IC10
+        /// `lbn r? deviceHash nameHash logicType batchMode`
+        /// ## Slang
+        /// `loadFromDeviceBatchedNamed(deviceHash, deviceName, "LogicType", "BatchMode");`
         LoadBatchNamed(
             LiteralOrVariable,
             Box<Spanned<Expression>>,
@@ -163,30 +168,28 @@ documented! {
         ),
         /// Loads a LogicType from all connected network devices, aggregating them via a
         /// batchMode
-        /// ## In Game
-        /// lb r? deviceHash logicType batchMode
-        /// ## Examples
-        /// lb r0 HASH("StructureWallLight") On Minimum
+        /// ## IC10
+        /// `lb r? deviceHash logicType batchMode`
+        /// ## Slang
+        /// `loadFromDeviceBatched(deviceHash, "Variable", "LogicType");`
         LoadBatch(LiteralOrVariable, Literal, Literal),
         /// Represents a function which stores a setting into a specific device.
-        /// ## In Game
+        /// ## IC10
         /// `s d? logicType r?`
-        /// ## Example
-        /// `s d0 Setting r0`
+        /// ## Slang
+        /// `setOnDevice(deviceType, "Variable", (number|var));`
         SetOnDevice(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
         /// Represents a function which stores a setting to all devices that match
         /// the given deviceHash
-        /// ## In Game
+        /// ## IC10
         /// `sb deviceHash logicType r?`
-        /// ## Example
-        /// `sb HASH("Doors") Lock 1`
         SetOnDeviceBatched(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
         /// Represents a function which stores a setting to all devices that match
         /// both the given deviceHash AND the given nameHash
-        /// ## In Game
+        /// ## IC10
         /// `sbn deviceHash nameHash logicType r?`
-        /// ## Example
-        /// `sbn HASH("Doors") HASH("Exterior") Lock 1`
+        /// ## Slang
+        /// `setOnDeviceBatchedNamed(deviceType, nameHash, "LogicType", (number|var))`
         SetOnDeviceBatchedNamed(
             LiteralOrVariable,
             LiteralOrVariable,
@@ -224,6 +227,15 @@ pub enum SysCall {
     System(System),
     /// Represents any mathmatical function that can be called.
     Math(Math),
+}
+
+impl Documentation for SysCall {
+    fn docs(&self) -> String {
+        match self {
+            Self::System(s) => s.docs(),
+            Self::Math(m) => m.docs(),
+        }
+    }
 }
 
 impl std::fmt::Display for SysCall {

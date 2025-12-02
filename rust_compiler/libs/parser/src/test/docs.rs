@@ -1,5 +1,5 @@
-use crate::Documentation;
 use crate::sys_call;
+use helpers::Documentation;
 use pretty_assertions::assert_eq;
 
 #[test]
