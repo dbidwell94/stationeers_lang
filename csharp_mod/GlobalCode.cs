@@ -37,7 +37,7 @@ public static class GlobalCode
 
     public static string? GetEncoded(Guid reference)
     {
-        if (codeDict.ContainsKey(reference))
+        if (!codeDict.ContainsKey(reference))
             return null;
 
         return codeDict[reference];
