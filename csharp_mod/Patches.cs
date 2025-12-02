@@ -214,7 +214,6 @@ public static class SlangPatches
     [HarmonyPrefix]
     public static void isc_ButtonInputCancel()
     {
-        L.Info("ButtonInputCancel called on the InputSourceCode static instance.");
         if (_currentlyEditingMotherboard is null || _motherboardCachedCode is null)
         {
             return;

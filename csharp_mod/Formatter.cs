@@ -4,15 +4,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Timers;
+using Cysharp.Threading.Tasks;
 using StationeersIC10Editor;
 
 public class SlangFormatter : ICodeFormatter
 {
     private CancellationTokenSource? _lspCancellationToken;
-    private readonly SynchronizationContext? _mainThreadContext;
-    private volatile bool IsDiagnosing = false;
+    private object _tokenLock = new();
 
     public static readonly uint ColorInstruction = ColorFromHTML("#ffff00");
     public static readonly uint ColorString = ColorFromHTML("#ce9178");
@@ -20,10 +19,39 @@ public class SlangFormatter : ICodeFormatter
     private HashSet<uint> _linesWithErrors = new();
 
     public SlangFormatter()
+        : base()
     {
-        // 1. Capture the Main Thread context.
-        // This works because the Editor instantiates this class on the main thread.
-        _mainThreadContext = SynchronizationContext.Current;
+        OnCodeChanged += HandleCodeChanged;
+    }
+
+    public static double MatchingScore(string input)
+    {
+        // Empty input is not valid Slang
+        if (string.IsNullOrWhiteSpace(input))
+            return 0d;
+
+        // Run the compiler to get diagnostics
+        var diagnostics = Marshal.DiagnoseSource(input);
+
+        // Count the number of actual Errors (Severity 1).
+        // We ignore Warnings (2), Info (3), etc.
+        double errorCount = diagnostics.Count(d => d.Severity == 1);
+
+        // Get the total line count to calculate error density
+        double lineCount = input.Split('\n').Length;
+
+        // Prevent division by zero
+        if (lineCount == 0)
+            return 0d;
+
+        // Calculate score: Start at 1.0 (100%) and subtract the ratio of errors per line.
+        // Example: 10 lines with 0 errors = 1.0
+        // Example: 10 lines with 2 errors = 0.8
+        // Example: 10 lines with 10+ errors = 0.0
+        double score = 1.0d - (errorCount / lineCount);
+
+        // Clamp the result between 0 and 1
+        return Math.Max(0d, Math.Min(1d, score));
     }
 
     public override string Compile()
@@ -33,64 +61,64 @@ public class SlangFormatter : ICodeFormatter
 
     public override Line ParseLine(string line)
     {
-        HandleCodeChanged();
         return Marshal.TokenizeLine(line);
     }
 
     private void HandleCodeChanged()
     {
-        if (IsDiagnosing)
-            return;
+        CancellationToken token;
+        string inputSrc;
+        lock (_tokenLock)
+        {
+            _lspCancellationToken?.Cancel();
+            _lspCancellationToken = new CancellationTokenSource();
+            token = _lspCancellationToken.Token;
+            inputSrc = this.RawText;
+        }
 
-        _lspCancellationToken?.Cancel();
-        _lspCancellationToken?.Dispose();
-
-        _lspCancellationToken = new CancellationTokenSource();
-
-        _ = Task.Run(() => HandleLsp(_lspCancellationToken.Token), _lspCancellationToken.Token);
+        HandleLsp(inputSrc, token).Forget();
     }
 
     private void OnTimerElapsed(object sender, ElapsedEventArgs e) { }
 
-    private async Task HandleLsp(CancellationToken cancellationToken)
+    private async UniTaskVoid HandleLsp(string inputSrc, CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(200, cancellationToken);
+            await UniTask.SwitchToThreadPool();
 
             if (cancellationToken.IsCancellationRequested)
-            {
                 return;
-            }
 
-            // 3. Dispatch the UI update to the Main Thread
-            if (_mainThreadContext != null)
-            {
-                // Post ensures ApplyDiagnostics runs on the captured thread (Main Thread)
-                _mainThreadContext.Post(_ => ApplyDiagnostics(), null);
-            }
-            else
-            {
-                // Fallback: If context is null (rare in Unity), try running directly
-                // but warn, as this might crash if not thread-safe.
-                L.Warning("SynchronizationContext was null. Attempting direct update (risky).");
-                ApplyDiagnostics();
-            }
+            await System.Threading.Tasks.Task.Delay(200, cancellationToken: cancellationToken);
+
+            if (cancellationToken.IsCancellationRequested)
+                return;
+
+            var dict = Marshal
+                .DiagnoseSource(inputSrc)
+                .GroupBy(d => d.Range.StartLine)
+                .ToDictionary(g => g.Key);
+
+            if (cancellationToken.IsCancellationRequested)
+                return;
+
+            await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
+
+            ApplyDiagnostics(dict);
         }
-        finally { }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            L.Error(ex.Message);
+        }
     }
 
     // This runs on the Main Thread
-    private void ApplyDiagnostics()
+    private void ApplyDiagnostics(Dictionary<uint, IGrouping<uint, Diagnostic>> dict)
     {
-        List<Diagnostic> diagnosis = Marshal.DiagnoseSource(this.RawText);
-
-        var dict = diagnosis.GroupBy(d => d.Range.StartLine).ToDictionary(g => g.Key);
-
         var linesToRefresh = new HashSet<uint>(dict.Keys);
         linesToRefresh.UnionWith(_linesWithErrors);
-
-        IsDiagnosing = true;
 
         foreach (var lineIndex in linesToRefresh)
         {
@@ -134,7 +162,5 @@ public class SlangFormatter : ICodeFormatter
         }
 
         _linesWithErrors = new HashSet<uint>(dict.Keys);
-
-        IsDiagnosing = false;
     }
 }

@@ -41,6 +41,10 @@
         <HintPath>$(ManagedDir)/Assembly-CSharp.dll</HintPath>
         <Private>False</Private>
       </Reference>
+      <Reference Include="UniTask">
+        <HintPath>$(ManagedDir)/UniTask.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
 
       <Reference Include="IC10Editor.dll">
         <HintPath>./ref/IC10Editor.dll</HintPath>
