@@ -5,6 +5,8 @@ mod macros;
 pub trait Documentation {
     /// Retreive documentation for this specific item.
     fn docs(&self) -> String;
+
+    fn get_all_documentation() -> Vec<(&'static str, String)>;
 }
 
 pub mod prelude {

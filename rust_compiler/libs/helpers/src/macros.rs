@@ -55,7 +55,7 @@ macro_rules! documented {
             )*
         }
 
-        // 2. Implement the Trait
+        // 2. Implement the Documentation Trait
         impl Documentation for $name {
             fn docs(&self) -> String {
                 match self {
@@ -79,6 +79,33 @@ macro_rules! documented {
                     )*
                 }
             }
+
+            // 3. Implement Static Documentation Provider
+            #[allow(dead_code)]
+            fn get_all_documentation() -> Vec<(&'static str, String)> {
+                vec![
+                    $(
+                        (
+                            stringify!($variant),
+                            {
+                                // Re-use the same extraction logic
+                                let doc_lines: &[Option<&str>] = &[
+                                    $(
+                                        documented!(@doc_filter #[ $($variant_attr)* ])
+                                    ),*
+                                ];
+                                doc_lines.iter()
+                                    .filter_map(|&d| d)
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                                    .trim()
+                                    .to_string()
+                            }
+                        )
+                    ),*
+                ]
+            }
         }
     };
 }
+

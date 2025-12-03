@@ -236,6 +236,13 @@ impl Documentation for SysCall {
             Self::Math(m) => m.docs(),
         }
     }
+
+    fn get_all_documentation() -> Vec<(&'static str, String)> {
+        let mut all_docs = System::get_all_documentation();
+        all_docs.extend(Math::get_all_documentation());
+
+        all_docs
+    }
 }
 
 impl std::fmt::Display for SysCall {

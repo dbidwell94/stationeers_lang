@@ -3,6 +3,7 @@ namespace Slang;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Assets.Scripts.UI;
 using StationeersIC10Editor;
 
 public static unsafe class SlangExtensions
@@ -132,5 +133,35 @@ public static unsafe class SlangExtensions
             default:
                 return SlangFormatter.ColorDefault;
         }
+    }
+
+    public static unsafe List<StationpediaPage> ToList(this Vec_FfiDocumentedItem_t vec)
+    {
+        var toReturn = new List<StationpediaPage>((int)vec.len);
+
+        var currentPtr = vec.ptr;
+
+        for (int i = 0; i < (int)vec.len; i++)
+        {
+            var doc = currentPtr[i];
+            var docItemName = doc.item_name.AsString();
+
+            var formattedText = TextMeshProFormatter.FromMarkdown(doc.docs.AsString());
+
+            var pediaPage = new StationpediaPage(
+                $"slang-item-{docItemName}",
+                docItemName,
+                formattedText
+            );
+
+            pediaPage.Text = formattedText;
+            pediaPage.Description = formattedText;
+            pediaPage.ParsePage();
+
+            toReturn.Add(pediaPage);
+        }
+
+        Ffi.free_docs_vec(vec);
+        return toReturn;
     }
 }

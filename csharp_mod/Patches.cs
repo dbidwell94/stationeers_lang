@@ -224,4 +224,14 @@ public static class SlangPatches
         _currentlyEditingMotherboard = null;
         _motherboardCachedCode = null;
     }
+
+    [HarmonyPatch(typeof(Stationpedia), nameof(Stationpedia.Regenerate))]
+    [HarmonyPostfix]
+    public static void Stationpedia_Regenerate()
+    {
+        foreach (var page in Marshal.GetSlangDocs())
+        {
+            Stationpedia.Register(page);
+        }
+    }
 }

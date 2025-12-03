@@ -95,6 +95,10 @@ impl Documentation for TokenType {
             _ => "".into(),
         }
     }
+
+    fn get_all_documentation() -> Vec<(&'static str, String)> {
+        Keyword::get_all_documentation()
+    }
 }
 
 impl From<TokenType> for u32 {
