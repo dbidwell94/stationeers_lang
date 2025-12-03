@@ -1252,7 +1252,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_block<'v>(
         &mut self,
         mut expr: BlockExpression,
-        scope: &mut VariableScope<'v>,
+        parent_scope: &mut VariableScope<'v>,
     ) -> Result<(), Error> {
         // First, sort the expressions to ensure functions are hoisted
         expr.0.sort_by(|a, b| {
@@ -1267,10 +1267,12 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
         });
 
+        let mut scope = VariableScope::scoped(parent_scope);
+
         for expr in expr.0 {
             if !self.declared_main
                 && !matches!(expr.node, Expression::Function(_))
-                && !scope.has_parent()
+                && !parent_scope.has_parent()
             {
                 self.write_output("main:")?;
                 self.declared_main = true;
@@ -1278,11 +1280,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
             match expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(*ret_expr, scope)?;
+                    self.expression_return(*ret_expr, &mut scope)?;
                 }
                 _ => {
                     // Swallow errors within expressions so block can continue
-                    if let Err(e) = self.expression(expr, scope).and_then(|result| {
+                    if let Err(e) = self.expression(expr, &mut scope).and_then(|result| {
                         // If the expression was a statement that returned a temp result (e.g. `1 + 2;` line),
                         // we must free it to avoid leaking registers.
                         if let Some(comp_res) = result
@@ -1296,6 +1298,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     }
                 }
             }
+        }
+
+        if scope.stack_offset() > 0 {
+            self.write_output(format!("sub sp sp {}", scope.stack_offset()))?;
         }
 
         Ok(())
@@ -1700,4 +1706,3 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         Ok(())
     }
 }
-
