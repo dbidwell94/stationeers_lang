@@ -42,9 +42,9 @@ public static unsafe class SlangExtensions
      * Rust allocation after the List is created, there is no need to Drop this memory.
      * </summary>
      */
-    public static Line ToLine(this Vec_FfiToken_t vec, string sourceText)
+    public static StyledLine ToLine(this Vec_FfiToken_t vec, string sourceText)
     {
-        var list = new Line(sourceText);
+        var tokens = new List<SemanticToken>();
 
         var currentPtr = vec.ptr;
 
@@ -63,9 +63,8 @@ public static unsafe class SlangExtensions
                 0,
                 colIndex,
                 token.length,
-                color,
                 token.token_kind,
-                0,
+                color,
                 token.tooltip.AsString()
             );
 
@@ -76,12 +75,12 @@ public static unsafe class SlangExtensions
                 semanticToken.Data = errMsg;
                 semanticToken.Color = ICodeFormatter.ColorError;
             }
-            list.AddToken(semanticToken);
+            tokens.Add(semanticToken);
         }
 
         Ffi.free_ffi_token_vec(vec);
 
-        return list;
+        return new StyledLine(sourceText, tokens);
     }
 
     public static unsafe List<Diagnostic> ToList(this Vec_FfiDiagnostic_t vec)

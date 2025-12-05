@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Timers;
 using Cysharp.Threading.Tasks;
 using StationeersIC10Editor;
 
@@ -70,8 +69,9 @@ public class SlangFormatter : ICodeFormatter
         return this.Lines.RawText;
     }
 
-    public override Line ParseLine(string line)
+    public override StyledLine ParseLine(string line)
     {
+        L.Debug($"Parsing line for syntax highlighting: {line}");
         return Marshal.TokenizeLine(line);
     }
 
@@ -89,8 +89,6 @@ public class SlangFormatter : ICodeFormatter
 
         HandleLsp(inputSrc, token).Forget();
     }
-
-    private void OnTimerElapsed(object sender, ElapsedEventArgs e) { }
 
     private async UniTaskVoid HandleLsp(string inputSrc, CancellationToken cancellationToken)
     {
@@ -139,33 +137,26 @@ public class SlangFormatter : ICodeFormatter
             if (line is null)
                 continue;
 
-            line.ClearTokens();
-
-            Dictionary<int, SemanticToken> lineDict = Marshal
-                .TokenizeLine(line.Text)
-                .Tokens.ToDictionary((t) => t.Column);
-
             if (dict.ContainsKey(lineIndex))
             {
+                var tokens = new List<SemanticToken>();
                 foreach (var lineDiagnostic in dict[lineIndex])
                 {
-                    lineDict[(int)lineDiagnostic.Range.StartCol] = new SemanticToken
-                    {
-                        Column = Math.Abs((int)lineDiagnostic.Range.StartCol),
-                        Length = Math.Abs(
-                            (int)(lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol)
-                        ),
-                        Line = (int)lineIndex,
-                        IsError = true,
-                        Data = lineDiagnostic.Message,
-                        Color = SlangFormatter.ColorError,
-                    };
+                    tokens.Add(
+                        new SemanticToken(
+                            line: (int)lineIndex,
+                            column: Math.Abs((int)lineDiagnostic.Range.StartCol),
+                            length: Math.Abs(
+                                (int)(lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol)
+                            ),
+                            type: 0,
+                            style: ICodeFormatter.ColorError,
+                            data: lineDiagnostic.Message,
+                            isError: true
+                        )
+                    );
                 }
-            }
-
-            foreach (var token in lineDict.Values)
-            {
-                line.AddToken(token);
+                line.Update(tokens);
             }
         }
 
