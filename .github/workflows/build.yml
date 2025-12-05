@@ -23,7 +23,7 @@ jobs:
       # 2. Run Rust Tests
       # --manifest-path: Point to the nested Cargo.toml
       # --workspace: Test all crates (compiler, parser, tokenizer, helpers)
-      # --all-targets: Test lib, bin, and tests folder (skips doc-tests for speed)
+      # --all-targets: Test lib, bin, and tests folder (skips doc-tests because they are not valid Rust)
       - name: Run Rust Tests
         run: |
           docker run --rm \
