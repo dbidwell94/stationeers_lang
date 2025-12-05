@@ -3,6 +3,7 @@
 // r1 - r7   : Temporary Variables
 // r8 - r14  : Persistant Variables
 
+use parser::tree_node::Literal;
 use quick_error::quick_error;
 use std::collections::{HashMap, VecDeque};
 
@@ -43,11 +44,14 @@ pub enum VariableLocation {
     Persistant(u8),
     /// Represents a a stack offset (current stack - offset = variable loc)
     Stack(u16),
+    /// Represents a constant value and should be directly substituted as such.
+    Constant(Literal),
 }
 
 pub struct VariableScope<'a> {
     temporary_vars: VecDeque<u8>,
     persistant_vars: VecDeque<u8>,
+    constant_vars: HashMap<String, Literal>,
     var_lookup_table: HashMap<String, VariableLocation>,
     stack_offset: u16,
     parent: Option<&'a VariableScope<'a>>,
@@ -61,6 +65,7 @@ impl<'a> Default for VariableScope<'a> {
             persistant_vars: PERSIST.to_vec().into(),
             temporary_vars: TEMP.to_vec().into(),
             var_lookup_table: HashMap::new(),
+            constant_vars: HashMap::new(),
         }
     }
 }
@@ -93,6 +98,7 @@ impl<'a> VariableScope<'a> {
             parent: Option::Some(parent),
             temporary_vars: parent.temporary_vars.clone(),
             persistant_vars: parent.persistant_vars.clone(),
+            constant_vars: parent.constant_vars.clone(),
             ..Default::default()
         }
     }
@@ -140,6 +146,20 @@ impl<'a> VariableScope<'a> {
         self.var_lookup_table.insert(var_name, var_location.clone());
 
         Ok(var_location)
+    }
+
+    pub fn define_const(
+        &mut self,
+        var_name: impl Into<String>,
+        value: Literal,
+    ) -> Result<VariableLocation, Error> {
+        let var_name = var_name.into();
+        if self.constant_vars.contains_key(&var_name) {
+            return Err(Error::DuplicateVariable(var_name));
+        }
+
+        self.constant_vars.insert(var_name, value.clone());
+        Ok(VariableLocation::Constant(value))
     }
 
     pub fn get_location_of(&self, var_name: impl Into<String>) -> Result<VariableLocation, Error> {
@@ -190,7 +210,7 @@ impl<'a> VariableScope<'a> {
                     "Attempted to free a `let` variable.",
                 )));
             }
-            VariableLocation::Stack(_) => {}
+            _ => {}
         };
 
         Ok(())
