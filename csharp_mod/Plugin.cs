@@ -35,14 +35,15 @@ namespace Slang
         }
     }
 
-    [BepInPlugin(PluginGuid, PluginName, "0.1.0")]
+    [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
     [BepInDependency(StationeersIC10Editor.IC10EditorPlugin.PluginGuid)]
     public class SlangPlugin : BaseUnityPlugin
     {
         public const string PluginGuid = "com.biddydev.slang";
         public const string PluginName = "Slang";
+        public const string PluginVersion = "0.1.0";
 
-        public static Mod MOD = new Mod(PluginName, "0.1.0");
+        public static Mod MOD = new Mod(PluginName, PluginVersion);
 
         private Harmony? _harmony;
 
