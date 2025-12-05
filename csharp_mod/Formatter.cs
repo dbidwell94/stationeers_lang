@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Timers;
 using Cysharp.Threading.Tasks;
 using StationeersIC10Editor;
 
@@ -28,6 +27,7 @@ public class SlangFormatter : ICodeFormatter
     public static readonly uint ColorOperator = ColorFromHTML("#D4D4D4");
 
     private HashSet<uint> _linesWithErrors = new();
+    private int _lastLineCount = -1;
 
     public SlangFormatter()
         : base()
@@ -70,9 +70,23 @@ public class SlangFormatter : ICodeFormatter
         return this.Lines.RawText;
     }
 
-    public override Line ParseLine(string line)
+    public override StyledLine ParseLine(string line)
     {
-        return Marshal.TokenizeLine(line);
+        L.Debug($"Parsing line for syntax highlighting: {line}");
+
+        // We create the line first
+        var styledLine = new StyledLine(line);
+
+        // We get the semantic tokens (color + data)
+        var tokens = Marshal.TokenizeLine(line);
+
+        // We call update to create the basic tokens
+        styledLine.Update(tokens);
+
+        // CRITICAL FIX: We must manually re-attach metadata because StyledLine.Update() drops it.
+        ReattachMetadata(styledLine, tokens);
+
+        return styledLine;
     }
 
     private void HandleCodeChanged()
@@ -89,8 +103,6 @@ public class SlangFormatter : ICodeFormatter
 
         HandleLsp(inputSrc, token).Forget();
     }
-
-    private void OnTimerElapsed(object sender, ElapsedEventArgs e) { }
 
     private async UniTaskVoid HandleLsp(string inputSrc, CancellationToken cancellationToken)
     {
@@ -125,8 +137,27 @@ public class SlangFormatter : ICodeFormatter
     // This runs on the Main Thread
     private void ApplyDiagnostics(Dictionary<uint, IGrouping<uint, Diagnostic>> dict)
     {
-        var linesToRefresh = new HashSet<uint>(dict.Keys);
-        linesToRefresh.UnionWith(_linesWithErrors);
+        HashSet<uint> linesToRefresh;
+
+        // CRITICAL FIX FOR LINE SHIFTS:
+        // If the line count has changed (lines added/deleted), indices have shifted.
+        // We must refresh ALL lines to ensure any line that shifted into a new position
+        // gets scrubbed of its old visual state.
+        if (this.Lines.Count != _lastLineCount)
+        {
+            linesToRefresh = new HashSet<uint>();
+            for (int i = 0; i < this.Lines.Count; i++)
+            {
+                linesToRefresh.Add((uint)i);
+            }
+        }
+        else
+        {
+            linesToRefresh = new HashSet<uint>(dict.Keys);
+            linesToRefresh.UnionWith(_linesWithErrors);
+        }
+
+        _lastLineCount = this.Lines.Count;
 
         foreach (var lineIndex in linesToRefresh)
         {
@@ -139,36 +170,131 @@ public class SlangFormatter : ICodeFormatter
             if (line is null)
                 continue;
 
-            line.ClearTokens();
+            // 1. Get base syntax tokens
+            var allTokens = Marshal.TokenizeLine(line.Text);
 
-            Dictionary<int, SemanticToken> lineDict = Marshal
-                .TokenizeLine(line.Text)
-                .Tokens.ToDictionary((t) => t.Column);
-
+            // 2. Overlay error tokens if diagnostics exist for this line
             if (dict.ContainsKey(lineIndex))
             {
                 foreach (var lineDiagnostic in dict[lineIndex])
                 {
-                    lineDict[(int)lineDiagnostic.Range.StartCol] = new SemanticToken
-                    {
-                        Column = Math.Abs((int)lineDiagnostic.Range.StartCol),
-                        Length = Math.Abs(
-                            (int)(lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol)
-                        ),
-                        Line = (int)lineIndex,
-                        IsError = true,
-                        Data = lineDiagnostic.Message,
-                        Color = SlangFormatter.ColorError,
-                    };
+                    allTokens.Add(
+                        new SemanticToken(
+                            line: (int)lineIndex,
+                            column: Math.Abs((int)lineDiagnostic.Range.StartCol),
+                            length: Math.Abs(
+                                (int)(lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol)
+                            ),
+                            type: 0,
+                            style: ICodeFormatter.ColorError,
+                            data: lineDiagnostic.Message,
+                            isError: true
+                        )
+                    );
                 }
             }
 
-            foreach (var token in lineDict.Values)
-            {
-                line.AddToken(token);
-            }
+            // 3. Update the line (this clears existing tokens and uses the list we just built)
+            line.Update(allTokens);
+
+            // 4. CRITICAL FIX: Re-attach metadata that Update() dropped
+            ReattachMetadata(line, allTokens);
         }
 
         _linesWithErrors = new HashSet<uint>(dict.Keys);
+    }
+
+    // Helper to map SemanticToken data (tooltips/errors) back to the tokens in the line
+    private void ReattachMetadata(StyledLine line, List<SemanticToken> semanticTokens)
+    {
+        foreach (var semToken in semanticTokens)
+        {
+            // Skip tokens without data
+            if (string.IsNullOrEmpty(semToken.Data))
+                continue;
+
+            // Find the corresponding Token in the line
+            var token = line.GetTokenAt(semToken.Column);
+            if (token != null)
+            {
+                // Wrap text to avoid "wide as monitor" tooltips
+                var wrappedMessage = WrapText(semToken.Data, 50);
+                var msgText = CreateStyledTextFromLines(
+                    wrappedMessage,
+                    semToken.IsError ? ICodeFormatter.ColorError : ICodeFormatter.ColorDefault
+                );
+
+                if (semToken.IsError)
+                {
+                    token.Error = msgText;
+                }
+                else
+                {
+                    token.Tooltip = msgText;
+                }
+            }
+        }
+    }
+
+    // Helper to create a StyledText object from a list of strings
+    private StyledText CreateStyledTextFromLines(List<string> lines, uint color)
+    {
+        var styledText = new StyledText();
+        foreach (var lineContent in lines)
+        {
+            var l = new StyledLine(lineContent);
+            l.Add(new Token(0, lineContent, new Style(color)));
+            styledText.Add(l);
+        }
+        return styledText;
+    }
+
+    // Text wrapper that preserves paragraph structure but enforces width
+    private List<string> WrapText(string text, int maxLineLength)
+    {
+        var lines = new List<string>();
+        if (string.IsNullOrEmpty(text))
+            return lines;
+
+        // Normalize newlines and split by paragraph
+        var paragraphs = text.Replace("\r\n", "\n").Split('\n');
+
+        foreach (var paragraph in paragraphs)
+        {
+            // Preserve empty lines (paragraph breaks)
+            if (string.IsNullOrWhiteSpace(paragraph))
+            {
+                lines.Add("");
+                continue;
+            }
+
+            var words = paragraph.Split(' ');
+            var currentLine = "";
+
+            foreach (var word in words)
+            {
+                // If adding the next word exceeds max length...
+                if (currentLine.Length + word.Length + 1 > maxLineLength)
+                {
+                    // Push current line if it has content
+                    if (currentLine.Length > 0)
+                    {
+                        lines.Add(currentLine.TrimEnd());
+                        currentLine = "";
+                    }
+                }
+
+                if (currentLine.Length > 0)
+                    currentLine += " ";
+                currentLine += word;
+            }
+
+            // Flush remaining content
+            if (currentLine.Length > 0)
+            {
+                lines.Add(currentLine.TrimEnd());
+            }
+        }
+        return lines;
     }
 }
