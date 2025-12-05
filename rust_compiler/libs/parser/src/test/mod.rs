@@ -1,12 +1,11 @@
 #[macro_export]
 macro_rules! parser {
     ($input:expr) => {
-        Parser::new(Tokenizer::from($input.to_owned()))
+        Parser::new(Tokenizer::from($input))
     };
 }
 
 mod blocks;
-mod docs;
 use super::Parser;
 use super::Tokenizer;
 use anyhow::Result;
@@ -33,7 +32,7 @@ fn test_declarations() -> Result<()> {
         // The below line should fail
         let y = 234
         "#;
-    let tokenizer = Tokenizer::from(input.to_owned());
+    let tokenizer = Tokenizer::from(input);
     let mut parser = Parser::new(tokenizer);
 
     let expression = parser.parse()?.unwrap();
@@ -41,6 +40,36 @@ fn test_declarations() -> Result<()> {
     assert_eq!("(let x = 5)", expression.to_string());
 
     assert!(parser.parse().is_err());
+
+    Ok(())
+}
+
+#[test]
+fn test_const_declaration() -> Result<()> {
+    let input = r#"
+        const item = 20c;
+        const decimal = 200.15;
+        const nameConst = "str_lit";
+    "#;
+    let tokenizer = Tokenizer::from(input);
+    let mut parser = Parser::new(tokenizer);
+
+    assert_eq!(
+        "(const item = 293.15)",
+        parser.parse()?.unwrap().to_string()
+    );
+
+    assert_eq!(
+        "(const decimal = 200.15)",
+        parser.parse()?.unwrap().to_string()
+    );
+
+    assert_eq!(
+        r#"(const nameConst = "str_lit")"#,
+        parser.parse()?.unwrap().to_string()
+    );
+
+    assert_eq!(None, parser.parse()?);
 
     Ok(())
 }
@@ -54,7 +83,7 @@ fn test_function_expression() -> Result<()> {
             }
         "#;
 
-    let tokenizer = Tokenizer::from(input.to_owned());
+    let tokenizer = Tokenizer::from(input);
     let mut parser = Parser::new(tokenizer);
 
     let expression = parser.parse()?.unwrap();
@@ -73,7 +102,7 @@ fn test_function_invocation() -> Result<()> {
                 add();
             "#;
 
-    let tokenizer = Tokenizer::from(input.to_owned());
+    let tokenizer = Tokenizer::from(input);
     let mut parser = Parser::new(tokenizer);
 
     let expression = parser.parse()?.unwrap();
@@ -89,7 +118,7 @@ fn test_priority_expression() -> Result<()> {
             let x = (4);
         "#;
 
-    let tokenizer = Tokenizer::from(input.to_owned());
+    let tokenizer = Tokenizer::from(input);
     let mut parser = Parser::new(tokenizer);
 
     let expression = parser.parse()?.unwrap();

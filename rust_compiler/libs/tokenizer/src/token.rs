@@ -295,6 +295,20 @@ documented! {
         /// }
         /// ```
         Continue,
+        /// Prepresents the `const` keyword. This allows you to define a variable that will never
+        /// change throughout the lifetime of the program, similar to `define` in IC10. If you are
+        /// not planning on mutating the variable (changing it), it is recommend you store it as a
+        /// const, as the compiler will not assign it to a register or stack variable.
+        ///
+        /// ## Example
+        /// ```
+        /// const targetTemp = 20c;
+        /// device gasSensor = "d0";
+        /// device airCon = "d1";
+        ///
+        /// airCon.On = gasSensor.Temperature > targetTemp;
+        /// ```
+        Const,
         /// Represents the `let` keyword, used to declare variables within Slang.
         /// ## Example
         /// ```
@@ -304,6 +318,9 @@ documented! {
         /// ```
         Let,
         /// Represents the `fn` keyword, used to declare functions within Slang.
+        /// # WARNING
+        /// Functions are currently unstable and are subject to change until stabilized. Use at
+        /// your own risk! (They are also heavily not optimized and produce a LOT of code bloat)
         /// ## Example
         /// ```
         ///  // This allows you to now call `doSomething` with specific arguments.

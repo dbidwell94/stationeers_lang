@@ -462,6 +462,15 @@ impl<'a> Parser<'a> {
                 })
             }
 
+            TokenType::Keyword(Keyword::Const) => {
+                let spanned_const = self.spanned(|p| p.const_declaration())?;
+
+                Some(Spanned {
+                    span: spanned_const.span,
+                    node: Expression::ConstDeclaration(spanned_const),
+                })
+            }
+
             TokenType::Keyword(Keyword::Fn) => {
                 let spanned_fn = self.spanned(|p| p.function())?;
                 Some(Spanned {
@@ -1218,6 +1227,46 @@ impl<'a> Parser<'a> {
         }
 
         Ok(BlockExpression(expressions))
+    }
+
+    fn const_declaration(&mut self) -> Result<ConstDeclarationExpression, Error> {
+        // const
+        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::Const)) {
+            return Err(Error::UnexpectedToken(
+                self.current_span(),
+                current_token.clone(),
+            ));
+        }
+
+        // variable_name
+        let ident_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let ident_span = Self::token_to_span(ident_token);
+        let ident = match ident_token.token_type {
+            TokenType::Identifier(ref id) => id.clone(),
+            _ => return Err(Error::UnexpectedToken(ident_span, ident_token.clone())),
+        };
+
+        // `=`
+        let assign_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?.clone();
+        if !token_matches!(assign_token, TokenType::Symbol(Symbol::Assign)) {
+            return Err(Error::UnexpectedToken(
+                Self::token_to_span(&assign_token),
+                assign_token,
+            ));
+        }
+
+        // literal value
+        self.assign_next()?;
+        let lit = self.spanned(|p| p.literal())?;
+
+        Ok(ConstDeclarationExpression {
+            name: Spanned {
+                span: ident_span,
+                node: ident,
+            },
+            value: lit,
+        })
     }
 
     fn declaration(&mut self) -> Result<Expression, Error> {

@@ -196,6 +196,18 @@ impl std::fmt::Display for LiteralOrVariable {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct ConstDeclarationExpression {
+    pub name: Spanned<String>,
+    pub value: Spanned<Literal>,
+}
+
+impl std::fmt::Display for ConstDeclarationExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(const {} = {})", self.name, self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct DeviceDeclarationExpression {
     /// any variable-like name
     pub name: Spanned<String>,
@@ -316,6 +328,7 @@ pub enum Expression {
     Binary(Spanned<BinaryExpression>),
     Block(Spanned<BlockExpression>),
     Break(Span),
+    ConstDeclaration(Spanned<ConstDeclarationExpression>),
     Continue(Span),
     Declaration(Spanned<String>, Box<Spanned<Expression>>),
     DeviceDeclaration(Spanned<DeviceDeclarationExpression>),
@@ -342,6 +355,7 @@ impl std::fmt::Display for Expression {
             Expression::Binary(e) => write!(f, "{}", e),
             Expression::Block(e) => write!(f, "{}", e),
             Expression::Break(_) => write!(f, "break"),
+            Expression::ConstDeclaration(e) => write!(f, "{}", e),
             Expression::Continue(_) => write!(f, "continue"),
             Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
             Expression::DeviceDeclaration(e) => write!(f, "{}", e),
@@ -362,4 +376,3 @@ impl std::fmt::Display for Expression {
         }
     }
 }
-

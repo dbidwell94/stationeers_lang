@@ -463,6 +463,7 @@ impl<'a> Tokenizer<'a> {
                 "break" if next_ws!() => keyword!(Break),
                 "while" if next_ws!() => keyword!(While),
                 "continue" if next_ws!() => keyword!(Continue),
+                "const" if next_ws!() => keyword!(Const),
                 "true" if next_ws!() => {
                     return Ok(Token::new(
                         TokenType::Boolean(true),
