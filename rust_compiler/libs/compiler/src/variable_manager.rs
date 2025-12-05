@@ -51,7 +51,6 @@ pub enum VariableLocation {
 pub struct VariableScope<'a> {
     temporary_vars: VecDeque<u8>,
     persistant_vars: VecDeque<u8>,
-    constant_vars: HashMap<String, Literal>,
     var_lookup_table: HashMap<String, VariableLocation>,
     stack_offset: u16,
     parent: Option<&'a VariableScope<'a>>,
@@ -65,7 +64,6 @@ impl<'a> Default for VariableScope<'a> {
             persistant_vars: PERSIST.to_vec().into(),
             temporary_vars: TEMP.to_vec().into(),
             var_lookup_table: HashMap::new(),
-            constant_vars: HashMap::new(),
         }
     }
 }
@@ -98,7 +96,6 @@ impl<'a> VariableScope<'a> {
             parent: Option::Some(parent),
             temporary_vars: parent.temporary_vars.clone(),
             persistant_vars: parent.persistant_vars.clone(),
-            constant_vars: parent.constant_vars.clone(),
             ..Default::default()
         }
     }
@@ -154,12 +151,14 @@ impl<'a> VariableScope<'a> {
         value: Literal,
     ) -> Result<VariableLocation, Error> {
         let var_name = var_name.into();
-        if self.constant_vars.contains_key(&var_name) {
+        if self.var_lookup_table.contains_key(&var_name) {
             return Err(Error::DuplicateVariable(var_name));
         }
 
-        self.constant_vars.insert(var_name, value.clone());
-        Ok(VariableLocation::Constant(value))
+        let new_value = VariableLocation::Constant(value);
+
+        self.var_lookup_table.insert(var_name, new_value.clone());
+        Ok(new_value)
     }
 
     pub fn get_location_of(&self, var_name: impl Into<String>) -> Result<VariableLocation, Error> {
