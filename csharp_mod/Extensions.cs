@@ -118,18 +118,31 @@ public static unsafe class SlangExtensions
     {
         switch (kind)
         {
-            case 1:
-                return SlangFormatter.ColorString; // String
-            case 2:
-                return SlangFormatter.ColorString; // Number
-            case 3:
-                return SlangFormatter.ColorInstruction; // Boolean
-            case 4:
-                return SlangFormatter.ColorSelection; // Keyword
-            case 5:
-                return SlangFormatter.ColorLineNumber; // Identifier
-            case 6:
-                return SlangFormatter.ColorDefault; // Symbol
+            case 1: // Strings
+                return SlangFormatter.ColorString;
+            case 2: // Numbers
+                return SlangFormatter.ColorNumber;
+            case 3: // Booleans
+                return SlangFormatter.ColorBoolean;
+
+            case 4: // (if, else, loop)
+                return SlangFormatter.ColorControl;
+            case 5: // (let, const, device)
+                return SlangFormatter.ColorDeclaration;
+
+            case 6: // (variables)
+                return SlangFormatter.ColorIdentifier;
+            case 7: // (punctuation)
+                return SlangFormatter.ColorDefault;
+
+            case 10: // (syscalls)
+                return SlangFormatter.ColorFunction;
+
+            case 11: // Comparisons
+            case 12: // Math
+            case 13: // Logic
+                return SlangFormatter.ColorOperator;
+
             default:
                 return SlangFormatter.ColorDefault;
         }

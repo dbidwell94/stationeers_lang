@@ -13,8 +13,19 @@ public class SlangFormatter : ICodeFormatter
     private CancellationTokenSource? _lspCancellationToken;
     private object _tokenLock = new();
 
-    public static readonly uint ColorInstruction = ColorFromHTML("#ffff00");
-    public static readonly uint ColorString = ColorFromHTML("#ce9178");
+    // VS Code Dark Theme Palette
+    public static readonly uint ColorControl = ColorFromHTML("#C586C0"); // Pink (if, return, loop)
+    public static readonly uint ColorDeclaration = ColorFromHTML("#569CD6"); // Blue (let, device, fn)
+    public static readonly uint ColorFunction = ColorFromHTML("#DCDCAA"); // Yellow (syscalls)
+    public static readonly uint ColorString = ColorFromHTML("#CE9178"); // Orange
+    public static new readonly uint ColorNumber = ColorFromHTML("#B5CEA8"); // Light Green
+    public static readonly uint ColorBoolean = ColorFromHTML("#569CD6"); // Blue (true/false)
+    public static readonly uint ColorIdentifier = ColorFromHTML("#9CDCFE"); // Light Blue (variables)
+    public static new readonly uint ColorDefault = ColorFromHTML("#D4D4D4"); // White (punctuation ; { } )
+
+    // Operators are often the same color as default text in VS Code Dark,
+    // but having a separate definition lets you tweak it (e.g. make them slightly darker or distinct)
+    public static readonly uint ColorOperator = ColorFromHTML("#D4D4D4");
 
     private HashSet<uint> _linesWithErrors = new();
 

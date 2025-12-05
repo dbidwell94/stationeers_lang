@@ -1,0 +1,32 @@
+#[macro_export]
+macro_rules! with_syscalls {
+    ($matcher:ident) => {
+        $matcher!(
+            "yield",
+            "sleep",
+            "hash",
+            "loadFromDevice",
+            "loadBatchNamed",
+            "loadBatch",
+            "setOnDevice",
+            "setOnDeviceBatched",
+            "setOnDeviceBatchedNamed",
+            "acos",
+            "asin",
+            "atan",
+            "atan2",
+            "abs",
+            "ceil",
+            "cos",
+            "floor",
+            "log",
+            "max",
+            "min",
+            "rand",
+            "sin",
+            "sqrt",
+            "tan",
+            "trunc"
+        );
+    };
+}

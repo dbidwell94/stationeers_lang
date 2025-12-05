@@ -256,31 +256,6 @@ impl std::fmt::Display for SysCall {
 
 impl SysCall {
     pub fn is_syscall(identifier: &str) -> bool {
-        matches!(
-            identifier,
-            "yield"
-                | "sleep"
-                | "hash"
-                | "loadFromDevice"
-                | "setOnDevice"
-                | "setOnDeviceBatched"
-                | "setOnDeviceBatchedNamed"
-                | "acos"
-                | "asin"
-                | "atan"
-                | "atan2"
-                | "abs"
-                | "ceil"
-                | "cos"
-                | "floor"
-                | "log"
-                | "max"
-                | "min"
-                | "rand"
-                | "sin"
-                | "sqrt"
-                | "tan"
-                | "trunc"
-        )
+        tokenizer::token::is_syscall(identifier)
     }
 }

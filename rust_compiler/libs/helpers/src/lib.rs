@@ -1,4 +1,5 @@
 mod macros;
+mod syscall;
 
 /// This trait will allow the LSP to emit documentation for various tokens and expressions.
 /// You can easily create documentation for large enums with the `documented!` macro.
@@ -10,5 +11,5 @@ pub trait Documentation {
 }
 
 pub mod prelude {
-    pub use super::{Documentation, documented};
+    pub use super::{Documentation, documented, with_syscalls};
 }

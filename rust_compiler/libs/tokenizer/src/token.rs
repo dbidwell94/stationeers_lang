@@ -1,6 +1,15 @@
 use helpers::prelude::*;
 use rust_decimal::Decimal;
 
+// Define a local macro to consume the list
+macro_rules! generate_check {
+    ($($name:literal),*) => {
+        pub fn is_syscall(s: &str) -> bool {
+            matches!(s, $($name)|*)
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token {
     /// The type of the token
@@ -101,17 +110,43 @@ impl Documentation for TokenType {
     }
 }
 
+helpers::with_syscalls!(generate_check);
+
 impl From<TokenType> for u32 {
     fn from(value: TokenType) -> Self {
-        use TokenType::*;
         match value {
-            String(_) => 1,
-            Number(_) => 2,
-            Boolean(_) => 3,
-            Keyword(_) => 4,
-            Identifier(_) => 5,
-            Symbol(_) => 6,
-            EOF => 0,
+            TokenType::String(_) => 1,
+            TokenType::Number(_) => 2,
+            TokenType::Boolean(_) => 3,
+            TokenType::Keyword(k) => match k {
+                Keyword::If
+                | Keyword::Else
+                | Keyword::Loop
+                | Keyword::While
+                | Keyword::Break
+                | Keyword::Continue
+                | Keyword::Return => 4,
+                _ => 5,
+            },
+            TokenType::Identifier(s) => {
+                if is_syscall(&s) {
+                    10
+                } else {
+                    6
+                }
+            }
+            TokenType::Symbol(s) => {
+                if s.is_comparison() {
+                    11
+                } else if s.is_operator() {
+                    12
+                } else if s.is_logical() {
+                    13
+                } else {
+                    7
+                }
+            }
+            TokenType::EOF => 0,
         }
     }
 }
