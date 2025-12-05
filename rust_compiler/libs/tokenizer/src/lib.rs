@@ -199,7 +199,7 @@ impl<'a> Tokenizer<'a> {
                         .tokenize_symbol(next_char, start_line, start_col)
                         .map(Some);
                 }
-                char if char.is_alphabetic() => {
+                char if char.is_alphabetic() || char == '_' => {
                     return self
                         .tokenize_keyword_or_identifier(next_char, start_line, start_col)
                         .map(Some);
@@ -439,14 +439,15 @@ impl<'a> Tokenizer<'a> {
             }};
         }
         macro_rules! next_ws {
-            () => { matches!(self.peek_next_char()?, Some(x) if x.is_whitespace() || !x.is_alphanumeric()) || self.peek_next_char()?.is_none() };
+            () => { matches!(self.peek_next_char()?, Some(x) if x.is_whitespace() || (!x.is_alphanumeric()) && x != '_') || self.peek_next_char()?.is_none() };
         }
 
         let mut buffer = String::with_capacity(16);
         let mut looped_char = Some(first_char);
 
         while let Some(next_char) = looped_char {
-            if next_char.is_whitespace() || !next_char.is_alphanumeric() {
+            // allow UNDERSCORE_IDENTS
+            if next_char.is_whitespace() || (!next_char.is_alphanumeric() && next_char != '_') {
                 break;
             }
             buffer.push(next_char);
@@ -838,7 +839,9 @@ mod tests {
 
     #[test]
     fn test_keyword_parse() -> Result<()> {
-        let mut tokenizer = Tokenizer::from(String::from("let fn if else return enum"));
+        let mut tokenizer = Tokenizer::from(String::from(
+            "let fn if else return enum continue break const",
+        ));
 
         let expected_tokens = vec![
             TokenType::Keyword(Keyword::Let),
@@ -847,6 +850,9 @@ mod tests {
             TokenType::Keyword(Keyword::Else),
             TokenType::Keyword(Keyword::Return),
             TokenType::Keyword(Keyword::Enum),
+            TokenType::Keyword(Keyword::Continue),
+            TokenType::Keyword(Keyword::Break),
+            TokenType::Keyword(Keyword::Const),
         ];
 
         for expected_token in expected_tokens {
@@ -860,7 +866,7 @@ mod tests {
 
     #[test]
     fn test_identifier_parse() -> Result<()> {
-        let mut tokenizer = Tokenizer::from(String::from("fn test"));
+        let mut tokenizer = Tokenizer::from(String::from("fn test fn test_underscores"));
 
         let token = tokenizer.next_token()?.unwrap();
         assert_eq!(token.token_type, TokenType::Keyword(Keyword::Fn));
@@ -868,6 +874,13 @@ mod tests {
         assert_eq!(
             token.token_type,
             TokenType::Identifier(String::from("test"))
+        );
+        let token = tokenizer.next_token()?.unwrap();
+        assert_eq!(token.token_type, TokenType::Keyword(Keyword::Fn));
+        let token = tokenizer.next_token()?.unwrap();
+        assert_eq!(
+            token.token_type,
+            TokenType::Identifier(String::from("test_underscores"))
         );
 
         Ok(())
