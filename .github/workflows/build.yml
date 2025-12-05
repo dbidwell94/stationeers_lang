@@ -29,6 +29,7 @@ jobs:
           docker run --rm \
             -u $(id -u):$(id -g) \
             -v "$PWD":/app \
+            -e HOME=/tmp \
             slang-builder \
             cargo test --manifest-path rust_compiler/Cargo.toml --workspace --all-targets
 
@@ -49,9 +50,10 @@ jobs:
       - name: Build Release Artifacts
         run: |
           docker run --rm \
-          -u $(id -u):$(id -g) \
+            -u $(id -u):$(id -g) \
             -v "$PWD":/app \
             -v "/home/github-runner/permanent-refs":/app/csharp_mod/refs \
+            -e HOME=/tmp \
             slang-builder \
             ./build.sh
 
