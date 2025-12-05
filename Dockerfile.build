@@ -1,0 +1,19 @@
+FROM rust:latest
+
+RUN apt-get update && apt-get install -y \
+  mingw-w64 \
+  wget \
+  apt-transport-https \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN wget --progress=dot:giga https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
+  && chmod +x ./dotnet-install.sh \
+  && ./dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet \
+  && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
+
+RUN rustup target add x86_64-pc-windows-gnu && rustup target add x86_64-unknown-linux-gnu
+
+WORKDIR /app
+
+# The command will be provided at runtime
+CMD ["./build.sh"]

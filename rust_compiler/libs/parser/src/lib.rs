@@ -14,6 +14,10 @@ use tokenizer::{
 };
 use tree_node::*;
 
+pub trait Documentation {
+    fn docs(&self) -> String;
+}
+
 #[macro_export]
 /// A macro to create a boxed value.
 macro_rules! boxed {
@@ -121,7 +125,6 @@ impl<'a> Parser<'a> {
     }
 
     /// Calculates a Span from a given Token reference.
-    /// This is a static helper to avoid borrowing `self` when we already have a token ref.
     fn token_to_span(t: &Token) -> Span {
         let len = t.original_string.as_ref().map(|s| s.len()).unwrap_or(0);
         Span {
@@ -149,7 +152,6 @@ impl<'a> Parser<'a> {
     where
         F: FnOnce(&mut Self) -> Result<T, Error>,
     {
-        // Peek at the start token. If no current token (parsing hasn't started), peek the buffer.
         let start_token = if self.current_token.is_some() {
             self.current_token.clone()
         } else {
@@ -163,7 +165,6 @@ impl<'a> Parser<'a> {
 
         let node = parser(self)?;
 
-        // The end token is the current_token after parsing.
         let end_token = self.current_token.as_ref();
 
         let (end_line, end_col) = end_token
@@ -184,26 +185,15 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Skips tokens until a statement boundary is found to recover from errors.
     fn synchronize(&mut self) -> Result<(), Error> {
-        // We advance once to consume the error-causing token if we haven't already
-        // But often the error happens after we consumed something.
-        // Safe bet: consume current, then look.
-
-        // If we assign next, we might be skipping the very token we want to sync on if the error didn't consume it?
-        // Usually, in recursive descent, the error is raised when `current` is unexpected.
-        // We want to discard `current` and move on.
         self.assign_next()?;
 
         while let Some(token) = &self.current_token {
             if token.token_type == TokenType::Symbol(Symbol::Semicolon) {
-                // Consuming the semicolon is a good place to stop and resume parsing next statement
                 self.assign_next()?;
                 return Ok(());
             }
 
-            // Check if the token looks like the start of a statement.
-            // If so, we don't consume it; we return so the loop in parse_all can try to parse it.
             match token.token_type {
                 TokenType::Keyword(Keyword::Fn)
                 | TokenType::Keyword(Keyword::Let)
@@ -231,7 +221,6 @@ impl<'a> Parser<'a> {
         let mut expressions = Vec::<Spanned<Expression>>::new();
 
         loop {
-            // Check EOF without unwrapping error
             match self.tokenizer.peek() {
                 Ok(None) => break,
                 Err(e) => {
@@ -248,19 +237,13 @@ impl<'a> Parser<'a> {
                 Ok(None) => break,
                 Err(e) => {
                     self.errors.push(e);
-                    // Recover
                     if self.synchronize().is_err() {
-                        // If sync failed (e.g. EOF during sync), break
                         break;
                     }
                 }
             }
         }
 
-        // Even if we had errors, we return whatever partial AST we managed to build.
-        // If expressions is empty and we had errors, it's a failed parse, but we return a block.
-
-        // Use the last token position for end span, or start if nothing parsed
         let end_token_opt = self.tokenizer.peek().unwrap_or(None);
         let (end_line, end_col) = end_token_opt
             .map(|tok| {
@@ -285,7 +268,6 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Result<Option<Spanned<tree_node::Expression>>, Error> {
         self.assign_next()?;
 
-        // If assign_next hit EOF or error?
         if self.current_token.is_none() {
             return Ok(None);
         }
@@ -317,21 +299,134 @@ impl<'a> Parser<'a> {
             return Ok(None);
         };
 
-        // check if the next or current token is an operator, comparison, or logical symbol
+        // Handle Postfix operators (Member Access, Method Call) immediately after unary
+        let lhs = self.parse_postfix(lhs)?;
+
+        // Handle Infix operators (Binary, Logical, Assignment)
         if self_matches_peek!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign)
         ) {
             return Ok(Some(self.infix(lhs)?));
         } else if self_matches_current!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign)
         ) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
             return Ok(Some(self.infix(lhs)?));
         }
 
         Ok(Some(lhs))
+    }
+
+    /// Handles dot notation chains: x.y.z()
+    fn parse_postfix(
+        &mut self,
+        mut lhs: Spanned<Expression>,
+    ) -> Result<Spanned<Expression>, Error> {
+        loop {
+            if self_matches_peek!(self, TokenType::Symbol(Symbol::Dot)) {
+                self.assign_next()?; // consume Dot
+
+                let identifier_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let identifier_span = Self::token_to_span(identifier_token);
+                let identifier = match identifier_token.token_type {
+                    TokenType::Identifier(ref id) => id.clone(),
+                    _ => {
+                        return Err(Error::UnexpectedToken(
+                            identifier_span,
+                            identifier_token.clone(),
+                        ));
+                    }
+                };
+
+                // Check for Method Call '()'
+                if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) {
+                    // Method Call
+                    self.assign_next()?; // consume '('
+                    let mut arguments = Vec::<Spanned<Expression>>::new();
+
+                    while !token_matches!(
+                        self.get_next()?.ok_or(Error::UnexpectedEOF)?,
+                        TokenType::Symbol(Symbol::RParen)
+                    ) {
+                        let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+                        // Block expressions not allowed in args
+                        if let Expression::Block(_) = expression.node {
+                            return Err(Error::InvalidSyntax(
+                                self.current_span(),
+                                String::from("Block expressions are not allowed in method calls"),
+                            ));
+                        }
+                        arguments.push(expression);
+
+                        if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
+                            && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
+                        {
+                            let next_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                            return Err(Error::UnexpectedToken(
+                                Self::token_to_span(next_token),
+                                next_token.clone(),
+                            ));
+                        }
+
+                        if !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen)) {
+                            self.assign_next()?;
+                        }
+                    }
+
+                    // End span is the ')'
+                    let end_span = self.current_span();
+                    let combined_span = Span {
+                        start_line: lhs.span.start_line,
+                        start_col: lhs.span.start_col,
+                        end_line: end_span.end_line,
+                        end_col: end_span.end_col,
+                    };
+
+                    lhs = Spanned {
+                        span: combined_span,
+                        node: Expression::MethodCall(Spanned {
+                            span: combined_span,
+                            node: MethodCallExpression {
+                                object: boxed!(lhs),
+                                method: Spanned {
+                                    span: identifier_span,
+                                    node: identifier,
+                                },
+                                arguments,
+                            },
+                        }),
+                    };
+                } else {
+                    // Member Access
+                    let combined_span = Span {
+                        start_line: lhs.span.start_line,
+                        start_col: lhs.span.start_col,
+                        end_line: identifier_span.end_line,
+                        end_col: identifier_span.end_col,
+                    };
+
+                    lhs = Spanned {
+                        span: combined_span,
+                        node: Expression::MemberAccess(Spanned {
+                            span: combined_span,
+                            node: MemberAccessExpression {
+                                object: boxed!(lhs),
+                                member: Spanned {
+                                    span: identifier_span,
+                                    node: identifier,
+                                },
+                            },
+                        }),
+                    };
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(lhs)
     }
 
     fn unary(&mut self) -> Result<Option<Spanned<tree_node::Expression>>, Error> {
@@ -357,16 +452,22 @@ impl<'a> Parser<'a> {
                 ));
             }
 
-            TokenType::Keyword(Keyword::Let) => {
-                // declaration is wrapped in spanned inside the function, but expects 'let' to be current
-                Some(self.spanned(|p| p.declaration())?)
-            }
+            TokenType::Keyword(Keyword::Let) => Some(self.spanned(|p| p.declaration())?),
 
             TokenType::Keyword(Keyword::Device) => {
                 let spanned_dev = self.spanned(|p| p.device())?;
                 Some(Spanned {
                     span: spanned_dev.span,
                     node: Expression::DeviceDeclaration(spanned_dev),
+                })
+            }
+
+            TokenType::Keyword(Keyword::Const) => {
+                let spanned_const = self.spanned(|p| p.const_declaration())?;
+
+                Some(Spanned {
+                    span: spanned_const.span,
+                    node: Expression::ConstDeclaration(spanned_const),
                 })
             }
 
@@ -404,7 +505,6 @@ impl<'a> Parser<'a> {
 
             TokenType::Keyword(Keyword::Break) => {
                 let span = self.current_span();
-                // make sure the next token is a semi-colon
                 let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
                 if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
                     return Err(Error::UnexpectedToken(
@@ -451,16 +551,6 @@ impl<'a> Parser<'a> {
                 })
             }
 
-            TokenType::Identifier(_)
-                if self_matches_peek!(self, TokenType::Symbol(Symbol::Assign)) =>
-            {
-                let spanned_assign = self.spanned(|p| p.assignment())?;
-                Some(Spanned {
-                    span: spanned_assign.span,
-                    node: Expression::Assignment(spanned_assign),
-                })
-            }
-
             TokenType::Identifier(ref id) => {
                 let span = self.current_span();
                 Some(Spanned {
@@ -489,24 +579,36 @@ impl<'a> Parser<'a> {
             }
 
             TokenType::Symbol(Symbol::LParen) => {
-                // Priority handles its own spanning
                 self.spanned(|p| p.priority())?.node.map(|node| *node)
             }
 
             TokenType::Symbol(Symbol::Minus) => {
-                // Need to handle span manually because unary call is next
                 let start_span = self.current_span();
                 self.assign_next()?;
                 let inner_expr = self.unary()?.ok_or(Error::UnexpectedEOF)?;
+                // NOTE: Unary negation can also have postfix applied to the inner expression
+                // But generally -a.b parses as -(a.b), which is what parse_postfix ensures if called here.
+                // However, we call parse_postfix on the RESULT of unary in expression(), so
+                // `expression` sees `Negation`. `parse_postfix` doesn't apply to Negation node unless we allow it?
+                // Actually, `x.y` binds tighter than `-`. `postfix` logic belongs inside `unary` logic or
+                // `expression` logic.
+                // If I have `-x.y`, standard precedence says `-(x.y)`.
+                // `unary` returns `Negation(x)`. Then `expression` calls `postfix` on `Negation(x)`.
+                // `postfix` loop runs on `Negation`. This implies `(-x).y`. This is usually WRONG.
+                // `.` binds tighter than `-`.
+                // So `unary` must call `postfix` on the *operand* of the negation.
+
+                let inner_with_postfix = self.parse_postfix(inner_expr)?;
+
                 let combined_span = Span {
                     start_line: start_span.start_line,
                     start_col: start_span.start_col,
-                    end_line: inner_expr.span.end_line,
-                    end_col: inner_expr.span.end_col,
+                    end_line: inner_with_postfix.span.end_line,
+                    end_col: inner_with_postfix.span.end_col,
                 };
                 Some(Spanned {
                     span: combined_span,
-                    node: Expression::Negation(boxed!(inner_expr)),
+                    node: Expression::Negation(boxed!(inner_with_postfix)),
                 })
             }
 
@@ -514,17 +616,18 @@ impl<'a> Parser<'a> {
                 let start_span = self.current_span();
                 self.assign_next()?;
                 let inner_expr = self.unary()?.ok_or(Error::UnexpectedEOF)?;
+                let inner_with_postfix = self.parse_postfix(inner_expr)?;
                 let combined_span = Span {
                     start_line: start_span.start_line,
                     start_col: start_span.start_col,
-                    end_line: inner_expr.span.end_line,
-                    end_col: inner_expr.span.end_col,
+                    end_line: inner_with_postfix.span.end_line,
+                    end_col: inner_with_postfix.span.end_col,
                 };
                 Some(Spanned {
                     span: combined_span,
                     node: Expression::Logical(Spanned {
                         span: combined_span,
-                        node: LogicalExpression::Not(boxed!(inner_expr)),
+                        node: LogicalExpression::Not(boxed!(inner_with_postfix)),
                     }),
                 })
             }
@@ -543,41 +646,44 @@ impl<'a> Parser<'a> {
     fn get_infix_child_node(&mut self) -> Result<Spanned<tree_node::Expression>, Error> {
         let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
 
-        match current_token.token_type {
+        let start_span = self.current_span();
+
+        let expr = match current_token.token_type {
             TokenType::Number(_) | TokenType::Boolean(_) => {
                 let lit = self.spanned(|p| p.literal())?;
-                Ok(Spanned {
+                Spanned {
                     span: lit.span,
                     node: Expression::Literal(lit),
-                })
+                }
             }
             TokenType::Identifier(ref ident)
                 if !self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
             {
+                // This is a Variable. We need to check for Postfix operations on it.
                 let span = self.current_span();
-                Ok(Spanned {
+                Spanned {
                     span,
                     node: Expression::Variable(Spanned {
                         span,
                         node: ident.clone(),
                     }),
-                })
+                }
             }
-            TokenType::Symbol(Symbol::LParen) => Ok(*self
+            TokenType::Symbol(Symbol::LParen) => *self
                 .spanned(|p| p.priority())?
                 .node
-                .ok_or(Error::UnexpectedEOF)?),
+                .ok_or(Error::UnexpectedEOF)?,
+
             TokenType::Identifier(_)
                 if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
             {
                 let inv = self.spanned(|p| p.invocation())?;
-                Ok(Spanned {
+                Spanned {
                     span: inv.span,
                     node: Expression::Invocation(inv),
-                })
+                }
             }
             TokenType::Symbol(Symbol::Minus) => {
-                let start_span = self.current_span();
                 self.assign_next()?;
                 let inner = self.get_infix_child_node()?;
                 let span = Span {
@@ -586,13 +692,12 @@ impl<'a> Parser<'a> {
                     end_line: inner.span.end_line,
                     end_col: inner.span.end_col,
                 };
-                Ok(Spanned {
+                Spanned {
                     span,
                     node: Expression::Negation(boxed!(inner)),
-                })
+                }
             }
             TokenType::Symbol(Symbol::LogicalNot) => {
-                let start_span = self.current_span();
                 self.assign_next()?;
                 let inner = self.get_infix_child_node()?;
                 let span = Span {
@@ -601,19 +706,25 @@ impl<'a> Parser<'a> {
                     end_line: inner.span.end_line,
                     end_col: inner.span.end_col,
                 };
-                Ok(Spanned {
+                Spanned {
                     span,
                     node: Expression::Logical(Spanned {
                         span,
                         node: LogicalExpression::Not(boxed!(inner)),
                     }),
-                })
+                }
             }
-            _ => Err(Error::UnexpectedToken(
-                self.current_span(),
-                current_token.clone(),
-            )),
-        }
+            _ => {
+                return Err(Error::UnexpectedToken(
+                    self.current_span(),
+                    current_token.clone(),
+                ));
+            }
+        };
+
+        // Important: We must check for postfix operations here too
+        // e.g. a + b.c
+        self.parse_postfix(expr)
     }
 
     fn device(&mut self) -> Result<DeviceDeclarationExpression, Error> {
@@ -665,39 +776,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn assignment(&mut self) -> Result<AssignmentExpression, Error> {
-        let identifier_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
-        let identifier_span = Self::token_to_span(identifier_token);
-        let identifier = match identifier_token.token_type {
-            TokenType::Identifier(ref id) => id.clone(),
-            _ => {
-                return Err(Error::UnexpectedToken(
-                    self.current_span(),
-                    self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
-                ));
-            }
-        };
-
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?.clone();
-        if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
-            return Err(Error::UnexpectedToken(
-                Self::token_to_span(&current_token),
-                current_token.clone(),
-            ));
-        }
-        self.assign_next()?;
-
-        let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
-
-        Ok(AssignmentExpression {
-            identifier: Spanned {
-                span: identifier_span,
-                node: identifier,
-            },
-            expression: boxed!(expression),
-        })
-    }
-
     fn infix(&mut self, previous: Spanned<Expression>) -> Result<Spanned<Expression>, Error> {
         let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?.clone();
 
@@ -708,7 +786,9 @@ impl<'a> Parser<'a> {
             | Expression::Priority(_)
             | Expression::Literal(_)
             | Expression::Variable(_)
-            | Expression::Negation(_) => {}
+            | Expression::Negation(_)
+            | Expression::MemberAccess(_)
+            | Expression::MethodCall(_) => {}
             _ => {
                 return Err(Error::InvalidSyntax(
                     self.current_span(),
@@ -722,9 +802,10 @@ impl<'a> Parser<'a> {
 
         let mut temp_token = current_token.clone();
 
+        // Include Assign in the operator loop
         while token_matches!(
             temp_token,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical()
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign)
         ) {
             let operator = match temp_token.token_type {
                 TokenType::Symbol(s) => s,
@@ -955,6 +1036,37 @@ impl<'a> Parser<'a> {
         }
         operators.retain(|symbol| !matches!(symbol, Symbol::LogicalOr));
 
+        // --- PRECEDENCE LEVEL 8: Assignment (=) ---
+        // Assignment is Right Associative: a = b = c => a = (b = c)
+        // We iterate Right to Left
+        for (i, operator) in operators.iter().enumerate().rev() {
+            if matches!(operator, Symbol::Assign) {
+                let right = expressions.remove(i + 1);
+                let left = expressions.remove(i);
+                let span = Span {
+                    start_line: left.span.start_line,
+                    start_col: left.span.start_col,
+                    end_line: right.span.end_line,
+                    end_col: right.span.end_col,
+                };
+
+                expressions.insert(
+                    i,
+                    Spanned {
+                        span,
+                        node: Expression::Assignment(Spanned {
+                            span,
+                            node: AssignmentExpression {
+                                assignee: boxed!(left),
+                                expression: boxed!(right),
+                            },
+                        }),
+                    },
+                );
+            }
+        }
+        operators.retain(|symbol| !matches!(symbol, Symbol::Assign));
+
         if expressions.len() != 1 || !operators.is_empty() {
             return Err(Error::InvalidSyntax(
                 self.current_span(),
@@ -1115,6 +1227,46 @@ impl<'a> Parser<'a> {
         }
 
         Ok(BlockExpression(expressions))
+    }
+
+    fn const_declaration(&mut self) -> Result<ConstDeclarationExpression, Error> {
+        // const
+        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        if !self_matches_current!(self, TokenType::Keyword(Keyword::Const)) {
+            return Err(Error::UnexpectedToken(
+                self.current_span(),
+                current_token.clone(),
+            ));
+        }
+
+        // variable_name
+        let ident_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let ident_span = Self::token_to_span(ident_token);
+        let ident = match ident_token.token_type {
+            TokenType::Identifier(ref id) => id.clone(),
+            _ => return Err(Error::UnexpectedToken(ident_span, ident_token.clone())),
+        };
+
+        // `=`
+        let assign_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?.clone();
+        if !token_matches!(assign_token, TokenType::Symbol(Symbol::Assign)) {
+            return Err(Error::UnexpectedToken(
+                Self::token_to_span(&assign_token),
+                assign_token,
+            ));
+        }
+
+        // literal value
+        self.assign_next()?;
+        let lit = self.spanned(|p| p.literal())?;
+
+        Ok(ConstDeclarationExpression {
+            name: Spanned {
+                span: ident_span,
+                node: ident,
+            },
+            value: lit,
+        })
     }
 
     fn declaration(&mut self) -> Result<Expression, Error> {
@@ -1506,7 +1658,6 @@ impl<'a> Parser<'a> {
                     Literal::String(variable),
                 )))
             }
-            // ... (implementing other syscalls similarly using patterns above)
             "setOnDevice" => {
                 check_length(self, &invocation.arguments, 3)?;
                 let mut args = invocation.arguments.into_iter();
@@ -1531,23 +1682,10 @@ impl<'a> Parser<'a> {
                     boxed!(variable),
                 )))
             }
-            _ => {
-                // For Math functions or unknown functions
-                if SysCall::is_syscall(&invocation.name.node) {
-                    // Attempt to parse as math if applicable, or error if strict
-                    // Here we are falling back to simple handling or error.
-                    // Since Math isn't fully expanded in this snippet, we return Unsupported.
-                    Err(Error::UnsupportedKeyword(
-                        self.current_span(),
-                        self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
-                    ))
-                } else {
-                    Err(Error::UnsupportedKeyword(
-                        self.current_span(),
-                        self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
-                    ))
-                }
-            }
+            _ => Err(Error::UnsupportedKeyword(
+                self.current_span(),
+                self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+            )),
         }
     }
 }

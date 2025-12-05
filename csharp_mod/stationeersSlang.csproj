@@ -11,34 +11,36 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <ManagedDir>$(STATIONEERS_DIR)/rocketstation_Data/Managed</ManagedDir>
-    <BepInExDir>$(STATIONEERS_DIR)/BepInEx/core</BepInExDir>
   </PropertyGroup>
 
   <ItemGroup>
       <Reference Include="netstandard">
-        <HintPath>$(ManagedDir)/netstandard.dll</HintPath>
+        <HintPath>./ref/netstandard.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="BepInEx">
-        <HintPath>$(BepInExDir)/BepInEx.dll</HintPath>
+        <HintPath>./ref/BepInEx.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="0Harmony">
-        <HintPath>$(BepInExDir)/0Harmony.dll</HintPath>
+        <HintPath>./ref/0Harmony.dll</HintPath>
         <Private>False</Private>
       </Reference>
 
       <Reference Include="UnityEngine">
-        <HintPath>$(ManagedDir)/UnityEngine.dll</HintPath>
+        <HintPath>./ref/UnityEngine.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="UnityEngine.CoreModule">
-        <HintPath>$(ManagedDir)/UnityEngine.CoreModule.dll</HintPath>
+        <HintPath>./ref/UnityEngine.CoreModule.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="Assembly-CSharp">
-        <HintPath>$(ManagedDir)/Assembly-CSharp.dll</HintPath>
+        <HintPath>./ref/Assembly-CSharp.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="UniTask">
+        <HintPath>./ref/UniTask.dll</HintPath>
         <Private>False</Private>
       </Reference>
 
@@ -47,11 +49,11 @@
         <Private>False</Private>
       </Reference>
       <Reference Include="LaunchPadBooster.dll">
-        <HintPath>$(STATIONEERS_DIR)/BepInEx/plugins/StationeersLaunchPad/LaunchPadBooster.dll</HintPath>
+      <HintPath>./ref/LaunchPadBooster.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="StationeersMods.Interface.dll">
-        <HintPath>$(STATIONEERS_DIR)/BepInEx/plugins/StationeersLaunchPad/StationeersMods.Interface.dll</HintPath>
+      <HintPath>./ref/StationeersMods.Interface.dll</HintPath>
         <Private>False</Private>
       </Reference>
     </ItemGroup>

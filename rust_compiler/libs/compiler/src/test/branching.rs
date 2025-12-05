@@ -149,6 +149,7 @@ fn test_spilled_variable_update_in_branch() -> anyhow::Result<()> {
             sub r0 sp 1
             put db r0 99 #h
             L1:
+            sub sp sp 1
             "
         }
     );

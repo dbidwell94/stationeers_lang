@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Assets.Scripts.UI;
 using StationeersIC10Editor;
 
 public struct Range
@@ -149,6 +150,14 @@ public static class Marshal
 
             return tokens.ToLine(inputString);
         }
+    }
+
+    /// <summary>
+    /// Gets the currently documented items from the Slang compiler and returns new StationpediaPages with correct formatting.
+    /// </summary>
+    public static unsafe List<StationpediaPage> GetSlangDocs()
+    {
+        return Ffi.get_docs().ToList();
     }
 
     private static string ExtractNativeLibrary(string libName)

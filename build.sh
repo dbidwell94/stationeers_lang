@@ -39,7 +39,6 @@ echo "--------------------"
 RUST_WIN_EXE="$RUST_DIR/target/x86_64-pc-windows-gnu/release/slang.exe"
 RUST_LINUX_BIN="$RUST_DIR/target/x86_64-unknown-linux-gnu/release/slang"
 CHARP_DLL="$CSHARP_DIR/bin/Release/net48/StationeersSlang.dll"
-CHARP_PDB="$CSHARP_DIR/bin/Release/net48/StationeersSlang.pdb"
 
 # Check if the release dir exists, if not: create it.
 if [[ ! -d "$RELEASE_DIR" ]]; then
@@ -49,4 +48,3 @@ fi
 cp "$RUST_WIN_EXE" "$RELEASE_DIR/slang.exe"
 cp "$RUST_LINUX_BIN" "$RELEASE_DIR/slang"
 cp "$CHARP_DLL" "$RELEASE_DIR/StationeersSlang.dll"
-cp "$CHARP_PDB" "$RELEASE_DIR/StationeersSlang.pdb"

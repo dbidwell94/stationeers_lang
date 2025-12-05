@@ -74,13 +74,13 @@ impl std::fmt::Display for LogicalExpression {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct AssignmentExpression {
-    pub identifier: Spanned<String>,
+    pub assignee: Box<Spanned<Expression>>,
     pub expression: Box<Spanned<Expression>>,
 }
 
 impl std::fmt::Display for AssignmentExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({} = {})", self.identifier, self.expression)
+        write!(f, "({} = {})", self.assignee, self.expression)
     }
 }
 
@@ -146,6 +146,41 @@ impl std::fmt::Display for InvocationExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct MemberAccessExpression {
+    pub object: Box<Spanned<Expression>>,
+    pub member: Spanned<String>,
+}
+
+impl std::fmt::Display for MemberAccessExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.object, self.member)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct MethodCallExpression {
+    pub object: Box<Spanned<Expression>>,
+    pub method: Spanned<String>,
+    pub arguments: Vec<Spanned<Expression>>,
+}
+
+impl std::fmt::Display for MethodCallExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}.{}({})",
+            self.object,
+            self.method,
+            self.arguments
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum LiteralOrVariable {
     Literal(Literal),
     Variable(Spanned<String>),
@@ -157,6 +192,18 @@ impl std::fmt::Display for LiteralOrVariable {
             LiteralOrVariable::Literal(l) => write!(f, "{}", l),
             LiteralOrVariable::Variable(v) => write!(f, "{}", v),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ConstDeclarationExpression {
+    pub name: Spanned<String>,
+    pub value: Spanned<Literal>,
+}
+
+impl std::fmt::Display for ConstDeclarationExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(const {} = {})", self.name, self.value)
     }
 }
 
@@ -281,6 +328,7 @@ pub enum Expression {
     Binary(Spanned<BinaryExpression>),
     Block(Spanned<BlockExpression>),
     Break(Span),
+    ConstDeclaration(Spanned<ConstDeclarationExpression>),
     Continue(Span),
     Declaration(Spanned<String>, Box<Spanned<Expression>>),
     DeviceDeclaration(Spanned<DeviceDeclarationExpression>),
@@ -290,6 +338,8 @@ pub enum Expression {
     Literal(Spanned<Literal>),
     Logical(Spanned<LogicalExpression>),
     Loop(Spanned<LoopExpression>),
+    MemberAccess(Spanned<MemberAccessExpression>),
+    MethodCall(Spanned<MethodCallExpression>),
     Negation(Box<Spanned<Expression>>),
     Priority(Box<Spanned<Expression>>),
     Return(Box<Spanned<Expression>>),
@@ -305,6 +355,7 @@ impl std::fmt::Display for Expression {
             Expression::Binary(e) => write!(f, "{}", e),
             Expression::Block(e) => write!(f, "{}", e),
             Expression::Break(_) => write!(f, "break"),
+            Expression::ConstDeclaration(e) => write!(f, "{}", e),
             Expression::Continue(_) => write!(f, "continue"),
             Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
             Expression::DeviceDeclaration(e) => write!(f, "{}", e),
@@ -314,6 +365,8 @@ impl std::fmt::Display for Expression {
             Expression::Literal(l) => write!(f, "{}", l),
             Expression::Logical(e) => write!(f, "{}", e),
             Expression::Loop(e) => write!(f, "{}", e),
+            Expression::MemberAccess(e) => write!(f, "{}", e),
+            Expression::MethodCall(e) => write!(f, "{}", e),
             Expression::Negation(e) => write!(f, "(-{})", e),
             Expression::Priority(e) => write!(f, "({})", e),
             Expression::Return(e) => write!(f, "(return {})", e),

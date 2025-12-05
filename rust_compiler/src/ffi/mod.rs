@@ -1,5 +1,6 @@
 use compiler::Compiler;
-use parser::Parser;
+use helpers::Documentation;
+use parser::{sys_call::SysCall, Parser};
 use safer_ffi::prelude::*;
 use std::io::BufWriter;
 use tokenizer::{
@@ -24,6 +25,13 @@ pub struct FfiRange {
     end_col: u32,
     start_line: u32,
     end_line: u32,
+}
+
+#[derive_ReprC]
+#[repr(C)]
+pub struct FfiDocumentedItem {
+    item_name: safer_ffi::String,
+    docs: safer_ffi::String,
 }
 
 impl From<lsp_types::Range> for FfiRange {
@@ -74,6 +82,11 @@ pub fn free_ffi_diagnostic_vec(v: safer_ffi::Vec<FfiDiagnostic>) {
 #[ffi_export]
 pub fn free_string(s: safer_ffi::String) {
     drop(s)
+}
+
+#[ffi_export]
+pub fn free_docs_vec(v: safer_ffi::Vec<FfiDocumentedItem>) {
+    drop(v)
 }
 
 /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
@@ -151,8 +164,8 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
                     column: column as i32,
                     error: "".into(),
                     length: (original_string.unwrap_or_default().len()) as i32,
+                    tooltip: token_type.docs().into(),
                     token_kind: token_type.into(),
-                    tooltip: "".into(),
                 }),
             }
         }
@@ -182,4 +195,27 @@ pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<
     });
 
     res.unwrap_or(vec![].into())
+}
+
+#[ffi_export]
+pub fn get_docs() -> safer_ffi::Vec<FfiDocumentedItem> {
+    let res = std::panic::catch_unwind(|| {
+        let mut docs = SysCall::get_all_documentation();
+        docs.extend(TokenType::get_all_documentation());
+
+        docs
+    });
+
+    let Ok(result) = res else {
+        return vec![].into();
+    };
+
+    result
+        .into_iter()
+        .map(|(key, doc)| FfiDocumentedItem {
+            item_name: key.into(),
+            docs: doc.into(),
+        })
+        .collect::<Vec<_>>()
+        .into()
 }

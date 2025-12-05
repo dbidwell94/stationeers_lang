@@ -1,0 +1,69 @@
+name: CI/CD Pipeline
+
+# Trigger conditions
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  # JOB 1: RUN TESTS
+  # This runs on every PR and every push to master.
+  # It validates that the Rust code is correct.
+  test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Build the Docker Image (Cached)
+      - name: Build Docker Image
+        run: docker build -t slang-builder -f Dockerfile.build .
+
+      # 2. Run Rust Tests
+      # --manifest-path: Point to the nested Cargo.toml
+      # --workspace: Test all crates (compiler, parser, tokenizer, helpers)
+      # --all-targets: Test lib, bin, and tests folder (skips doc-tests because they are not valid Rust)
+      - name: Run Rust Tests
+        run: |
+          docker run --rm \
+            -u $(id -u):$(id -g) \
+            -v "$PWD":/app \
+            slang-builder \
+            cargo test --manifest-path rust_compiler/Cargo.toml --workspace --all-targets
+
+  build:
+    needs: test
+    runs-on: self-hosted
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Build Image (Fast, uses cache from previous job if available/local)
+      - name: Build Docker Image
+        run: docker build -t slang-builder -f Dockerfile.build .
+
+      # 2. Run the Build Script
+      # Mounts the references from the server's secure storage
+      - name: Build Release Artifacts
+        run: |
+          docker run --rm \
+          -u $(id -u):$(id -g) \
+            -v "$PWD":/app \
+            -v "/home/github-runner/permanent-refs":/app/csharp_mod/refs \
+            slang-builder \
+            ./build.sh
+
+      # 3. Fix Permissions
+      # Docker writes files as root. We need to own them to upload them.
+      - name: Fix Permissions
+        if: always()
+        run: sudo chown -R $USER:$USER release/
+
+      # 4. Upload to GitHub
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: StationeersSlang-Release
+          path: release/

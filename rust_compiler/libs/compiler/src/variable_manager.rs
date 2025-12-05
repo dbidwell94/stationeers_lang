@@ -3,6 +3,7 @@
 // r1 - r7   : Temporary Variables
 // r8 - r14  : Persistant Variables
 
+use parser::tree_node::Literal;
 use quick_error::quick_error;
 use std::collections::{HashMap, VecDeque};
 
@@ -43,6 +44,8 @@ pub enum VariableLocation {
     Persistant(u8),
     /// Represents a a stack offset (current stack - offset = variable loc)
     Stack(u16),
+    /// Represents a constant value and should be directly substituted as such.
+    Constant(Literal),
 }
 
 pub struct VariableScope<'a> {
@@ -91,6 +94,8 @@ impl<'a> VariableScope<'a> {
     pub fn scoped(parent: &'a VariableScope<'a>) -> Self {
         Self {
             parent: Option::Some(parent),
+            temporary_vars: parent.temporary_vars.clone(),
+            persistant_vars: parent.persistant_vars.clone(),
             ..Default::default()
         }
     }
@@ -140,24 +145,48 @@ impl<'a> VariableScope<'a> {
         Ok(var_location)
     }
 
-    pub fn get_location_of(
+    pub fn define_const(
         &mut self,
         var_name: impl Into<String>,
+        value: Literal,
     ) -> Result<VariableLocation, Error> {
         let var_name = var_name.into();
-        let var = self
-            .var_lookup_table
-            .get(var_name.as_str())
-            .cloned()
-            .ok_or(Error::UnknownVariable(var_name))?;
-
-        if let VariableLocation::Stack(inserted_at_offset) = var {
-            Ok(VariableLocation::Stack(
-                self.stack_offset - inserted_at_offset,
-            ))
-        } else {
-            Ok(var)
+        if self.var_lookup_table.contains_key(&var_name) {
+            return Err(Error::DuplicateVariable(var_name));
         }
+
+        let new_value = VariableLocation::Constant(value);
+
+        self.var_lookup_table.insert(var_name, new_value.clone());
+        Ok(new_value)
+    }
+
+    pub fn get_location_of(&self, var_name: impl Into<String>) -> Result<VariableLocation, Error> {
+        let var_name = var_name.into();
+
+        // 1. Check this scope
+        if let Some(var) = self.var_lookup_table.get(var_name.as_str()) {
+            if let VariableLocation::Stack(inserted_at_offset) = var {
+                // Return offset relative to CURRENT sp
+                return Ok(VariableLocation::Stack(
+                    self.stack_offset - inserted_at_offset,
+                ));
+            } else {
+                return Ok(var.clone());
+            }
+        }
+
+        // 2. Recursively check parent
+        if let Some(parent) = self.parent {
+            let loc = parent.get_location_of(var_name)?;
+
+            if let VariableLocation::Stack(parent_offset) = loc {
+                return Ok(VariableLocation::Stack(parent_offset + self.stack_offset));
+            }
+            return Ok(loc);
+        }
+
+        Err(Error::UnknownVariable(var_name))
     }
 
     pub fn has_parent(&self) -> bool {
@@ -180,7 +209,7 @@ impl<'a> VariableScope<'a> {
                     "Attempted to free a `let` variable.",
                 )));
             }
-            VariableLocation::Stack(_) => {}
+            _ => {}
         };
 
         Ok(())

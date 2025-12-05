@@ -34,6 +34,8 @@ fn no_arguments() -> anyhow::Result<()> {
 
 #[test]
 fn let_var_args() -> anyhow::Result<()> {
+    // !IMPORTANT this needs to be stabilized as it currently incorrectly calculates sp offset at
+    // both ends of the cleanup lifecycle
     let compiled = compile! {
         debug
         "
@@ -64,6 +66,7 @@ fn let_var_args() -> anyhow::Result<()> {
             get r8 db r0
             sub sp sp 1
             move r9 r15 #i
+            sub sp sp 1
             "
         }
     );
@@ -123,6 +126,7 @@ fn inline_literal_args() -> anyhow::Result<()> {
             get r8 db r0
             sub sp sp 1
             move r9 r15 #returnedValue
+            sub sp sp 1
             "
         }
     );
@@ -164,6 +168,7 @@ fn mixed_args() -> anyhow::Result<()> {
             get r8 db r0
             sub sp sp 1
             move r9 r15 #returnValue
+            sub sp sp 1
             "
         }
     );

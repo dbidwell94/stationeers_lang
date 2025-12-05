@@ -121,6 +121,31 @@ public unsafe partial class Ffi {
         slice_ref_uint16_t input);
 }
 
+[StructLayout(LayoutKind.Sequential, Size = 48)]
+public unsafe struct FfiDocumentedItem_t {
+    public Vec_uint8_t item_name;
+
+    public Vec_uint8_t docs;
+}
+
+/// <summary>
+/// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Size = 24)]
+public unsafe struct Vec_FfiDocumentedItem_t {
+    public FfiDocumentedItem_t * ptr;
+
+    public UIntPtr len;
+
+    public UIntPtr cap;
+}
+
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    void free_docs_vec (
+        Vec_FfiDocumentedItem_t v);
+}
+
 public unsafe partial class Ffi {
     [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
     void free_ffi_diagnostic_vec (
@@ -162,6 +187,11 @@ public unsafe partial class Ffi {
     [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
     void free_string (
         Vec_uint8_t s);
+}
+
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    Vec_FfiDocumentedItem_t get_docs ();
 }
 
 public unsafe partial class Ffi {

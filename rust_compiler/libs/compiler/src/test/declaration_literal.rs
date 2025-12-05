@@ -56,6 +56,7 @@ fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> 
             push 7 #h
             push 8 #i
             push 9 #j
+            sub sp sp 3
             "
         }
     );

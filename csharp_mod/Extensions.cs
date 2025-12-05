@@ -3,6 +3,7 @@ namespace Slang;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Assets.Scripts.UI;
 using StationeersIC10Editor;
 
 public static unsafe class SlangExtensions
@@ -63,7 +64,9 @@ public static unsafe class SlangExtensions
                 colIndex,
                 token.length,
                 color,
-                token.token_kind
+                token.token_kind,
+                0,
+                token.tooltip.AsString()
             );
 
             string errMsg = token.error.AsString();
@@ -115,20 +118,63 @@ public static unsafe class SlangExtensions
     {
         switch (kind)
         {
-            case 1:
-                return SlangFormatter.ColorString; // String
-            case 2:
-                return SlangFormatter.ColorString; // Number
-            case 3:
-                return SlangFormatter.ColorInstruction; // Boolean
-            case 4:
-                return SlangFormatter.ColorSelection; // Keyword
-            case 5:
-                return SlangFormatter.ColorLineNumber; // Identifier
-            case 6:
-                return SlangFormatter.ColorDefault; // Symbol
+            case 1: // Strings
+                return SlangFormatter.ColorString;
+            case 2: // Numbers
+                return SlangFormatter.ColorNumber;
+            case 3: // Booleans
+                return SlangFormatter.ColorBoolean;
+
+            case 4: // (if, else, loop)
+                return SlangFormatter.ColorControl;
+            case 5: // (let, const, device)
+                return SlangFormatter.ColorDeclaration;
+
+            case 6: // (variables)
+                return SlangFormatter.ColorIdentifier;
+            case 7: // (punctuation)
+                return SlangFormatter.ColorDefault;
+
+            case 10: // (syscalls)
+                return SlangFormatter.ColorFunction;
+
+            case 11: // Comparisons
+            case 12: // Math
+            case 13: // Logic
+                return SlangFormatter.ColorOperator;
+
             default:
                 return SlangFormatter.ColorDefault;
         }
+    }
+
+    public static unsafe List<StationpediaPage> ToList(this Vec_FfiDocumentedItem_t vec)
+    {
+        var toReturn = new List<StationpediaPage>((int)vec.len);
+
+        var currentPtr = vec.ptr;
+
+        for (int i = 0; i < (int)vec.len; i++)
+        {
+            var doc = currentPtr[i];
+            var docItemName = doc.item_name.AsString();
+
+            var formattedText = TextMeshProFormatter.FromMarkdown(doc.docs.AsString());
+
+            var pediaPage = new StationpediaPage(
+                $"slang-item-{docItemName}",
+                docItemName,
+                formattedText
+            );
+
+            pediaPage.Text = formattedText;
+            pediaPage.Description = formattedText;
+            pediaPage.ParsePage();
+
+            toReturn.Add(pediaPage);
+        }
+
+        Ffi.free_docs_vec(vec);
+        return toReturn;
     }
 }

@@ -4,9 +4,10 @@ use parser::{
     Parser as ASTParser,
     sys_call::{SysCall, System},
     tree_node::{
-        AssignmentExpression, BinaryExpression, BlockExpression, DeviceDeclarationExpression,
-        Expression, FunctionExpression, IfExpression, InvocationExpression, Literal,
-        LiteralOrVariable, LogicalExpression, LoopExpression, Span, Spanned, WhileExpression,
+        AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
+        DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
+        InvocationExpression, Literal, LiteralOrVariable, LogicalExpression, LoopExpression,
+        MemberAccessExpression, Span, Spanned, WhileExpression,
     },
 };
 use quick_error::quick_error;
@@ -33,6 +34,20 @@ macro_rules! debug {
     };
 }
 
+fn extract_literal(literal: Literal, allow_strings: bool) -> Result<String, Error> {
+    if !allow_strings && matches!(literal, Literal::String(_)) {
+        return Err(Error::Unknown(
+            "Literal strings are not allowed in this context".to_string(),
+            None,
+        ));
+    }
+    Ok(match literal {
+        Literal::String(s) => s,
+        Literal::Number(n) => n.to_string(),
+        Literal::Boolean(b) => if b { "1" } else { "0" }.into(),
+    })
+}
+
 quick_error! {
     #[derive(Debug)]
     pub enum Error {
@@ -56,6 +71,9 @@ quick_error! {
         }
         AgrumentMismatch(func_name: String, span: Span) {
             display("Incorrect number of arguments passed into `{func_name}`")
+        }
+        ConstAssignment(ident: String, span: Span) {
+            display("Attempted to re-assign a value to const variable `{ident}`")
         }
         Unknown(reason: String, span: Option<Span>) {
             display("{reason}")
@@ -83,6 +101,7 @@ impl From<Error> for lsp_types::Diagnostic {
             DuplicateIdentifier(_, span)
             | UnknownIdentifier(_, span)
             | InvalidDevice(_, span)
+            | ConstAssignment(_, span)
             | AgrumentMismatch(_, span) => Diagnostic {
                 range: span.into(),
                 message: value.to_string(),
@@ -266,6 +285,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 // decl_expr is Box<Spanned<Expression>>
                 self.expression_declaration(var_name, *decl_expr, scope)
             }
+            Expression::ConstDeclaration(const_decl_expr) => {
+                self.expression_const_declaration(const_decl_expr.node, scope)?;
+                Ok(None)
+            }
             Expression::Assignment(assign_expr) => {
                 self.expression_assignment(assign_expr.node, scope)?;
                 Ok(None)
@@ -332,6 +355,42 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     }
                 }
             }
+            Expression::MemberAccess(access) => {
+                // "load" behavior (e.g. `let x = d0.On`)
+                let MemberAccessExpression { object, member } = access.node;
+
+                // 1. Resolve the object to a device string (e.g., "d0" or "rX")
+                let (device_str, cleanup) = self.resolve_device(*object, scope)?;
+
+                // 2. Allocate a temp register for the result
+                let result_name = self.next_temp_name();
+                let loc = scope.add_variable(&result_name, LocationRequest::Temp)?;
+                let reg = self.resolve_register(&loc)?;
+
+                // 3. Emit load instruction: l rX device member
+                self.write_output(format!("l {} {} {}", reg, device_str, member.node))?;
+
+                // 4. Cleanup
+                if let Some(c) = cleanup {
+                    scope.free_temp(c)?;
+                }
+
+                Ok(Some(CompilationResult {
+                    location: loc,
+                    temp_name: Some(result_name),
+                }))
+            }
+            Expression::MethodCall(call) => {
+                // Methods are not yet fully supported (e.g. `d0.SomeFunc()`).
+                // This would likely map to specialized syscalls or batch instructions.
+                Err(Error::Unknown(
+                    format!(
+                        "Method calls are not yet supported: {}",
+                        call.node.method.node
+                    ),
+                    Some(call.span),
+                ))
+            }
             Expression::Priority(inner_expr) => self.expression(*inner_expr, scope),
             Expression::Negation(inner_expr) => {
                 // Compile negation as 0 - inner
@@ -361,6 +420,24 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         }
     }
 
+    /// Resolves an expression to a device identifier string for use in instructions like `s` or `l`.
+    /// Returns (device_string, optional_cleanup_temp_name).
+    fn resolve_device<'v>(
+        &mut self,
+        expr: Spanned<Expression>,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<(String, Option<String>), Error> {
+        // If it's a direct variable reference, check if it's a known device alias first
+        if let Expression::Variable(ref name) = expr.node
+            && let Some(device_id) = self.devices.get(&name.node)
+        {
+            return Ok((device_id.clone(), None));
+        }
+
+        // Otherwise, compile it as an operand (e.g. it might be a register holding a device hash/id)
+        self.compile_operand(expr, scope)
+    }
+
     fn emit_variable_assignment(
         &mut self,
         var_name: &str,
@@ -379,6 +456,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
             VariableLocation::Stack(_) => {
                 self.write_output(format!("push {}{debug_tag}", source_value.into()))?;
+            }
+            VariableLocation::Constant(_) => {
+                return Err(Error::Unknown(
+                    r#"Attempted to emit a variable assignent for a constant value.
+                    This is a Compiler bug and should be reported to the developer."#
+                        .into(),
+                    None,
+                ));
             }
         }
 
@@ -526,6 +611,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                         ))?;
                         format!("r{}", VariableScope::TEMP_STACK_REGISTER)
                     }
+                    VariableLocation::Constant(_) => unreachable!(),
                 };
                 self.emit_variable_assignment(&name_str, &var_loc, src_str)?;
                 (var_loc, None)
@@ -539,6 +625,35 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     *inner,
                     scope,
                 );
+            }
+            Expression::MemberAccess(access) => {
+                // Compile the member access (load instruction)
+                let result = self.expression(
+                    Spanned {
+                        node: Expression::MemberAccess(access),
+                        span: name_span, // Use declaration span roughly
+                    },
+                    scope,
+                )?;
+
+                // Result is in a temp register
+                let Some(comp_res) = result else {
+                    return Err(Error::Unknown(
+                        "Member access did not return a value".into(),
+                        Some(name_span),
+                    ));
+                };
+
+                let var_loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
+                let result_reg = self.resolve_register(&comp_res.location)?;
+
+                self.emit_variable_assignment(&name_str, &var_loc, result_reg)?;
+
+                if let Some(temp) = comp_res.temp_name {
+                    scope.free_temp(temp)?;
+                }
+
+                (var_loc, None)
             }
             _ => {
                 return Err(Error::Unknown(
@@ -554,55 +669,101 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         }))
     }
 
+    fn expression_const_declaration<'v>(
+        &mut self,
+        expr: ConstDeclarationExpression,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<CompilationResult, Error> {
+        let ConstDeclarationExpression {
+            name: const_name,
+            value: const_value,
+        } = expr;
+
+        Ok(CompilationResult {
+            location: scope.define_const(const_name.node, const_value.node)?,
+            temp_name: None,
+        })
+    }
+
     fn expression_assignment<'v>(
         &mut self,
         expr: AssignmentExpression,
         scope: &mut VariableScope<'v>,
     ) -> Result<(), Error> {
         let AssignmentExpression {
-            identifier,
+            assignee,
             expression,
         } = expr;
 
-        let location = match scope.get_location_of(&identifier.node) {
-            Ok(l) => l,
-            Err(_) => {
-                self.errors.push(Error::UnknownIdentifier(
-                    identifier.node.clone(),
-                    identifier.span,
+        match assignee.node {
+            Expression::Variable(identifier) => {
+                let location = match scope.get_location_of(&identifier.node) {
+                    Ok(l) => l,
+                    Err(_) => {
+                        self.errors.push(Error::UnknownIdentifier(
+                            identifier.node.clone(),
+                            identifier.span,
+                        ));
+                        VariableLocation::Temporary(0)
+                    }
+                };
+
+                let (val_str, cleanup) = self.compile_operand(*expression, scope)?;
+
+                let debug_tag = if self.config.debug {
+                    format!(" #{}", identifier.node)
+                } else {
+                    String::new()
+                };
+
+                match location {
+                    VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
+                        self.write_output(format!("move r{reg} {val_str}{debug_tag}"))?;
+                    }
+                    VariableLocation::Stack(offset) => {
+                        // Calculate address: sp - offset
+                        self.write_output(format!(
+                            "sub r{0} sp {offset}",
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                        // Store value to stack/db at address
+                        self.write_output(format!(
+                            "put db r{0} {val_str}{debug_tag}",
+                            VariableScope::TEMP_STACK_REGISTER
+                        ))?;
+                    }
+                    VariableLocation::Constant(_) => {
+                        return Err(Error::ConstAssignment(identifier.node, identifier.span));
+                    }
+                }
+
+                if let Some(name) = cleanup {
+                    scope.free_temp(name)?;
+                }
+            }
+            Expression::MemberAccess(access) => {
+                // Set instruction: s device member value
+                let MemberAccessExpression { object, member } = access.node;
+
+                let (device_str, dev_cleanup) = self.resolve_device(*object, scope)?;
+                let (val_str, val_cleanup) = self.compile_operand(*expression, scope)?;
+
+                self.write_output(format!("s {} {} {}", device_str, member.node, val_str))?;
+
+                if let Some(c) = dev_cleanup {
+                    scope.free_temp(c)?;
+                }
+                if let Some(c) = val_cleanup {
+                    scope.free_temp(c)?;
+                }
+            }
+            _ => {
+                return Err(Error::Unknown(
+                    "Invalid assignment target. Only variables and member access are supported."
+                        .into(),
+                    Some(assignee.span),
                 ));
-                VariableLocation::Temporary(0)
             }
-        };
-
-        let (val_str, cleanup) = self.compile_operand(*expression, scope)?;
-
-        let debug_tag = if self.config.debug {
-            format!(" #{}", identifier.node)
-        } else {
-            String::new()
-        };
-
-        match location {
-            VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
-                self.write_output(format!("move r{reg} {val_str}{debug_tag}"))?;
-            }
-            VariableLocation::Stack(offset) => {
-                // Calculate address: sp - offset
-                self.write_output(format!(
-                    "sub r{0} sp {offset}",
-                    VariableScope::TEMP_STACK_REGISTER
-                ))?;
-                // Store value to stack/db at address
-                self.write_output(format!(
-                    "put db r{0} {val_str}{debug_tag}",
-                    VariableScope::TEMP_STACK_REGISTER
-                ))?;
-            }
-        }
-
-        if let Some(name) = cleanup {
-            scope.free_temp(name)?;
         }
 
         Ok(())
@@ -671,6 +832,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                         VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
                             self.write_output(format!("push r{reg}"))?;
                         }
+                        VariableLocation::Constant(lit) => {
+                            self.write_output(format!("push {}", extract_literal(lit, false)?))?;
+                        }
                         VariableLocation::Stack(stack_offset) => {
                             self.write_output(format!(
                                 "sub r{0} sp {stack_offset}",
@@ -703,6 +867,31 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     self.write_output(format!("push {reg_str}"))?;
                     if let Some(name) = result.temp_name {
                         stack.free_temp(name)?;
+                    }
+                }
+                Expression::MemberAccess(access) => {
+                    // Compile member access to temp and push
+                    let result_opt = self.expression(
+                        Spanned {
+                            node: Expression::MemberAccess(access),
+                            span: Span {
+                                start_col: 0,
+                                end_col: 0,
+                                start_line: 0,
+                                end_line: 0,
+                            }, // Dummy span
+                        },
+                        stack,
+                    )?;
+
+                    if let Some(result) = result_opt {
+                        let reg_str = self.resolve_register(&result.location)?;
+                        self.write_output(format!("push {reg_str}"))?;
+                        if let Some(name) = result.temp_name {
+                            stack.free_temp(name)?;
+                        }
+                    } else {
+                        self.write_output("push 0")?; // Should fail ideally
                     }
                 }
                 _ => {
@@ -905,6 +1094,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn resolve_register(&self, loc: &VariableLocation) -> Result<String, Error> {
         match loc {
             VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => Ok(format!("r{r}")),
+            VariableLocation::Constant(_) => Err(Error::Unknown(
+                "Cannot resolve a constant value to register".into(),
+                None,
+            )),
             VariableLocation::Stack(_) => Err(Error::Unknown(
                 "Cannot resolve Stack location directly to register string without context".into(),
                 None,
@@ -954,6 +1147,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
                 Ok((format!("r{r}"), result.temp_name))
             }
+            VariableLocation::Constant(lit) => match lit {
+                Literal::Number(n) => Ok((n.to_string(), None)),
+                Literal::Boolean(b) => Ok((if b { "1" } else { "0" }.to_string(), None)),
+                Literal::String(s) => Ok((s, None)),
+            },
             VariableLocation::Stack(offset) => {
                 // If it's on the stack, we must load it into a temp to use it as an operand
                 let temp_name = self.next_temp_name();
@@ -1116,25 +1314,34 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_block<'v>(
         &mut self,
         mut expr: BlockExpression,
-        scope: &mut VariableScope<'v>,
+        parent_scope: &mut VariableScope<'v>,
     ) -> Result<(), Error> {
         // First, sort the expressions to ensure functions are hoisted
         expr.0.sort_by(|a, b| {
-            if matches!(b.node, Expression::Function(_))
-                && matches!(a.node, Expression::Function(_))
-            {
+            if matches!(
+                b.node,
+                Expression::Function(_) | Expression::ConstDeclaration(_)
+            ) && matches!(
+                a.node,
+                Expression::Function(_) | Expression::ConstDeclaration(_)
+            ) {
                 std::cmp::Ordering::Equal
-            } else if matches!(a.node, Expression::Function(_)) {
+            } else if matches!(
+                a.node,
+                Expression::Function(_) | Expression::ConstDeclaration(_)
+            ) {
                 std::cmp::Ordering::Less
             } else {
                 std::cmp::Ordering::Greater
             }
         });
 
+        let mut scope = VariableScope::scoped(parent_scope);
+
         for expr in expr.0 {
             if !self.declared_main
                 && !matches!(expr.node, Expression::Function(_))
-                && !scope.has_parent()
+                && !parent_scope.has_parent()
             {
                 self.write_output("main:")?;
                 self.declared_main = true;
@@ -1142,11 +1349,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
             match expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(*ret_expr, scope)?;
+                    self.expression_return(*ret_expr, &mut scope)?;
                 }
                 _ => {
                     // Swallow errors within expressions so block can continue
-                    if let Err(e) = self.expression(expr, scope).and_then(|result| {
+                    if let Err(e) = self.expression(expr, &mut scope).and_then(|result| {
                         // If the expression was a statement that returned a temp result (e.g. `1 + 2;` line),
                         // we must free it to avoid leaking registers.
                         if let Some(comp_res) = result
@@ -1160,6 +1367,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     }
                 }
             }
+        }
+
+        if scope.stack_offset() > 0 {
+            self.write_output(format!("sub sp sp {}", scope.stack_offset()))?;
         }
 
         Ok(())
@@ -1189,6 +1400,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                             VariableScope::RETURN_REGISTER,
                             debug!(self, "#returnValue")
                         ))?;
+                    }
+                    VariableLocation::Constant(lit) => {
+                        let str = extract_literal(lit, false)?;
+                        self.write_output(format!(
+                            "move r{} {str} {}",
+                            VariableScope::RETURN_REGISTER,
+                            debug!(self, "#returnValue")
+                        ))?
                     }
                     VariableLocation::Stack(offset) => {
                         self.write_output(format!(
@@ -1250,6 +1469,23 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 ))?;
                 if let Some(name) = result.temp_name {
                     scope.free_temp(name)?;
+                }
+            }
+            Expression::MemberAccess(access) => {
+                // Return result of member access
+                let res_opt = self.expression(
+                    Spanned {
+                        node: Expression::MemberAccess(access),
+                        span: expr.span,
+                    },
+                    scope,
+                )?;
+                if let Some(res) = res_opt {
+                    let reg = self.resolve_register(&res.location)?;
+                    self.write_output(format!("move r{} {}", VariableScope::RETURN_REGISTER, reg))?;
+                    if let Some(temp) = res.temp_name {
+                        scope.free_temp(temp)?;
+                    }
                 }
             }
             _ => {
