@@ -59,7 +59,7 @@ jobs:
       # Docker writes files as root. We need to own them to upload them.
       - name: Fix Permissions
         if: always()
-        run: sudo chown -R $USER:$USER release/
+        run: chown -R $USER:$USER release/
 
       # 4. Upload to GitHub
       - name: Upload Release Artifacts
