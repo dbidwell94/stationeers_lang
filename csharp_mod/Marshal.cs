@@ -131,11 +131,11 @@ public static class Marshal
         }
     }
 
-    public static unsafe StyledLine TokenizeLine(string inputString)
+    public static unsafe List<SemanticToken> TokenizeLine(string inputString)
     {
         if (string.IsNullOrEmpty(inputString) || !EnsureLibLoaded())
         {
-            return new StyledLine(inputString ?? "");
+            return new List<SemanticToken>();
         }
 
         fixed (char* ptrInputStr = inputString)
@@ -148,7 +148,7 @@ public static class Marshal
 
             var tokens = Ffi.tokenize_line(strRef);
             L.Debug($"Tokenized line '{inputString}' into {tokens.len} tokens.");
-            return tokens.ToLine(inputString);
+            return tokens.ToTokenList();
         }
     }
 

@@ -72,7 +72,7 @@ public class SlangFormatter : ICodeFormatter
     public override StyledLine ParseLine(string line)
     {
         L.Debug($"Parsing line for syntax highlighting: {line}");
-        return Marshal.TokenizeLine(line);
+        return new StyledLine(line, Marshal.TokenizeLine(line));
     }
 
     private void HandleCodeChanged()
@@ -137,12 +137,15 @@ public class SlangFormatter : ICodeFormatter
             if (line is null)
                 continue;
 
+            // 1. Get base syntax tokens
+            var allTokens = Marshal.TokenizeLine(line.Text);
+
+            // 2. Overlay error tokens if diagnostics exist for this line
             if (dict.ContainsKey(lineIndex))
             {
-                var tokens = new List<SemanticToken>();
                 foreach (var lineDiagnostic in dict[lineIndex])
                 {
-                    tokens.Add(
+                    allTokens.Add(
                         new SemanticToken(
                             line: (int)lineIndex,
                             column: Math.Abs((int)lineDiagnostic.Range.StartCol),
@@ -156,8 +159,9 @@ public class SlangFormatter : ICodeFormatter
                         )
                     );
                 }
-                line.Update(tokens);
             }
+
+            line.Update(allTokens);
         }
 
         _linesWithErrors = new HashSet<uint>(dict.Keys);
