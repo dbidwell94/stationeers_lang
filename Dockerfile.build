@@ -11,9 +11,10 @@ RUN wget --progress=dot:giga https://dot.net/v1/dotnet-install.sh -O dotnet-inst
   && ./dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet \
   && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
 
-RUN rustup target add x86_64-pc-windows-gnu \
-  && rustup target add x86_64-unknown-linux-gnu \
-  && rustup component add rustfmt clippy
+RUN rustup toolchain install stable \
+  && rustup component add --toolchain stable rustfmt clippy \
+  && rustup target add --toolchain stable x86_64-pc-windows-gnu \
+  && rustup target add --toolchain stable x86_64-unknown-linux-gnu
 
 WORKDIR /app
 
