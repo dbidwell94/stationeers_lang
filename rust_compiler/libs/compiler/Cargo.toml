@@ -7,8 +7,9 @@ edition = "2024"
 quick-error = { workspace = true }
 parser = { path = "../parser" }
 tokenizer = { path = "../tokenizer" }
+helpers = { path = "../helpers" }
 lsp-types = { workspace = true }
-crc32fast = { workspace = true }
+rust_decimal = { workspace = true }
 
 [dev-dependencies]
 anyhow = { version = "1.0" }

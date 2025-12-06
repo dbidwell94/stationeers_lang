@@ -17,8 +17,7 @@ fn simple_binary_expression() -> anyhow::Result<()> {
             "
             j main
             main:
-            add r1 1 2
-            move r8 r1 #i
+            move r8 3 #i
             "
         }
     );
@@ -72,7 +71,7 @@ fn nested_binary_expressions() -> anyhow::Result<()> {
 }
 
 #[test]
-fn stress_test_negation_with_stack_spillover() -> anyhow::Result<()> {
+fn stress_test_constant_folding() -> anyhow::Result<()> {
     let compiled = compile! {
         debug
         "
@@ -86,12 +85,7 @@ fn stress_test_negation_with_stack_spillover() -> anyhow::Result<()> {
             "
             j main
             main:
-            add r1 -1 -2
-            add r2 -5 -6
-            mul r3 -4 r2
-            add r4 -3 r3
-            mul r5 r1 r4
-            move r8 r5 #negationHell
+            move r8 -123 #negationHell
             "
         }
     );

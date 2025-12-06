@@ -1,6 +1,6 @@
 #![allow(clippy::result_large_err)]
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
-use crc32fast::hash as crc32_hash;
+use helpers::prelude::*;
 use parser::{
     Parser as ASTParser,
     sys_call::{SysCall, System},
@@ -559,15 +559,24 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 let result = self.expression_binary(bin_expr, scope)?;
                 let var_loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
 
-                // Move result from temp to new persistent variable
-                let result_reg = self.resolve_register(&result.location)?;
-                self.emit_variable_assignment(&name_str, &var_loc, result_reg)?;
+                if let CompilationResult {
+                    location: VariableLocation::Constant(Literal::Number(num)),
+                    ..
+                } = result
+                {
+                    self.emit_variable_assignment(&name_str, &var_loc, num)?;
+                    (var_loc, None)
+                } else {
+                    // Move result from temp to new persistent variable
+                    let result_reg = self.resolve_register(&result.location)?;
+                    self.emit_variable_assignment(&name_str, &var_loc, result_reg)?;
 
-                // Free the temp result
-                if let Some(name) = result.temp_name {
-                    scope.free_temp(name)?;
+                    // Free the temp result
+                    if let Some(name) = result.temp_name {
+                        scope.free_temp(name)?;
+                    }
+                    (var_loc, None)
                 }
-                (var_loc, None)
             }
             Expression::Logical(log_expr) => {
                 let result = self.expression_logical(log_expr, scope)?;
@@ -686,14 +695,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             LiteralOr::Or(Spanned {
                 node: SysCall::System(System::Hash(Literal::String(str_to_hash))),
                 ..
-            }) => {
-                let hash = crc32_hash(str_to_hash.as_bytes());
-
-                // in stationeers, crc32 is a SIGNED int.
-                let hash_value_i32 = i32::from_le_bytes(hash.to_le_bytes());
-
-                Literal::Number(Number::Integer(hash_value_i32 as i128))
-            }
+            }) => Literal::Number(Number::Integer(crc_hash_signed(&str_to_hash))),
             LiteralOr::Or(Spanned { span, .. }) => {
                 return Err(Error::Unknown(
                     "hash only supports string literals in this context.".into(),
@@ -1232,6 +1234,58 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         expr: Spanned<BinaryExpression>,
         scope: &mut VariableScope<'v>,
     ) -> Result<CompilationResult, Error> {
+        fn fold_binary_expression(expr: &BinaryExpression) -> Option<Number> {
+            let (lhs, rhs) = match &expr {
+                BinaryExpression::Add(l, r)
+                | BinaryExpression::Subtract(l, r)
+                | BinaryExpression::Multiply(l, r)
+                | BinaryExpression::Divide(l, r)
+                | BinaryExpression::Exponent(l, r)
+                | BinaryExpression::Modulo(l, r) => (fold_expression(l)?, fold_expression(r)?),
+            };
+
+            match expr {
+                BinaryExpression::Add(..) => Some(lhs + rhs),
+                BinaryExpression::Subtract(..) => Some(lhs - rhs),
+                BinaryExpression::Multiply(..) => Some(lhs * rhs),
+                BinaryExpression::Divide(..) => Some(lhs / rhs), // Watch out for div by zero panics!
+                BinaryExpression::Modulo(..) => Some(lhs % rhs),
+                _ => None, // Handle Exponent separately or implement pow
+            }
+        }
+
+        fn fold_expression(expr: &Expression) -> Option<Number> {
+            match expr {
+                // 1. Base Case: It's already a number
+                Expression::Literal(lit) => match lit.node {
+                    Literal::Number(n) => Some(n),
+                    _ => None,
+                },
+
+                // 2. Handle Parentheses: Just recurse deeper
+                Expression::Priority(inner) => fold_expression(&inner.node),
+
+                // 3. Handle Negation: Recurse, then negate
+                Expression::Negation(inner) => {
+                    let val = fold_expression(&inner.node)?;
+                    Some(-val) // Requires impl Neg for Number
+                }
+
+                // 4. Handle Binary Ops: Recurse BOTH sides, then combine
+                Expression::Binary(bin) => fold_binary_expression(&bin.node),
+
+                // 5. Anything else (Variables, Function Calls) cannot be compile-time folded
+                _ => None,
+            }
+        }
+
+        if let Some(const_lit) = fold_binary_expression(&expr.node) {
+            return Ok(CompilationResult {
+                location: VariableLocation::Constant(Literal::Number(const_lit)),
+                temp_name: None,
+            });
+        };
+
         let (op_str, left_expr, right_expr) = match expr.node {
             BinaryExpression::Add(l, r) => ("add", l, r),
             BinaryExpression::Multiply(l, r) => ("mul", l, r),
@@ -1553,8 +1607,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     ));
                 };
 
-                let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
-                self.emit_variable_assignment("hash_ret", &loc, format!(r#"HASH("{}")"#, str_lit))?;
+                let loc = VariableLocation::Constant(Literal::Number(Number::Integer(
+                    crc_hash_signed(&str_lit),
+                )));
 
                 Ok(Some(CompilationResult {
                     location: loc,

@@ -88,7 +88,7 @@ fn test_set_on_device_batched() -> anyhow::Result<()> {
     let compiled = compile! {
         debug
         r#"
-        let doorHash = hash("Door");
+        const doorHash = hash("Door");
         setOnDeviceBatched(doorHash, "Lock", true);
         "#
     };
@@ -99,9 +99,7 @@ fn test_set_on_device_batched() -> anyhow::Result<()> {
             r#"
             j main
             main:
-            move r15 HASH("Door") #hash_ret
-            move r8 r15 #doorHash
-            sb r8 Lock 1
+            sb 718797587 Lock 1
             "#
         }
     );
@@ -128,30 +126,6 @@ fn test_load_from_device() -> anyhow::Result<()> {
             l r15 d0 On
             move r8 r15 #setting
             "
-        }
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_hash() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
-        r#"
-        let nameHash = hash("testValue");
-        "#
-    };
-
-    assert_eq!(
-        compiled,
-        indoc! {
-            r#"
-            j main
-            main:
-            move r15 HASH("testValue") #hash_ret
-            move r8 r15 #nameHash
-            "#
         }
     );
 

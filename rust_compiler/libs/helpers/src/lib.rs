@@ -1,3 +1,4 @@
+mod helper_funcs;
 mod macros;
 mod syscall;
 
@@ -11,5 +12,6 @@ pub trait Documentation {
 }
 
 pub mod prelude {
+    pub use super::helper_funcs::*;
     pub use super::{Documentation, documented, with_syscalls};
 }
