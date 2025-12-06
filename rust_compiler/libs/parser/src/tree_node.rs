@@ -1,5 +1,7 @@
 use std::ops::Deref;
 
+use crate::sys_call;
+
 use super::sys_call::SysCall;
 use tokenizer::token::Number;
 
@@ -8,6 +10,21 @@ pub enum Literal {
     Number(Number),
     String(String),
     Boolean(bool),
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum LiteralOr<T> {
+    Literal(Spanned<Literal>),
+    Or(Spanned<T>),
+}
+
+impl<T: std::fmt::Display> std::fmt::Display for LiteralOr<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Literal(l) => write!(f, "{l}"),
+            Self::Or(o) => write!(f, "{o}"),
+        }
+    }
 }
 
 impl std::fmt::Display for Literal {
@@ -198,7 +215,14 @@ impl std::fmt::Display for LiteralOrVariable {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ConstDeclarationExpression {
     pub name: Spanned<String>,
-    pub value: Spanned<Literal>,
+    pub value: LiteralOr<SysCall>,
+}
+
+impl ConstDeclarationExpression {
+    pub fn is_syscall_supported(call: &SysCall) -> bool {
+        use sys_call::System;
+        matches!(call, SysCall::System(sys) if matches!(sys, System::Hash(_)))
+    }
 }
 
 impl std::fmt::Display for ConstDeclarationExpression {

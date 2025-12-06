@@ -144,3 +144,10 @@ fn test_binary_expression() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_const_hash_expression() -> Result<()> {
+    let expr = parser!(r#"const i = hash("item")"#).parse()?.unwrap();
+    assert_eq!("(const i = hash(\"item\"))", expr.to_string());
+    Ok(())
+}

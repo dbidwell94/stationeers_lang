@@ -146,3 +146,25 @@ fn test_boolean_return() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_const_hash_expr() -> anyhow::Result<()> {
+    let compiled = compile!(debug r#"
+        const nameHash = hash("AccessCard");
+        device self = "db";
+
+        self.Setting = nameHash;
+    "#);
+
+    assert_eq!(
+        compiled,
+        indoc! {
+        "
+            j main
+            main:
+            s db Setting -732925934
+        "
+        }
+    );
+    Ok(())
+}

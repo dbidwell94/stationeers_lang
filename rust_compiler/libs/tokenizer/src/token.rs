@@ -168,9 +168,84 @@ impl std::fmt::Display for TokenType {
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Number {
     /// Represents an integer number
-    Integer(u128),
+    Integer(i128),
     /// Represents a decimal type number with a precision of 64 bits
     Decimal(Decimal),
+}
+
+impl From<Number> for Decimal {
+    fn from(value: Number) -> Self {
+        match value {
+            Number::Decimal(d) => d,
+            Number::Integer(i) => Decimal::from(i),
+        }
+    }
+}
+
+impl std::ops::Neg for Number {
+    type Output = Number;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Self::Integer(i) => Self::Integer(-i),
+            Self::Decimal(d) => Self::Decimal(-d),
+        }
+    }
+}
+
+impl std::ops::Add for Number {
+    type Output = Number;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Integer(l), Self::Integer(r)) => Number::Integer(l + r),
+            (Self::Decimal(l), Self::Decimal(r)) => Number::Decimal(l + r),
+            (Self::Integer(l), Self::Decimal(r)) => Number::Decimal(Decimal::from(l) + r),
+            (Self::Decimal(l), Self::Integer(r)) => Number::Decimal(l + Decimal::from(r)),
+        }
+    }
+}
+
+impl std::ops::Sub for Number {
+    type Output = Number;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Integer(l), Self::Integer(r)) => Self::Integer(l - r),
+            (Self::Decimal(l), Self::Integer(r)) => Self::Decimal(l - Decimal::from(r)),
+            (Self::Integer(l), Self::Decimal(r)) => Self::Decimal(Decimal::from(l) - r),
+            (Self::Decimal(l), Self::Decimal(r)) => Self::Decimal(l - r),
+        }
+    }
+}
+
+impl std::ops::Mul for Number {
+    type Output = Number;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Number::Integer(l), Number::Integer(r)) => Number::Integer(l * r),
+            (Number::Integer(l), Number::Decimal(r)) => Number::Decimal(Decimal::from(l) * r),
+            (Number::Decimal(l), Number::Integer(r)) => Number::Decimal(l * Decimal::from(r)),
+            (Number::Decimal(l), Number::Decimal(r)) => Number::Decimal(l * r),
+        }
+    }
+}
+
+impl std::ops::Div for Number {
+    type Output = Number;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Number::Decimal(Decimal::from(self) / Decimal::from(rhs))
+    }
+}
+
+impl std::ops::Rem for Number {
+    type Output = Number;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        Number::Decimal(Decimal::from(self) % Decimal::from(rhs))
+    }
 }
 
 impl std::fmt::Display for Number {

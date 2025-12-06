@@ -1256,17 +1256,47 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        // literal value
+        // literal or syscall, making sure the syscall is supported in hash
         self.assign_next()?;
-        let lit = self.spanned(|p| p.literal())?;
+        // cache the current token location
+        let current_token_index = self.tokenizer.loc();
 
-        Ok(ConstDeclarationExpression {
-            name: Spanned {
-                span: ident_span,
-                node: ident,
-            },
-            value: lit,
-        })
+        if let Ok(lit) = self.spanned(|p| p.literal()) {
+            Ok(ConstDeclarationExpression {
+                name: Spanned {
+                    span: ident_span,
+                    node: ident,
+                },
+                value: LiteralOr::Literal(lit),
+            })
+        } else {
+            // we need to rewind our tokenizer to our previous location
+            self.tokenizer.seek(SeekFrom::Current(
+                self.tokenizer.loc() - current_token_index,
+            ))?;
+            let syscall = self.spanned(|p| p.syscall())?;
+
+            if !matches!(
+                syscall,
+                Spanned {
+                    node: SysCall::System(sys_call::System::Hash(_)),
+                    ..
+                }
+            ) {
+                return Err(Error::UnexpectedToken(
+                    syscall.span,
+                    self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                ));
+            }
+
+            Ok(ConstDeclarationExpression {
+                name: Spanned {
+                    span: ident_span,
+                    node: ident,
+                },
+                value: LiteralOr::Or(syscall),
+            })
+        }
     }
 
     fn declaration(&mut self) -> Result<Expression, Error> {
@@ -1556,19 +1586,26 @@ impl<'a> Parser<'a> {
 
         macro_rules! literal_or_variable {
             ($iter:expr) => {
-                match $iter {
-                    Some(expr) => match &expr.node {
-                        Expression::Literal(literal) => {
-                            LiteralOrVariable::Literal(literal.node.clone())
+                match &$iter {
+                    Some(expr) => {
+                        let span = expr.span;
+                        match &expr.node {
+                            Expression::Literal(literal) => Spanned {
+                                span,
+                                node: LiteralOrVariable::Literal(literal.node.clone()),
+                            },
+                            Expression::Variable(ident) => Spanned {
+                                span,
+                                node: LiteralOrVariable::Variable(ident.clone()),
+                            },
+                            _ => {
+                                return Err(Error::InvalidSyntax(
+                                    expr.span,
+                                    "Expected a literal or variable".to_string(),
+                                ));
+                            }
                         }
-                        Expression::Variable(ident) => LiteralOrVariable::Variable(ident.clone()),
-                        _ => {
-                            return Err(Error::UnexpectedToken(
-                                self.current_span(),
-                                self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
-                            ))
-                        }
-                    },
+                    }
                     _ => {
                         return Err(Error::UnexpectedToken(
                             self.current_span(),
@@ -1581,12 +1618,15 @@ impl<'a> Parser<'a> {
 
         macro_rules! get_arg {
             ($matcher: ident, $arg: expr) => {
-                match $arg {
-                    LiteralOrVariable::$matcher(i) => i,
+                match $arg.node {
+                    LiteralOrVariable::$matcher(i) => Spanned {
+                        node: i,
+                        span: $arg.span,
+                    },
                     _ => {
                         return Err(Error::InvalidSyntax(
-                            self.current_span(),
-                            String::from("Expected a variable"),
+                            $arg.span,
+                            format!("Expected a {}", stringify!($matcher).to_lowercase()),
                         ))
                     }
                 }
@@ -1611,37 +1651,48 @@ impl<'a> Parser<'a> {
                 let mut args = invocation.arguments.into_iter();
                 let lit_str = literal_or_variable!(args.next());
 
-                let LiteralOrVariable::Literal(lit_str) = lit_str else {
-                    return Err(Error::UnexpectedToken(
-                        self.current_span(),
-                        self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                let Spanned {
+                    node: LiteralOrVariable::Literal(lit_str),
+                    span,
+                } = lit_str
+                else {
+                    return Err(Error::InvalidSyntax(
+                        lit_str.span,
+                        "Expected a string literal".to_string(),
                     ));
                 };
 
-                Ok(SysCall::System(System::Hash(lit_str)))
+                Ok(SysCall::System(System::Hash(Spanned {
+                    node: lit_str,
+                    span,
+                })))
             }
-            "loadFromDevice" => {
+            "load" | "l" => {
                 check_length(self, &invocation.arguments, 2)?;
                 let mut args = invocation.arguments.into_iter();
 
-                let device = literal_or_variable!(args.next());
+                let tmp = args.next();
+                let device = literal_or_variable!(tmp);
                 let next_arg = args.next();
 
                 let variable = match next_arg {
                     Some(expr) => match expr.node {
                         Expression::Literal(spanned_lit) => match spanned_lit.node {
-                            Literal::String(s) => s,
+                            Literal::String(s) => Spanned {
+                                node: s,
+                                span: spanned_lit.span,
+                            },
                             _ => {
-                                return Err(Error::UnexpectedToken(
-                                    self.current_span(),
-                                    self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                                return Err(Error::InvalidSyntax(
+                                    spanned_lit.span,
+                                    "Expected a string literal".to_string(),
                                 ));
                             }
                         },
                         _ => {
-                            return Err(Error::UnexpectedToken(
-                                self.current_span(),
-                                self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                            return Err(Error::InvalidSyntax(
+                                expr.span,
+                                "Expected a string literal".to_string(),
                             ));
                         }
                     },
@@ -1655,31 +1706,107 @@ impl<'a> Parser<'a> {
 
                 Ok(SysCall::System(sys_call::System::LoadFromDevice(
                     device,
-                    Literal::String(variable),
+                    Spanned {
+                        node: Literal::String(variable.node),
+                        span: variable.span,
+                    },
                 )))
             }
-            "setOnDevice" => {
+            "loadBatched" | "lb" => {
                 check_length(self, &invocation.arguments, 3)?;
                 let mut args = invocation.arguments.into_iter();
-                let device = literal_or_variable!(args.next());
-                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let tmp = args.next();
+                let device_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+
+                let tmp = args.next();
+                let batch_mode = get_arg!(Literal, literal_or_variable!(tmp));
+
+                Ok(SysCall::System(System::LoadBatch(
+                    device_hash,
+                    logic_type,
+                    batch_mode,
+                )))
+            }
+            "loadBatchedNamed" | "lbn" => {
+                check_length(self, &invocation.arguments, 4)?;
+                let mut args = invocation.arguments.into_iter();
+                let tmp = args.next();
+                let dev_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let name_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+
+                let tmp = args.next();
+                let batch_mode = get_arg!(Literal, literal_or_variable!(tmp));
+
+                Ok(SysCall::System(System::LoadBatchNamed(
+                    dev_hash, name_hash, logic_type, batch_mode,
+                )))
+            }
+            "set" | "s" => {
+                check_length(self, &invocation.arguments, 3)?;
+                let mut args = invocation.arguments.into_iter();
+                let tmp = args.next();
+                let device = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+
                 let variable = args.next().ok_or(Error::UnexpectedEOF)?;
                 Ok(SysCall::System(sys_call::System::SetOnDevice(
                     device,
-                    Literal::String(logic_type.to_string().replace("\"", "")),
+                    Spanned {
+                        node: Literal::String(logic_type.node.to_string().replace("\"", "")),
+                        span: logic_type.span,
+                    },
                     boxed!(variable),
                 )))
             }
-            "setOnDeviceBatched" => {
+            "setBatched" | "sb" => {
                 check_length(self, &invocation.arguments, 3)?;
                 let mut args = invocation.arguments.into_iter();
-                let device_hash = literal_or_variable!(args.next());
-                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let tmp = args.next();
+                let device_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
                 let variable = args.next().ok_or(Error::UnexpectedEOF)?;
+
                 Ok(SysCall::System(sys_call::System::SetOnDeviceBatched(
                     device_hash,
-                    Literal::String(logic_type.to_string().replace("\"", "")),
+                    Spanned {
+                        node: Literal::String(logic_type.to_string().replace("\"", "")),
+                        span: logic_type.span,
+                    },
                     boxed!(variable),
+                )))
+            }
+            "setBatchedNamed" | "sbn" => {
+                check_length(self, &invocation.arguments, 4)?;
+                let mut args = invocation.arguments.into_iter();
+                let tmp = args.next();
+                let device_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let name_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+
+                let tmp = args.next();
+                let expr = Box::new(tmp.ok_or(Error::UnexpectedEOF)?);
+
+                Ok(SysCall::System(System::SetOnDeviceBatchedNamed(
+                    device_hash,
+                    name_hash,
+                    logic_type,
+                    expr,
                 )))
             }
             _ => Err(Error::UnsupportedKeyword(

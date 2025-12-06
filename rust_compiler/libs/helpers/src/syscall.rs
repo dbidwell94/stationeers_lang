@@ -2,15 +2,16 @@
 macro_rules! with_syscalls {
     ($matcher:ident) => {
         $matcher!(
+            // Big names
             "yield",
             "sleep",
             "hash",
-            "loadFromDevice",
-            "loadBatchNamed",
-            "loadBatch",
-            "setOnDevice",
-            "setOnDeviceBatched",
-            "setOnDeviceBatchedNamed",
+            "load",
+            "loadBatched",
+            "loadBatchedNamed",
+            "set",
+            "setBatched",
+            "setBatchedNamed",
             "acos",
             "asin",
             "atan",
@@ -26,7 +27,14 @@ macro_rules! with_syscalls {
             "sin",
             "sqrt",
             "tan",
-            "trunc"
+            "trunc",
+            // Lil' names
+            "l",
+            "lb",
+            "lbn",
+            "s",
+            "sb",
+            "sbn"
         );
     };
 }

@@ -142,58 +142,68 @@ documented! {
         /// ## Slang
         /// `sleep(number|var);`
         Sleep(Box<Spanned<Expression>>),
-        /// Gets the in-game hash for a specific prefab name.
+        /// Gets the in-game hash for a specific prefab name. NOTE! This call is COMPLETELY
+        /// optimized away unless you bind it to a `let` variable. If you use a `const` variable
+        /// however, the hash is correctly computed at compile time and substitued automatically.
         /// ## IC10
         /// `HASH("prefabName")`
         /// ## Slang
-        /// `HASH("prefabName");`
-        Hash(Literal),
+        /// `hash("prefabName");`
+        ///
+        /// ## Example
+        /// ```
+        /// const compDoor = hash("StructureCompositeDoor");
+        /// setOnDeviceBatched(compDoor, "Lock", true);
+        /// ```
+        Hash(Spanned<Literal>),
         /// Represents a function which loads a device variable into a register.
         /// ## IC10
         /// `l r? d? var`
         /// ## Slang
-        /// `loadFromDevice(deviceType, "LogicType");`
-        LoadFromDevice(LiteralOrVariable, Literal),
+        /// `load(deviceType, "LogicType");`
+        LoadFromDevice(Spanned<LiteralOrVariable>, Spanned<Literal>),
         /// Function which gets a LogicType from all connected network devices that match
         /// the provided device hash and name, aggregating them via a batchMode
         /// ## IC10
         /// `lbn r? deviceHash nameHash logicType batchMode`
         /// ## Slang
-        /// `loadFromDeviceBatchedNamed(deviceHash, deviceName, "LogicType", "BatchMode");`
+        /// `loadBatchedNamed(deviceHash, deviceName, "LogicType", "BatchMode");`
         LoadBatchNamed(
-            LiteralOrVariable,
-            Box<Spanned<Expression>>,
-            Literal,
-            Literal,
+            Spanned<LiteralOrVariable>,
+            Spanned<LiteralOrVariable>,
+            Spanned<Literal>,
+            Spanned<Literal>,
         ),
         /// Loads a LogicType from all connected network devices, aggregating them via a
-        /// batchMode
+        /// BatchMode
         /// ## IC10
         /// `lb r? deviceHash logicType batchMode`
         /// ## Slang
-        /// `loadFromDeviceBatched(deviceHash, "Variable", "LogicType");`
-        LoadBatch(LiteralOrVariable, Literal, Literal),
+        /// `loadBatched(deviceHash, "Variable", "LogicType");`
+        LoadBatch(Spanned<LiteralOrVariable>, Spanned<Literal>, Spanned<Literal>),
         /// Represents a function which stores a setting into a specific device.
         /// ## IC10
         /// `s d? logicType r?`
         /// ## Slang
-        /// `setOnDevice(deviceType, "Variable", (number|var));`
-        SetOnDevice(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
+        /// `set(deviceType, "Variable", (number|var));`
+        SetOnDevice(Spanned<LiteralOrVariable>, Spanned<Literal>, Box<Spanned<Expression>>),
         /// Represents a function which stores a setting to all devices that match
         /// the given deviceHash
         /// ## IC10
         /// `sb deviceHash logicType r?`
-        SetOnDeviceBatched(LiteralOrVariable, Literal, Box<Spanned<Expression>>),
+        /// ## Slang
+        /// `setBatched(deviceHash, "LogicType", (number|var))`
+        SetOnDeviceBatched(Spanned<LiteralOrVariable>, Spanned<Literal>, Box<Spanned<Expression>>),
         /// Represents a function which stores a setting to all devices that match
         /// both the given deviceHash AND the given nameHash
         /// ## IC10
         /// `sbn deviceHash nameHash logicType r?`
         /// ## Slang
-        /// `setOnDeviceBatchedNamed(deviceType, nameHash, "LogicType", (number|var))`
+        /// `setBatchedNamed(deviceHash, nameHash, "LogicType", (number|var))`
         SetOnDeviceBatchedNamed(
-            LiteralOrVariable,
-            LiteralOrVariable,
-            Literal,
+            Spanned<LiteralOrVariable>,
+            Spanned<LiteralOrVariable>,
+            Spanned<Literal>,
             Box<Spanned<Expression>>,
         ),
     }

@@ -112,9 +112,8 @@ fn test_math_with_logic() -> anyhow::Result<()> {
             "
             j main
             main:
-            add r1 1 2
-            sgt r2 r1 1
-            move r8 r2 #logic
+            sgt r1 3 1
+            move r8 r1 #logic
             "
         }
     );

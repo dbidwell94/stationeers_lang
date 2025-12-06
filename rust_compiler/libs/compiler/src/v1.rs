@@ -1,13 +1,14 @@
 #![allow(clippy::result_large_err)]
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
+use helpers::prelude::*;
 use parser::{
     Parser as ASTParser,
     sys_call::{SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
-        InvocationExpression, Literal, LiteralOrVariable, LogicalExpression, LoopExpression,
-        MemberAccessExpression, Span, Spanned, WhileExpression,
+        InvocationExpression, Literal, LiteralOr, LiteralOrVariable, LogicalExpression,
+        LoopExpression, MemberAccessExpression, Span, Spanned, WhileExpression,
     },
 };
 use quick_error::quick_error;
@@ -15,6 +16,7 @@ use std::{
     collections::HashMap,
     io::{BufWriter, Write},
 };
+use tokenizer::token::Number;
 
 macro_rules! debug {
     ($self: expr, $debug_value: expr) => {
@@ -75,6 +77,9 @@ quick_error! {
         ConstAssignment(ident: String, span: Span) {
             display("Attempted to re-assign a value to const variable `{ident}`")
         }
+        DeviceAssignment(ident: String, span: Span) {
+            display("Attempted to re-assign a value to a device const `{ident}`")
+        }
         Unknown(reason: String, span: Option<Span>) {
             display("{reason}")
         }
@@ -102,6 +107,7 @@ impl From<Error> for lsp_types::Diagnostic {
             | UnknownIdentifier(_, span)
             | InvalidDevice(_, span)
             | ConstAssignment(_, span)
+            | DeviceAssignment(_, span)
             | AgrumentMismatch(_, span) => Diagnostic {
                 range: span.into(),
                 message: value.to_string(),
@@ -346,12 +352,20 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                         temp_name: None, // User variable, do not free
                     })),
                     Err(_) => {
-                        self.errors
-                            .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-                        Ok(Some(CompilationResult {
-                            location: VariableLocation::Temporary(0),
-                            temp_name: None,
-                        }))
+                        // fallback, check devices
+                        if let Some(device) = self.devices.get(&name.node) {
+                            Ok(Some(CompilationResult {
+                                location: VariableLocation::Device(device.clone()),
+                                temp_name: None,
+                            }))
+                        } else {
+                            self.errors
+                                .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+                            Ok(Some(CompilationResult {
+                                location: VariableLocation::Temporary(0),
+                                temp_name: None,
+                            }))
+                        }
                     }
                 }
             }
@@ -465,6 +479,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     None,
                 ));
             }
+            VariableLocation::Device(_) => {
+                return Err(Error::Unknown(
+                    r#"Attempted to emit a variable assignent for device.
+                    This is a Compiler bug and should be reported to the developer."#
+                        .into(),
+                    None,
+                ));
+            }
         }
 
         Ok(())
@@ -557,15 +579,24 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 let result = self.expression_binary(bin_expr, scope)?;
                 let var_loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
 
-                // Move result from temp to new persistent variable
-                let result_reg = self.resolve_register(&result.location)?;
-                self.emit_variable_assignment(&name_str, &var_loc, result_reg)?;
+                if let CompilationResult {
+                    location: VariableLocation::Constant(Literal::Number(num)),
+                    ..
+                } = result
+                {
+                    self.emit_variable_assignment(&name_str, &var_loc, num)?;
+                    (var_loc, None)
+                } else {
+                    // Move result from temp to new persistent variable
+                    let result_reg = self.resolve_register(&result.location)?;
+                    self.emit_variable_assignment(&name_str, &var_loc, result_reg)?;
 
-                // Free the temp result
-                if let Some(name) = result.temp_name {
-                    scope.free_temp(name)?;
+                    // Free the temp result
+                    if let Some(name) = result.temp_name {
+                        scope.free_temp(name)?;
+                    }
+                    (var_loc, None)
                 }
-                (var_loc, None)
             }
             Expression::Logical(log_expr) => {
                 let result = self.expression_logical(log_expr, scope)?;
@@ -611,7 +642,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                         ))?;
                         format!("r{}", VariableScope::TEMP_STACK_REGISTER)
                     }
-                    VariableLocation::Constant(_) => unreachable!(),
+                    VariableLocation::Constant(_) | VariableLocation::Device(_) => unreachable!(),
                 };
                 self.emit_variable_assignment(&name_str, &var_loc, src_str)?;
                 (var_loc, None)
@@ -679,8 +710,27 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             value: const_value,
         } = expr;
 
+        // check for a hash expression or a literal
+        let value = match const_value {
+            LiteralOr::Or(Spanned {
+                node:
+                    SysCall::System(System::Hash(Spanned {
+                        node: Literal::String(str_to_hash),
+                        ..
+                    })),
+                ..
+            }) => Literal::Number(Number::Integer(crc_hash_signed(&str_to_hash))),
+            LiteralOr::Or(Spanned { span, .. }) => {
+                return Err(Error::Unknown(
+                    "hash only supports string literals in this context.".into(),
+                    Some(span),
+                ));
+            }
+            LiteralOr::Literal(Spanned { node, .. }) => node,
+        };
+
         Ok(CompilationResult {
-            location: scope.define_const(const_name.node, const_value.node)?,
+            location: scope.define_const(const_name.node, value)?,
             temp_name: None,
         })
     }
@@ -734,6 +784,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     }
                     VariableLocation::Constant(_) => {
                         return Err(Error::ConstAssignment(identifier.node, identifier.span));
+                    }
+                    VariableLocation::Device(_) => {
+                        return Err(Error::DeviceAssignment(identifier.node, identifier.span));
                     }
                 }
 
@@ -848,6 +901,12 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                                 "push r{0}",
                                 VariableScope::TEMP_STACK_REGISTER
                             ))?;
+                        }
+                        VariableLocation::Device(_) => {
+                            return Err(Error::Unknown(
+                                r#"Attempted to pass a device contant into a function argument. These values can be used without scope."#.into(),
+                                Some(arg.span),
+                            ));
                         }
                     }
                 }
@@ -1098,6 +1157,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 "Cannot resolve a constant value to register".into(),
                 None,
             )),
+            VariableLocation::Device(_) => Err(Error::Unknown(
+                "Cannot resolve a device to a register".into(),
+                None,
+            )),
             VariableLocation::Stack(_) => Err(Error::Unknown(
                 "Cannot resolve Stack location directly to register string without context".into(),
                 None,
@@ -1121,6 +1184,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
             if let Literal::Boolean(b) = spanned_lit.node {
                 return Ok((if b { "1".to_string() } else { "0".to_string() }, None));
+            }
+            if let Literal::String(ref s) = spanned_lit.node {
+                return Ok((s.to_string(), None));
             }
         }
 
@@ -1172,6 +1238,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 // We return the NEW temp name to be freed.
                 Ok((temp_reg, Some(temp_name)))
             }
+            VariableLocation::Device(d) => Ok((d, None)),
         }
     }
 
@@ -1208,6 +1275,58 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         expr: Spanned<BinaryExpression>,
         scope: &mut VariableScope<'v>,
     ) -> Result<CompilationResult, Error> {
+        fn fold_binary_expression(expr: &BinaryExpression) -> Option<Number> {
+            let (lhs, rhs) = match &expr {
+                BinaryExpression::Add(l, r)
+                | BinaryExpression::Subtract(l, r)
+                | BinaryExpression::Multiply(l, r)
+                | BinaryExpression::Divide(l, r)
+                | BinaryExpression::Exponent(l, r)
+                | BinaryExpression::Modulo(l, r) => (fold_expression(l)?, fold_expression(r)?),
+            };
+
+            match expr {
+                BinaryExpression::Add(..) => Some(lhs + rhs),
+                BinaryExpression::Subtract(..) => Some(lhs - rhs),
+                BinaryExpression::Multiply(..) => Some(lhs * rhs),
+                BinaryExpression::Divide(..) => Some(lhs / rhs), // Watch out for div by zero panics!
+                BinaryExpression::Modulo(..) => Some(lhs % rhs),
+                _ => None, // Handle Exponent separately or implement pow
+            }
+        }
+
+        fn fold_expression(expr: &Expression) -> Option<Number> {
+            match expr {
+                // 1. Base Case: It's already a number
+                Expression::Literal(lit) => match lit.node {
+                    Literal::Number(n) => Some(n),
+                    _ => None,
+                },
+
+                // 2. Handle Parentheses: Just recurse deeper
+                Expression::Priority(inner) => fold_expression(&inner.node),
+
+                // 3. Handle Negation: Recurse, then negate
+                Expression::Negation(inner) => {
+                    let val = fold_expression(&inner.node)?;
+                    Some(-val) // Requires impl Neg for Number
+                }
+
+                // 4. Handle Binary Ops: Recurse BOTH sides, then combine
+                Expression::Binary(bin) => fold_binary_expression(&bin.node),
+
+                // 5. Anything else (Variables, Function Calls) cannot be compile-time folded
+                _ => None,
+            }
+        }
+
+        if let Some(const_lit) = fold_binary_expression(&expr.node) {
+            return Ok(CompilationResult {
+                location: VariableLocation::Constant(Literal::Number(const_lit)),
+                temp_name: None,
+            });
+        };
+
         let (op_str, left_expr, right_expr) = match expr.node {
             BinaryExpression::Add(l, r) => ("add", l, r),
             BinaryExpression::Multiply(l, r) => ("mul", l, r),
@@ -1420,6 +1539,12 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                             VariableScope::TEMP_STACK_REGISTER
                         ))?;
                     }
+                    VariableLocation::Device(_) => {
+                        return Err(Error::Unknown(
+                            "You can not return a device from a function.".into(),
+                            Some(var_name.span),
+                        ));
+                    }
                 },
                 Err(_) => {
                     self.errors.push(Error::UnknownIdentifier(
@@ -1507,30 +1632,43 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         span: Span,
         scope: &mut VariableScope<'v>,
     ) -> Result<Option<CompilationResult>, Error> {
+        macro_rules! cleanup {
+            ($($to_clean:expr),*) => {
+                $(
+                    if let Some(to_clean) = $to_clean {
+                        scope.free_temp(to_clean)?;
+                    }
+                )*
+            };
+        }
         match expr {
             System::Yield => {
                 self.write_output("yield")?;
                 Ok(None)
             }
             System::Sleep(amt) => {
-                let (var, cleanup) = self.compile_operand(*amt, scope)?;
+                let (var, var_cleanup) = self.compile_operand(*amt, scope)?;
                 self.write_output(format!("sleep {var}"))?;
-                if let Some(temp) = cleanup {
-                    scope.free_temp(temp)?;
-                }
+
+                cleanup!(var_cleanup);
 
                 Ok(None)
             }
             System::Hash(hash_arg) => {
-                let Literal::String(str_lit) = hash_arg else {
+                let Spanned {
+                    node: Literal::String(str_lit),
+                    ..
+                } = hash_arg
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg1 expected to be a string literal.".into(),
                         span,
                     ));
                 };
 
-                let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
-                self.emit_variable_assignment("hash_ret", &loc, format!(r#"HASH("{}")"#, str_lit))?;
+                let loc = VariableLocation::Constant(Literal::Number(Number::Integer(
+                    crc_hash_signed(&str_lit),
+                )));
 
                 Ok(Some(CompilationResult {
                     location: loc,
@@ -1540,7 +1678,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             System::SetOnDevice(device, logic_type, variable) => {
                 let (variable, var_cleanup) = self.compile_operand(*variable, scope)?;
 
-                let LiteralOrVariable::Variable(device_spanned) = device else {
+                let Spanned {
+                    node: LiteralOrVariable::Variable(device_spanned),
+                    ..
+                } = device
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg1 expected to be a variable".into(),
                         span,
@@ -1562,7 +1704,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     .cloned()
                     .unwrap_or("d0".to_string());
 
-                let Literal::String(logic_type) = logic_type else {
+                let Spanned {
+                    node: Literal::String(logic_type),
+                    ..
+                } = logic_type
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg2 expected to be a string".into(),
                         span,
@@ -1571,17 +1717,19 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 self.write_output(format!("s {} {} {}", device_val, logic_type, variable))?;
 
-                if let Some(temp_var) = var_cleanup {
-                    scope.free_temp(temp_var)?;
-                }
+                cleanup!(var_cleanup);
 
                 Ok(None)
             }
             System::SetOnDeviceBatched(device_hash, logic_type, variable) => {
                 let (var, var_cleanup) = self.compile_operand(*variable, scope)?;
                 let (device_hash_val, device_hash_cleanup) =
-                    self.compile_literal_or_variable(device_hash, scope)?;
-                let Literal::String(logic_type) = logic_type else {
+                    self.compile_literal_or_variable(device_hash.node, scope)?;
+                let Spanned {
+                    node: Literal::String(logic_type),
+                    ..
+                } = logic_type
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg2 expected to be a string".into(),
                         span,
@@ -1590,18 +1738,43 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 self.write_output(format!("sb {} {} {}", device_hash_val, logic_type, var))?;
 
-                if let Some(var_cleanup) = var_cleanup {
-                    scope.free_temp(var_cleanup)?;
-                }
+                cleanup!(var_cleanup, device_hash_cleanup);
 
-                if let Some(device_cleanup) = device_hash_cleanup {
-                    scope.free_temp(device_cleanup)?;
-                }
+                Ok(None)
+            }
+            System::SetOnDeviceBatchedNamed(device_hash, name_hash, logic_type, val_expr) => {
+                let (value, value_cleanup) = self.compile_operand(*val_expr, scope)?;
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_literal_or_variable(device_hash.node, scope)?;
+
+                let (name_hash, name_hash_cleanup) =
+                    self.compile_literal_or_variable(name_hash.node, scope)?;
+
+                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(logic_type.node),
+                    scope,
+                )?;
+
+                self.write_output(format!(
+                    "sbn {} {} {} {}",
+                    device_hash, name_hash, logic_type, value
+                ))?;
+
+                cleanup!(
+                    value_cleanup,
+                    device_hash_cleanup,
+                    name_hash_cleanup,
+                    logic_type_cleanup
+                );
 
                 Ok(None)
             }
             System::LoadFromDevice(device, logic_type) => {
-                let LiteralOrVariable::Variable(device_spanned) = device else {
+                let Spanned {
+                    node: LiteralOrVariable::Variable(device_spanned),
+                    ..
+                } = device
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg1 expected to be a variable".into(),
                         span,
@@ -1623,7 +1796,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     .cloned()
                     .unwrap_or("d0".to_string());
 
-                let Literal::String(logic_type) = logic_type else {
+                let Spanned {
+                    node: Literal::String(logic_type),
+                    ..
+                } = logic_type
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg2 expected to be a string".into(),
                         span,
@@ -1642,11 +1819,68 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     temp_name: None,
                 }))
             }
+            System::LoadBatch(device_hash, logic_type, batch_mode) => {
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_literal_or_variable(device_hash.node, scope)?;
+                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(logic_type.node),
+                    scope,
+                )?;
+                let (batch_mode, batch_mode_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(batch_mode.node),
+                    scope,
+                )?;
 
-            t => Err(Error::Unknown(
-                format!("{t:?}\n\nNot yet implemented"),
-                Some(span),
-            )),
+                self.write_output(format!(
+                    "lb r{} {} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    device_hash,
+                    logic_type,
+                    batch_mode
+                ))?;
+
+                cleanup!(device_hash_cleanup, logic_type_cleanup, batch_mode_cleanup);
+
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            System::LoadBatchNamed(device_hash, name_hash, logic_type, batch_mode) => {
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_literal_or_variable(device_hash.node, scope)?;
+                let (name_hash, name_hash_cleanup) =
+                    self.compile_literal_or_variable(name_hash.node, scope)?;
+                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(logic_type.node),
+                    scope,
+                )?;
+                let (batch_mode, batch_mode_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(batch_mode.node),
+                    scope,
+                )?;
+
+                self.write_output(format!(
+                    "lbn r{} {} {} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    device_hash,
+                    name_hash,
+                    logic_type,
+                    batch_mode
+                ))?;
+
+                cleanup!(
+                    device_hash_cleanup,
+                    name_hash_cleanup,
+                    logic_type_cleanup,
+                    batch_mode_cleanup
+                );
+
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
         }
     }
 

@@ -519,6 +519,7 @@ pub struct TokenizerBuffer<'a> {
     tokenizer: Tokenizer<'a>,
     buffer: VecDeque<Token>,
     history: VecDeque<Token>,
+    index: i64,
 }
 
 impl<'a> TokenizerBuffer<'a> {
@@ -527,17 +528,22 @@ impl<'a> TokenizerBuffer<'a> {
             tokenizer,
             buffer: VecDeque::new(),
             history: VecDeque::with_capacity(128),
+            index: 0,
         }
     }
     pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
         if let Some(token) = self.buffer.pop_front() {
             self.history.push_back(token.clone());
+            self.index += 1;
             return Ok(Some(token));
         }
         let token = self.tokenizer.next_token()?;
+
         if let Some(ref token) = token {
             self.history.push_back(token.clone());
         }
+
+        self.index += 1;
         Ok(token)
     }
     pub fn peek(&mut self) -> Result<Option<Token>, Error> {
@@ -547,12 +553,15 @@ impl<'a> TokenizerBuffer<'a> {
         let token = self.tokenizer.peek_next()?;
         Ok(token)
     }
-    fn seek_from_current(&mut self, seek_to: i64) -> Result<(), Error> {
+    pub fn loc(&self) -> i64 {
+        self.index
+    }
+    fn seek_from_current(&mut self, seek_to_int: i64) -> Result<(), Error> {
         use Ordering::*;
-        match seek_to.cmp(&0) {
+        match seek_to_int.cmp(&0) {
             Greater => {
-                let mut tokens = Vec::with_capacity(seek_to as usize);
-                for _ in 0..seek_to {
+                let mut tokens = Vec::with_capacity(seek_to_int as usize);
+                for _ in 0..seek_to_int {
                     if let Some(token) = self.tokenizer.next_token()? {
                         tokens.push(token);
                     } else {
@@ -565,7 +574,7 @@ impl<'a> TokenizerBuffer<'a> {
                 self.history.extend(tokens);
             }
             Less => {
-                let seek_to = seek_to.unsigned_abs() as usize;
+                let seek_to = seek_to_int.unsigned_abs() as usize;
                 let mut tokens = Vec::with_capacity(seek_to);
                 for _ in 0..seek_to {
                     if let Some(token) = self.history.pop_back() {
@@ -577,6 +586,7 @@ impl<'a> TokenizerBuffer<'a> {
                         )));
                     }
                 }
+                self.index -= seek_to_int;
                 self.buffer.extend(tokens.into_iter().rev());
             }
             _ => {}
