@@ -5,7 +5,7 @@ use tokenizer::token::Number;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Literal {
-    Number(Number),
+    Number(Number, Option<String>),
     String(String),
     Boolean(bool),
 }
@@ -13,7 +13,7 @@ pub enum Literal {
 impl std::fmt::Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Literal::Number(n) => write!(f, "{}", n),
+            Literal::Number(n, _) => write!(f, "{}", n),
             Literal::String(s) => write!(f, "\"{}\"", s),
             Literal::Boolean(b) => write!(f, "{}", if *b { 1 } else { 0 }),
         }

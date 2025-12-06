@@ -1,0 +1,14 @@
+[package]
+name = "formatter"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+parser = { path = "../parser" }
+quick-error = { workspace = true }
+
+[dev-dependencies]
+anyhow = "1"
+indoc = "2"
+pretty_assertions = "1"
+tokenizer = { path = "../tokenizer" }

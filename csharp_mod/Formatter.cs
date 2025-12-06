@@ -26,6 +26,8 @@ public class SlangFormatter : ICodeFormatter
     // but having a separate definition lets you tweak it (e.g. make them slightly darker or distinct)
     public static readonly uint ColorOperator = ColorFromHTML("#D4D4D4");
 
+    private const int DEBOUNCE_DELAY = 100;
+
     private HashSet<uint> _linesWithErrors = new();
     private int _lastLineCount = -1;
 
@@ -83,7 +85,6 @@ public class SlangFormatter : ICodeFormatter
         // We call update to create the basic tokens
         styledLine.Update(tokens);
 
-        // CRITICAL FIX: We must manually re-attach metadata because StyledLine.Update() drops it.
         ReattachMetadata(styledLine, tokens);
 
         return styledLine;
@@ -113,7 +114,10 @@ public class SlangFormatter : ICodeFormatter
             if (cancellationToken.IsCancellationRequested)
                 return;
 
-            await System.Threading.Tasks.Task.Delay(200, cancellationToken: cancellationToken);
+            await System.Threading.Tasks.Task.Delay(
+                DEBOUNCE_DELAY,
+                cancellationToken: cancellationToken
+            );
 
             if (cancellationToken.IsCancellationRequested)
                 return;
@@ -139,7 +143,6 @@ public class SlangFormatter : ICodeFormatter
     {
         HashSet<uint> linesToRefresh;
 
-        // CRITICAL FIX FOR LINE SHIFTS:
         // If the line count has changed (lines added/deleted), indices have shifted.
         // We must refresh ALL lines to ensure any line that shifted into a new position
         // gets scrubbed of its old visual state.
@@ -197,7 +200,6 @@ public class SlangFormatter : ICodeFormatter
             // 3. Update the line (this clears existing tokens and uses the list we just built)
             line.Update(allTokens);
 
-            // 4. CRITICAL FIX: Re-attach metadata that Update() dropped
             ReattachMetadata(line, allTokens);
         }
 

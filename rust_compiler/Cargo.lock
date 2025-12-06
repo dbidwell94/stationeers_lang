@@ -317,6 +317,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "formatter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "indoc",
+ "parser",
+ "pretty_assertions",
+ "quick-error",
+ "tokenizer",
+]
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

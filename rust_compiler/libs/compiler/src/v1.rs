@@ -43,7 +43,7 @@ fn extract_literal(literal: Literal, allow_strings: bool) -> Result<String, Erro
     }
     Ok(match literal {
         Literal::String(s) => s,
-        Literal::Number(n) => n.to_string(),
+        Literal::Number(n, _) => n.to_string(),
         Literal::Boolean(b) => if b { "1" } else { "0" }.into(),
     })
 }
@@ -318,7 +318,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 Ok(Some(result))
             }
             Expression::Literal(spanned_lit) => match spanned_lit.node {
-                Literal::Number(num) => {
+                Literal::Number(num, _) => {
                     let temp_name = self.next_temp_name();
                     let loc = scope.add_variable(&temp_name, LocationRequest::Temp)?;
                     self.emit_variable_assignment(&temp_name, &loc, num.to_string())?;
@@ -482,7 +482,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         // optimization. Check for a negated numeric literal
         if let Expression::Negation(box_expr) = &expr.node
             && let Expression::Literal(spanned_lit) = &box_expr.node
-            && let Literal::Number(neg_num) = &spanned_lit.node
+            && let Literal::Number(neg_num, _) = &spanned_lit.node
         {
             let loc = scope.add_variable(&name_str, LocationRequest::Persist)?;
             self.emit_variable_assignment(&name_str, &loc, format!("-{neg_num}"))?;
@@ -494,7 +494,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         let (loc, temp_name) = match expr.node {
             Expression::Literal(spanned_lit) => match spanned_lit.node {
-                Literal::Number(num) => {
+                Literal::Number(num, _) => {
                     let var_location =
                         scope.add_variable(name_str.clone(), LocationRequest::Persist)?;
 
@@ -808,7 +808,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         for arg in arguments {
             match arg.node {
                 Expression::Literal(spanned_lit) => match spanned_lit.node {
-                    Literal::Number(num) => {
+                    Literal::Number(num, _) => {
                         let num_str = num.to_string();
                         self.write_output(format!("push {num_str}"))?;
                     }
@@ -1116,7 +1116,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     ) -> Result<(String, Option<String>), Error> {
         // Optimization for literals
         if let Expression::Literal(spanned_lit) = &expr.node {
-            if let Literal::Number(n) = spanned_lit.node {
+            if let Literal::Number(n, _) = spanned_lit.node {
                 return Ok((n.to_string(), None));
             }
             if let Literal::Boolean(b) = spanned_lit.node {
@@ -1128,7 +1128,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         // E.g., `1 + -2` -> return "-2" string, no register used.
         if let Expression::Negation(inner) = &expr.node
             && let Expression::Literal(spanned_lit) = &inner.node
-            && let Literal::Number(n) = spanned_lit.node
+            && let Literal::Number(n, _) = spanned_lit.node
         {
             return Ok((format!("-{}", n), None));
         }
@@ -1148,7 +1148,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 Ok((format!("r{r}"), result.temp_name))
             }
             VariableLocation::Constant(lit) => match lit {
-                Literal::Number(n) => Ok((n.to_string(), None)),
+                Literal::Number(n, _) => Ok((n.to_string(), None)),
                 Literal::Boolean(b) => Ok((if b { "1" } else { "0" }.to_string(), None)),
                 Literal::String(s) => Ok((s, None)),
             },
@@ -1384,7 +1384,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     ) -> Result<VariableLocation, Error> {
         if let Expression::Negation(neg_expr) = &expr.node
             && let Expression::Literal(spanned_lit) = &neg_expr.node
-            && let Literal::Number(neg_num) = &spanned_lit.node
+            && let Literal::Number(neg_num, _) = &spanned_lit.node
         {
             let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
             self.emit_variable_assignment("returnValue", &loc, format!("-{neg_num}"))?;
@@ -1430,7 +1430,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 }
             },
             Expression::Literal(spanned_lit) => match spanned_lit.node {
-                Literal::Number(num) => {
+                Literal::Number(num, _) => {
                     self.emit_variable_assignment(
                         "returnValue",
                         &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
