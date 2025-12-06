@@ -1715,9 +1715,14 @@ impl<'a> Parser<'a> {
             "loadBatched" | "lb" => {
                 check_length(self, &invocation.arguments, 3)?;
                 let mut args = invocation.arguments.into_iter();
-                let device_hash = literal_or_variable!(args.next());
-                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
-                let batch_mode = get_arg!(Literal, literal_or_variable!(args.next()));
+                let tmp = args.next();
+                let device_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+
+                let tmp = args.next();
+                let batch_mode = get_arg!(Literal, literal_or_variable!(tmp));
 
                 Ok(SysCall::System(System::LoadBatch(
                     device_hash,
@@ -1728,10 +1733,17 @@ impl<'a> Parser<'a> {
             "loadBatchedNamed" | "lbn" => {
                 check_length(self, &invocation.arguments, 4)?;
                 let mut args = invocation.arguments.into_iter();
-                let dev_hash = literal_or_variable!(args.next());
-                let name_hash = literal_or_variable!(args.next());
-                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
-                let batch_mode = get_arg!(Literal, literal_or_variable!(args.next()));
+                let tmp = args.next();
+                let dev_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let name_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+
+                let tmp = args.next();
+                let batch_mode = get_arg!(Literal, literal_or_variable!(tmp));
 
                 Ok(SysCall::System(System::LoadBatchNamed(
                     dev_hash, name_hash, logic_type, batch_mode,
