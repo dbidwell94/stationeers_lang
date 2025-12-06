@@ -693,7 +693,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         // check for a hash expression or a literal
         let value = match const_value {
             LiteralOr::Or(Spanned {
-                node: SysCall::System(System::Hash(Literal::String(str_to_hash))),
+                node:
+                    SysCall::System(System::Hash(Spanned {
+                        node: Literal::String(str_to_hash),
+                        ..
+                    })),
                 ..
             }) => Literal::Number(Number::Integer(crc_hash_signed(&str_to_hash))),
             LiteralOr::Or(Spanned { span, .. }) => {
@@ -1148,6 +1152,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             if let Literal::Boolean(b) = spanned_lit.node {
                 return Ok((if b { "1".to_string() } else { "0".to_string() }, None));
             }
+            if let Literal::String(ref s) = spanned_lit.node {
+                return Ok((s.to_string(), None));
+            }
         }
 
         // Optimization for negated literals used as operands.
@@ -1585,22 +1592,34 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         span: Span,
         scope: &mut VariableScope<'v>,
     ) -> Result<Option<CompilationResult>, Error> {
+        macro_rules! cleanup {
+            ($($to_clean:expr),*) => {
+                $(
+                    if let Some(to_clean) = $to_clean {
+                        scope.free_temp(to_clean)?;
+                    }
+                )*
+            };
+        }
         match expr {
             System::Yield => {
                 self.write_output("yield")?;
                 Ok(None)
             }
             System::Sleep(amt) => {
-                let (var, cleanup) = self.compile_operand(*amt, scope)?;
+                let (var, var_cleanup) = self.compile_operand(*amt, scope)?;
                 self.write_output(format!("sleep {var}"))?;
-                if let Some(temp) = cleanup {
-                    scope.free_temp(temp)?;
-                }
+
+                cleanup!(var_cleanup);
 
                 Ok(None)
             }
             System::Hash(hash_arg) => {
-                let Literal::String(str_lit) = hash_arg else {
+                let Spanned {
+                    node: Literal::String(str_lit),
+                    ..
+                } = hash_arg
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg1 expected to be a string literal.".into(),
                         span,
@@ -1619,7 +1638,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             System::SetOnDevice(device, logic_type, variable) => {
                 let (variable, var_cleanup) = self.compile_operand(*variable, scope)?;
 
-                let LiteralOrVariable::Variable(device_spanned) = device else {
+                let Spanned {
+                    node: LiteralOrVariable::Variable(device_spanned),
+                    ..
+                } = device
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg1 expected to be a variable".into(),
                         span,
@@ -1641,7 +1664,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     .cloned()
                     .unwrap_or("d0".to_string());
 
-                let Literal::String(logic_type) = logic_type else {
+                let Spanned {
+                    node: Literal::String(logic_type),
+                    ..
+                } = logic_type
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg2 expected to be a string".into(),
                         span,
@@ -1650,17 +1677,19 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 self.write_output(format!("s {} {} {}", device_val, logic_type, variable))?;
 
-                if let Some(temp_var) = var_cleanup {
-                    scope.free_temp(temp_var)?;
-                }
+                cleanup!(var_cleanup);
 
                 Ok(None)
             }
             System::SetOnDeviceBatched(device_hash, logic_type, variable) => {
                 let (var, var_cleanup) = self.compile_operand(*variable, scope)?;
                 let (device_hash_val, device_hash_cleanup) =
-                    self.compile_literal_or_variable(device_hash, scope)?;
-                let Literal::String(logic_type) = logic_type else {
+                    self.compile_literal_or_variable(device_hash.node, scope)?;
+                let Spanned {
+                    node: Literal::String(logic_type),
+                    ..
+                } = logic_type
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg2 expected to be a string".into(),
                         span,
@@ -1669,18 +1698,41 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
                 self.write_output(format!("sb {} {} {}", device_hash_val, logic_type, var))?;
 
-                if let Some(var_cleanup) = var_cleanup {
-                    scope.free_temp(var_cleanup)?;
-                }
-
-                if let Some(device_cleanup) = device_hash_cleanup {
-                    scope.free_temp(device_cleanup)?;
-                }
+                cleanup!(var_cleanup, device_hash_cleanup);
 
                 Ok(None)
             }
+            System::SetOnDeviceBatchedNamed(device_hash, name_hash, logic_type, val_expr) => {
+                let (value, value_cleanup) = self.compile_operand(*val_expr, scope)?;
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_literal_or_variable(device_hash.node, scope)?;
+                let (name_hash, name_hash_cleanup) =
+                    self.compile_literal_or_variable(name_hash.node, scope)?;
+                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(logic_type.node),
+                    scope,
+                )?;
+
+                self.write_output(format!(
+                    "snb {} {} {} {}",
+                    device_hash, name_hash, logic_type, value
+                ))?;
+
+                cleanup!(
+                    value_cleanup,
+                    device_hash_cleanup,
+                    name_hash_cleanup,
+                    logic_type_cleanup
+                );
+
+                todo!()
+            }
             System::LoadFromDevice(device, logic_type) => {
-                let LiteralOrVariable::Variable(device_spanned) = device else {
+                let Spanned {
+                    node: LiteralOrVariable::Variable(device_spanned),
+                    ..
+                } = device
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg1 expected to be a variable".into(),
                         span,
@@ -1702,7 +1754,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     .cloned()
                     .unwrap_or("d0".to_string());
 
-                let Literal::String(logic_type) = logic_type else {
+                let Spanned {
+                    node: Literal::String(logic_type),
+                    ..
+                } = logic_type
+                else {
                     return Err(Error::AgrumentMismatch(
                         "Arg2 expected to be a string".into(),
                         span,
@@ -1721,11 +1777,68 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     temp_name: None,
                 }))
             }
+            System::LoadBatch(device_hash, logic_type, batch_mode) => {
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_literal_or_variable(device_hash.node, scope)?;
+                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(logic_type.node),
+                    scope,
+                )?;
+                let (batch_mode, batch_mode_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(batch_mode.node),
+                    scope,
+                )?;
 
-            t => Err(Error::Unknown(
-                format!("{t:?}\n\nNot yet implemented"),
-                Some(span),
-            )),
+                self.write_output(format!(
+                    "lb r{} {} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    device_hash,
+                    logic_type,
+                    batch_mode
+                ))?;
+
+                cleanup!(device_hash_cleanup, logic_type_cleanup, batch_mode_cleanup);
+
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            System::LoadBatchNamed(device_hash, name_hash, logic_type, batch_mode) => {
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_literal_or_variable(device_hash.node, scope)?;
+                let (name_hash, name_hash_cleanup) =
+                    self.compile_literal_or_variable(name_hash.node, scope)?;
+                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(logic_type.node),
+                    scope,
+                )?;
+                let (batch_mode, batch_mode_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(batch_mode.node),
+                    scope,
+                )?;
+
+                self.write_output(format!(
+                    "lbn r{} {} {} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    device_hash,
+                    name_hash,
+                    logic_type,
+                    batch_mode
+                ))?;
+
+                cleanup!(
+                    device_hash_cleanup,
+                    name_hash_cleanup,
+                    logic_type_cleanup,
+                    batch_mode_cleanup
+                );
+
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
         }
     }
 

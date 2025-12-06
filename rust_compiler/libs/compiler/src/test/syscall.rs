@@ -107,6 +107,36 @@ fn test_set_on_device_batched() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_set_on_device_batched_named() -> anyhow::Result<()> {
+    let compiled = compile! {
+       result
+        r#"
+        device dev = "d0";
+        const devName = hash("test");
+
+        let myVar = lbn(dev, devName, "On", 12);
+        "#
+    };
+
+    println!("{compiled:?}");
+
+    assert!(compiled.is_empty());
+
+    // assert_eq!(
+    //     compiled,
+    //     indoc! {
+    //         "
+    //         j main
+    //         main:
+    //         lbn r8 d0
+    //         "
+    //     }
+    // );
+
+    Ok(())
+}
+
+#[test]
 fn test_load_from_device() -> anyhow::Result<()> {
     let compiled = compile! {
         debug
