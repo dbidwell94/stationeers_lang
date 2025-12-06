@@ -170,34 +170,37 @@ public class SlangFormatter : ICodeFormatter
             if (line is null)
                 continue;
 
-            // 1. Get base syntax tokens
-            var allTokens = Marshal.TokenizeLine(line.Text);
+            // 1. Get base syntax tokens, converting to a dictionary for ease in deduping error tokens
+            var allTokensDict = Marshal.TokenizeLine(line.Text).ToDictionary((k) => k.Column);
 
-            // 2. Overlay error tokens if diagnostics exist for this line
+            // 2. Replace valid tokens with error tokens if present
             if (dict.ContainsKey(lineIndex))
             {
                 foreach (var lineDiagnostic in dict[lineIndex])
                 {
-                    allTokens.Add(
-                        new SemanticToken(
-                            line: (int)lineIndex,
-                            column: Math.Abs((int)lineDiagnostic.Range.StartCol),
-                            length: Math.Abs(
-                                (int)(lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol)
-                            ),
-                            type: 0,
-                            style: ICodeFormatter.ColorError,
-                            data: lineDiagnostic.Message,
-                            isError: true
-                        )
+                    var column = Math.Abs((int)lineDiagnostic.Range.StartCol);
+                    L.Info(
+                        $"Overwriting token at L:{lineIndex} C:{column} - Range:{lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol}"
+                    );
+                    allTokensDict[column] = new SemanticToken(
+                        line: (int)lineIndex,
+                        column,
+                        length: Math.Abs(
+                            (int)(lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol)
+                        ),
+                        type: 0,
+                        style: ICodeFormatter.ColorError,
+                        data: lineDiagnostic.Message,
+                        isError: true
                     );
                 }
             }
 
+            var allTokens = allTokensDict.Values.ToList();
+
             // 3. Update the line (this clears existing tokens and uses the list we just built)
             line.Update(allTokens);
 
-            // 4. CRITICAL FIX: Re-attach metadata that Update() dropped
             ReattachMetadata(line, allTokens);
         }
 
