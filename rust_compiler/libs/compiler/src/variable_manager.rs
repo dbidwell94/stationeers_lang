@@ -3,7 +3,8 @@
 // r1 - r7   : Temporary Variables
 // r8 - r14  : Persistant Variables
 
-use parser::tree_node::Literal;
+use lsp_types::{Diagnostic, DiagnosticSeverity};
+use parser::tree_node::{Literal, Span};
 use quick_error::quick_error;
 use std::collections::{HashMap, VecDeque};
 
@@ -13,14 +14,29 @@ const PERSIST: [u8; 7] = [8, 9, 10, 11, 12, 13, 14];
 quick_error! {
     #[derive(Debug)]
     pub enum Error {
-        DuplicateVariable(var: String) {
+        DuplicateVariable(var: String, span: Option<Span>) {
             display("{var} already exists.")
         }
-        UnknownVariable(var: String) {
+        UnknownVariable(var: String, span: Option<Span>) {
             display("{var} does not exist.")
         }
-        Unknown(reason: String) {
+        Unknown(reason: String, span: Option<Span>) {
             display("{reason}")
+        }
+    }
+}
+
+impl From<Error> for lsp_types::Diagnostic {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::DuplicateVariable(_, span)
+            | Error::UnknownVariable(_, span)
+            | Error::Unknown(_, span) => Diagnostic {
+                range: span.map(lsp_types::Range::from).unwrap_or_default(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                message: value.to_string(),
+                ..Default::default()
+            },
         }
     }
 }
@@ -112,10 +128,11 @@ impl<'a> VariableScope<'a> {
         &mut self,
         var_name: impl Into<String>,
         location: LocationRequest,
+        span: Option<Span>,
     ) -> Result<VariableLocation, Error> {
         let var_name = var_name.into();
         if self.var_lookup_table.contains_key(var_name.as_str()) {
-            return Err(Error::DuplicateVariable(var_name));
+            return Err(Error::DuplicateVariable(var_name, span));
         }
         let var_location = match location {
             LocationRequest::Temp => {
@@ -151,10 +168,11 @@ impl<'a> VariableScope<'a> {
         &mut self,
         var_name: impl Into<String>,
         value: Literal,
+        span: Option<Span>,
     ) -> Result<VariableLocation, Error> {
         let var_name = var_name.into();
         if self.var_lookup_table.contains_key(&var_name) {
-            return Err(Error::DuplicateVariable(var_name));
+            return Err(Error::DuplicateVariable(var_name, span));
         }
 
         let new_value = VariableLocation::Constant(value);
@@ -163,7 +181,11 @@ impl<'a> VariableScope<'a> {
         Ok(new_value)
     }
 
-    pub fn get_location_of(&self, var_name: impl Into<String>) -> Result<VariableLocation, Error> {
+    pub fn get_location_of(
+        &self,
+        var_name: impl Into<String>,
+        span: Option<Span>,
+    ) -> Result<VariableLocation, Error> {
         let var_name = var_name.into();
 
         // 1. Check this scope
@@ -180,7 +202,7 @@ impl<'a> VariableScope<'a> {
 
         // 2. Recursively check parent
         if let Some(parent) = self.parent {
-            let loc = parent.get_location_of(var_name)?;
+            let loc = parent.get_location_of(var_name, span)?;
 
             if let VariableLocation::Stack(parent_offset) = loc {
                 return Ok(VariableLocation::Stack(parent_offset + self.stack_offset));
@@ -188,7 +210,7 @@ impl<'a> VariableScope<'a> {
             return Ok(loc);
         }
 
-        Err(Error::UnknownVariable(var_name))
+        Err(Error::UnknownVariable(var_name, span))
     }
 
     pub fn has_parent(&self) -> bool {
@@ -196,10 +218,14 @@ impl<'a> VariableScope<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn free_temp(&mut self, var_name: impl Into<String>) -> Result<(), Error> {
+    pub fn free_temp(
+        &mut self,
+        var_name: impl Into<String>,
+        span: Option<Span>,
+    ) -> Result<(), Error> {
         let var_name = var_name.into();
         let Some(location) = self.var_lookup_table.remove(var_name.as_str()) else {
-            return Err(Error::UnknownVariable(var_name));
+            return Err(Error::UnknownVariable(var_name, span));
         };
 
         match location {
@@ -207,9 +233,10 @@ impl<'a> VariableScope<'a> {
                 self.temporary_vars.push_back(t);
             }
             VariableLocation::Persistant(_) => {
-                return Err(Error::UnknownVariable(String::from(
-                    "Attempted to free a `let` variable.",
-                )));
+                return Err(Error::UnknownVariable(
+                    String::from("Attempted to free a `let` variable."),
+                    span,
+                ));
             }
             _ => {}
         };
