@@ -92,3 +92,31 @@ fn stress_test_constant_folding() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_constant_folding_with_variables_mixed_in() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        device self = "db";
+        let i = 1 - 3 * (1 + 123.4) * self.Setting + 245c;
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            l r1 db Setting
+            mul r2 373.2 r1
+            sub r3 1 r2
+            add r4 r3 518.15
+            move r8 r4 #i
+            "
+        }
+    );
+
+    Ok(())
+}
