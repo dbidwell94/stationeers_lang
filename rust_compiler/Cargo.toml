@@ -9,8 +9,9 @@ members = ["libs/*"]
 [workspace.dependencies]
 quick-error = "2"
 rust_decimal = "1"
-safer-ffi = { version = "0.1" }
-lsp-types = { version = "0.97" }
+safer-ffi = { version = "0.1" }  # Safely share structs in memory between C# and Rust
+lsp-types = { version = "0.97" } # Allows for LSP style reporting to the frontend
+crc32fast = "1.5"                # This is for `HASH(..)` calls to be optimized away
 
 [features]
 headers = ["safer-ffi/headers"]

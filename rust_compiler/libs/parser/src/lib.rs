@@ -1256,17 +1256,47 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        // literal value
+        // literal or syscall, making sure the syscall is supported in hash
         self.assign_next()?;
-        let lit = self.spanned(|p| p.literal())?;
+        // cache the current token location
+        let current_token_index = self.tokenizer.loc();
 
-        Ok(ConstDeclarationExpression {
-            name: Spanned {
-                span: ident_span,
-                node: ident,
-            },
-            value: lit,
-        })
+        if let Ok(lit) = self.spanned(|p| p.literal()) {
+            Ok(ConstDeclarationExpression {
+                name: Spanned {
+                    span: ident_span,
+                    node: ident,
+                },
+                value: LiteralOr::Literal(lit),
+            })
+        } else {
+            // we need to rewind our tokenizer to our previous location
+            self.tokenizer.seek(SeekFrom::Current(
+                self.tokenizer.loc() - current_token_index,
+            ))?;
+            let syscall = self.spanned(|p| p.syscall())?;
+
+            if !matches!(
+                syscall,
+                Spanned {
+                    node: SysCall::System(sys_call::System::Hash(_)),
+                    ..
+                }
+            ) {
+                return Err(Error::UnexpectedToken(
+                    syscall.span,
+                    self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                ));
+            }
+
+            Ok(ConstDeclarationExpression {
+                name: Spanned {
+                    span: ident_span,
+                    node: ident,
+                },
+                value: LiteralOr::Or(syscall),
+            })
+        }
     }
 
     fn declaration(&mut self) -> Result<Expression, Error> {

@@ -1,13 +1,14 @@
 #![allow(clippy::result_large_err)]
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
+use crc32fast::hash as crc32_hash;
 use parser::{
     Parser as ASTParser,
     sys_call::{SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
-        InvocationExpression, Literal, LiteralOrVariable, LogicalExpression, LoopExpression,
-        MemberAccessExpression, Span, Spanned, WhileExpression,
+        InvocationExpression, Literal, LiteralOr, LiteralOrVariable, LogicalExpression,
+        LoopExpression, MemberAccessExpression, Span, Spanned, WhileExpression,
     },
 };
 use quick_error::quick_error;
@@ -15,6 +16,7 @@ use std::{
     collections::HashMap,
     io::{BufWriter, Write},
 };
+use tokenizer::token::Number;
 
 macro_rules! debug {
     ($self: expr, $debug_value: expr) => {
@@ -679,8 +681,30 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             value: const_value,
         } = expr;
 
+        // check for a hash expression or a literal
+        let value = match const_value {
+            LiteralOr::Or(Spanned {
+                node: SysCall::System(System::Hash(Literal::String(str_to_hash))),
+                ..
+            }) => {
+                let hash = crc32_hash(str_to_hash.as_bytes());
+
+                // in stationeers, crc32 is a SIGNED int.
+                let hash_value_i32 = i32::from_le_bytes(hash.to_le_bytes());
+
+                Literal::Number(Number::Integer(hash_value_i32 as i128))
+            }
+            LiteralOr::Or(Spanned { span, .. }) => {
+                return Err(Error::Unknown(
+                    "hash only supports string literals in this context.".into(),
+                    Some(span),
+                ));
+            }
+            LiteralOr::Literal(Spanned { node, .. }) => node,
+        };
+
         Ok(CompilationResult {
-            location: scope.define_const(const_name.node, const_value.node)?,
+            location: scope.define_const(const_name.node, value)?,
             temp_name: None,
         })
     }

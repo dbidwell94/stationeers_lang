@@ -8,6 +8,7 @@ quick-error = { workspace = true }
 parser = { path = "../parser" }
 tokenizer = { path = "../tokenizer" }
 lsp-types = { workspace = true }
+crc32fast = { workspace = true }
 
 [dev-dependencies]
 anyhow = { version = "1.0" }

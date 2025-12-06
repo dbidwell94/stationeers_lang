@@ -168,7 +168,7 @@ impl std::fmt::Display for TokenType {
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Number {
     /// Represents an integer number
-    Integer(u128),
+    Integer(i128),
     /// Represents a decimal type number with a precision of 64 bits
     Decimal(Decimal),
 }
