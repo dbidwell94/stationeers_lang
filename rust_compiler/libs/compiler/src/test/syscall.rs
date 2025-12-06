@@ -63,7 +63,7 @@ fn test_set_on_device() -> anyhow::Result<()> {
             device airConditioner = "d0";
             let internalTemp = 20c;
 
-            setOnDevice(airConditioner, "On", internalTemp > 25c);
+            set(airConditioner, "On", internalTemp > 25c);
         "#
     };
 
@@ -89,7 +89,7 @@ fn test_set_on_device_batched() -> anyhow::Result<()> {
         debug
         r#"
         const doorHash = hash("Door");
-        setOnDeviceBatched(doorHash, "Lock", true);
+        setBatched(doorHash, "Lock", true);
         "#
     };
 
@@ -109,29 +109,25 @@ fn test_set_on_device_batched() -> anyhow::Result<()> {
 #[test]
 fn test_set_on_device_batched_named() -> anyhow::Result<()> {
     let compiled = compile! {
-       result
+        debug
         r#"
         device dev = "d0";
         const devName = hash("test");
 
-        let myVar = lbn(dev, devName, "On", 12);
+        sbn(dev, devName, "On", 12);
         "#
     };
 
-    println!("{compiled:?}");
-
-    assert!(compiled.is_empty());
-
-    // assert_eq!(
-    //     compiled,
-    //     indoc! {
-    //         "
-    //         j main
-    //         main:
-    //         lbn r8 d0
-    //         "
-    //     }
-    // );
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            sbn d0 -662733300 On 12
+            "
+        }
+    );
 
     Ok(())
 }
@@ -143,7 +139,7 @@ fn test_load_from_device() -> anyhow::Result<()> {
         r#"
         device airCon = "d0";
 
-        let setting = loadFromDevice(airCon, "On");
+        let setting = load(airCon, "On");
         "#
     };
 

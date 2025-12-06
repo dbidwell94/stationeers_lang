@@ -1586,7 +1586,7 @@ impl<'a> Parser<'a> {
 
         macro_rules! literal_or_variable {
             ($iter:expr) => {
-                match $iter {
+                match &$iter {
                     Some(expr) => {
                         let span = expr.span;
                         match &expr.node {
@@ -1599,9 +1599,9 @@ impl<'a> Parser<'a> {
                                 node: LiteralOrVariable::Variable(ident.clone()),
                             },
                             _ => {
-                                return Err(Error::UnexpectedToken(
-                                    self.current_span(),
-                                    self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                                return Err(Error::InvalidSyntax(
+                                    expr.span,
+                                    "Expected a literal or variable".to_string(),
                                 ));
                             }
                         }
@@ -1625,8 +1625,8 @@ impl<'a> Parser<'a> {
                     },
                     _ => {
                         return Err(Error::InvalidSyntax(
-                            self.current_span(),
-                            String::from("Expected a variable"),
+                            $arg.span,
+                            format!("Expected a {}", stringify!($matcher).to_lowercase()),
                         ))
                     }
                 }
@@ -1656,9 +1656,9 @@ impl<'a> Parser<'a> {
                     span,
                 } = lit_str
                 else {
-                    return Err(Error::UnexpectedToken(
-                        self.current_span(),
-                        self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                    return Err(Error::InvalidSyntax(
+                        lit_str.span,
+                        "Expected a string literal".to_string(),
                     ));
                 };
 
@@ -1671,7 +1671,8 @@ impl<'a> Parser<'a> {
                 check_length(self, &invocation.arguments, 2)?;
                 let mut args = invocation.arguments.into_iter();
 
-                let device = literal_or_variable!(args.next());
+                let tmp = args.next();
+                let device = literal_or_variable!(tmp);
                 let next_arg = args.next();
 
                 let variable = match next_arg {
@@ -1682,16 +1683,16 @@ impl<'a> Parser<'a> {
                                 span: spanned_lit.span,
                             },
                             _ => {
-                                return Err(Error::UnexpectedToken(
-                                    self.current_span(),
-                                    self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                                return Err(Error::InvalidSyntax(
+                                    spanned_lit.span,
+                                    "Expected a string literal".to_string(),
                                 ));
                             }
                         },
                         _ => {
-                            return Err(Error::UnexpectedToken(
-                                self.current_span(),
-                                self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                            return Err(Error::InvalidSyntax(
+                                expr.span,
+                                "Expected a string literal".to_string(),
                             ));
                         }
                     },
@@ -1739,8 +1740,12 @@ impl<'a> Parser<'a> {
             "set" | "s" => {
                 check_length(self, &invocation.arguments, 3)?;
                 let mut args = invocation.arguments.into_iter();
-                let device = literal_or_variable!(args.next());
-                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let tmp = args.next();
+                let device = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+
                 let variable = args.next().ok_or(Error::UnexpectedEOF)?;
                 Ok(SysCall::System(sys_call::System::SetOnDevice(
                     device,
@@ -1754,8 +1759,11 @@ impl<'a> Parser<'a> {
             "setBatched" | "sb" => {
                 check_length(self, &invocation.arguments, 3)?;
                 let mut args = invocation.arguments.into_iter();
-                let device_hash = literal_or_variable!(args.next());
-                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
+                let tmp = args.next();
+                let device_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
                 let variable = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::System(sys_call::System::SetOnDeviceBatched(
@@ -1770,10 +1778,17 @@ impl<'a> Parser<'a> {
             "setBatchedNamed" | "sbn" => {
                 check_length(self, &invocation.arguments, 4)?;
                 let mut args = invocation.arguments.into_iter();
-                let device_hash = literal_or_variable!(args.next());
-                let name_hash = literal_or_variable!(args.next());
-                let logic_type = get_arg!(Literal, literal_or_variable!(args.next()));
-                let expr = Box::new(args.next().ok_or(Error::UnexpectedEOF)?);
+                let tmp = args.next();
+                let device_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let name_hash = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+
+                let tmp = args.next();
+                let expr = Box::new(tmp.ok_or(Error::UnexpectedEOF)?);
 
                 Ok(SysCall::System(System::SetOnDeviceBatchedNamed(
                     device_hash,

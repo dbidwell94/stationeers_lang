@@ -46,6 +46,8 @@ pub enum VariableLocation {
     Stack(u16),
     /// Represents a constant value and should be directly substituted as such.
     Constant(Literal),
+    /// Represents a device pin. This will contain the exact `d0-d5` string
+    Device(String),
 }
 
 pub struct VariableScope<'a> {

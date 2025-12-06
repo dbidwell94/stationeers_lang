@@ -77,6 +77,9 @@ quick_error! {
         ConstAssignment(ident: String, span: Span) {
             display("Attempted to re-assign a value to const variable `{ident}`")
         }
+        DeviceAssignment(ident: String, span: Span) {
+            display("Attempted to re-assign a value to a device const `{ident}`")
+        }
         Unknown(reason: String, span: Option<Span>) {
             display("{reason}")
         }
@@ -104,6 +107,7 @@ impl From<Error> for lsp_types::Diagnostic {
             | UnknownIdentifier(_, span)
             | InvalidDevice(_, span)
             | ConstAssignment(_, span)
+            | DeviceAssignment(_, span)
             | AgrumentMismatch(_, span) => Diagnostic {
                 range: span.into(),
                 message: value.to_string(),
@@ -348,12 +352,20 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                         temp_name: None, // User variable, do not free
                     })),
                     Err(_) => {
-                        self.errors
-                            .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-                        Ok(Some(CompilationResult {
-                            location: VariableLocation::Temporary(0),
-                            temp_name: None,
-                        }))
+                        // fallback, check devices
+                        if let Some(device) = self.devices.get(&name.node) {
+                            Ok(Some(CompilationResult {
+                                location: VariableLocation::Device(device.clone()),
+                                temp_name: None,
+                            }))
+                        } else {
+                            self.errors
+                                .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+                            Ok(Some(CompilationResult {
+                                location: VariableLocation::Temporary(0),
+                                temp_name: None,
+                            }))
+                        }
                     }
                 }
             }
@@ -462,6 +474,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             VariableLocation::Constant(_) => {
                 return Err(Error::Unknown(
                     r#"Attempted to emit a variable assignent for a constant value.
+                    This is a Compiler bug and should be reported to the developer."#
+                        .into(),
+                    None,
+                ));
+            }
+            VariableLocation::Device(_) => {
+                return Err(Error::Unknown(
+                    r#"Attempted to emit a variable assignent for device.
                     This is a Compiler bug and should be reported to the developer."#
                         .into(),
                     None,
@@ -622,7 +642,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                         ))?;
                         format!("r{}", VariableScope::TEMP_STACK_REGISTER)
                     }
-                    VariableLocation::Constant(_) => unreachable!(),
+                    VariableLocation::Constant(_) | VariableLocation::Device(_) => unreachable!(),
                 };
                 self.emit_variable_assignment(&name_str, &var_loc, src_str)?;
                 (var_loc, None)
@@ -765,6 +785,9 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     VariableLocation::Constant(_) => {
                         return Err(Error::ConstAssignment(identifier.node, identifier.span));
                     }
+                    VariableLocation::Device(_) => {
+                        return Err(Error::DeviceAssignment(identifier.node, identifier.span));
+                    }
                 }
 
                 if let Some(name) = cleanup {
@@ -878,6 +901,12 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                                 "push r{0}",
                                 VariableScope::TEMP_STACK_REGISTER
                             ))?;
+                        }
+                        VariableLocation::Device(_) => {
+                            return Err(Error::Unknown(
+                                r#"Attempted to pass a device contant into a function argument. These values can be used without scope."#.into(),
+                                Some(arg.span),
+                            ));
                         }
                     }
                 }
@@ -1128,6 +1157,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 "Cannot resolve a constant value to register".into(),
                 None,
             )),
+            VariableLocation::Device(_) => Err(Error::Unknown(
+                "Cannot resolve a device to a register".into(),
+                None,
+            )),
             VariableLocation::Stack(_) => Err(Error::Unknown(
                 "Cannot resolve Stack location directly to register string without context".into(),
                 None,
@@ -1205,6 +1238,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 // We return the NEW temp name to be freed.
                 Ok((temp_reg, Some(temp_name)))
             }
+            VariableLocation::Device(d) => Ok((d, None)),
         }
     }
 
@@ -1505,6 +1539,12 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                             VariableScope::TEMP_STACK_REGISTER
                         ))?;
                     }
+                    VariableLocation::Device(_) => {
+                        return Err(Error::Unknown(
+                            "You can not return a device from a function.".into(),
+                            Some(var_name.span),
+                        ));
+                    }
                 },
                 Err(_) => {
                     self.errors.push(Error::UnknownIdentifier(
@@ -1706,15 +1746,17 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 let (value, value_cleanup) = self.compile_operand(*val_expr, scope)?;
                 let (device_hash, device_hash_cleanup) =
                     self.compile_literal_or_variable(device_hash.node, scope)?;
+
                 let (name_hash, name_hash_cleanup) =
                     self.compile_literal_or_variable(name_hash.node, scope)?;
+
                 let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
                     LiteralOrVariable::Literal(logic_type.node),
                     scope,
                 )?;
 
                 self.write_output(format!(
-                    "snb {} {} {} {}",
+                    "sbn {} {} {} {}",
                     device_hash, name_hash, logic_type, value
                 ))?;
 
@@ -1725,7 +1767,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     logic_type_cleanup
                 );
 
-                todo!()
+                Ok(None)
             }
             System::LoadFromDevice(device, logic_type) => {
                 let Spanned {
