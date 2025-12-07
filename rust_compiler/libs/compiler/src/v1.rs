@@ -3,7 +3,7 @@ use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableS
 use helpers::prelude::*;
 use parser::{
     Parser as ASTParser,
-    sys_call::{SysCall, System},
+    sys_call::{Math, SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
@@ -266,6 +266,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                 node: SysCall::System(system),
                 span,
             }) => self.expression_syscall_system(system, span, scope),
+            Expression::Syscall(Spanned {
+                node: SysCall::Math(math),
+                ..
+            }) => self.expression_syscall_math(math, scope),
             Expression::While(expr_while) => {
                 self.expression_while(expr_while.node, scope)?;
                 Ok(None)
@@ -1885,6 +1889,200 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     batch_mode_cleanup
                 );
 
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+        }
+    }
+
+    fn expression_syscall_math<'v>(
+        &mut self,
+        expr: Math,
+        scope: &mut VariableScope<'v>,
+    ) -> Result<Option<CompilationResult>, Error> {
+        macro_rules! cleanup {
+            ($($to_clean:expr),*) => {
+                $(
+                    if let Some(to_clean) = $to_clean {
+                        scope.free_temp(to_clean, None)?;
+                    }
+                )*
+            };
+        }
+        match expr {
+            Math::Acos(expr) => {
+                let (var, cleanup) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("acos r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Asin(expr) => {
+                let (var, cleanup) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("asin r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Atan(expr) => {
+                let (var, cleanup) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("atan r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Atan2(expr1, expr2) => {
+                let (var1, var1_cleanup) = self.compile_operand(*expr1, scope)?;
+                let (var2, var2_cleanup) = self.compile_operand(*expr2, scope)?;
+
+                self.write_output(format!(
+                    "atan2 r{} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    var1,
+                    var2
+                ))?;
+                cleanup!(var1_cleanup, var2_cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Abs(expr) => {
+                let (var, cleanup) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("abs r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Ceil(expr) => {
+                let (var, cleanup) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("ceil r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Cos(expr) => {
+                let (var, cleanup) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("cos r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Floor(expr) => {
+                let (var, cleanup) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("floor r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Log(expr) => {
+                let (var, cleanup) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("log r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(cleanup);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Max(expr1, expr2) => {
+                let (var1, clean1) = self.compile_operand(*expr1, scope)?;
+                let (var2, clean2) = self.compile_operand(*expr2, scope)?;
+                self.write_output(format!(
+                    "max r{} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    var1,
+                    var2
+                ))?;
+
+                cleanup!(clean1, clean2);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Min(expr1, expr2) => {
+                let (var1, clean1) = self.compile_operand(*expr1, scope)?;
+                let (var2, clean2) = self.compile_operand(*expr2, scope)?;
+                self.write_output(format!(
+                    "min r{} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    var1,
+                    var2
+                ))?;
+
+                cleanup!(clean1, clean2);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Rand => {
+                self.write_output(format!("rand r{}", VariableScope::RETURN_REGISTER))?;
+
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Sin(expr) => {
+                let (var, clean) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("sin r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(clean);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Sqrt(expr) => {
+                let (var, clean) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("sqrt r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(clean);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Tan(expr) => {
+                let (var, clean) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("tan r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(clean);
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            Math::Trunc(expr) => {
+                let (var, clean) = self.compile_operand(*expr, scope)?;
+                self.write_output(format!("trunc r{} {}", VariableScope::RETURN_REGISTER, var))?;
+
+                cleanup!(clean);
                 Ok(Some(CompilationResult {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,

@@ -47,4 +47,5 @@ mod declaration_literal;
 mod function_declaration;
 mod logic_expression;
 mod loops;
+mod math_syscall;
 mod syscall;
