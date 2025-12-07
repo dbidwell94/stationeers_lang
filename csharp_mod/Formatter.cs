@@ -72,8 +72,6 @@ public class SlangFormatter : ICodeFormatter
 
     public override StyledLine ParseLine(string line)
     {
-        L.Debug($"Parsing line for syntax highlighting: {line}");
-
         // We create the line first
         var styledLine = new StyledLine(line);
 
@@ -83,7 +81,6 @@ public class SlangFormatter : ICodeFormatter
         // We call update to create the basic tokens
         styledLine.Update(tokens);
 
-        // CRITICAL FIX: We must manually re-attach metadata because StyledLine.Update() drops it.
         ReattachMetadata(styledLine, tokens);
 
         return styledLine;
@@ -179,9 +176,7 @@ public class SlangFormatter : ICodeFormatter
                 foreach (var lineDiagnostic in dict[lineIndex])
                 {
                     var column = Math.Abs((int)lineDiagnostic.Range.StartCol);
-                    L.Info(
-                        $"Overwriting token at L:{lineIndex} C:{column} - Range:{lineDiagnostic.Range.EndCol - lineDiagnostic.Range.StartCol}"
-                    );
+
                     allTokensDict[column] = new SemanticToken(
                         line: (int)lineIndex,
                         column,
