@@ -1349,11 +1349,24 @@ impl<'a> Parser<'a> {
     }
 
     fn literal(&mut self) -> Result<Literal, Error> {
-        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let current_token = self.current_token.clone().ok_or(Error::UnexpectedEOF)?;
         let literal = match current_token.token_type {
             TokenType::Number(num) => Literal::Number(num),
             TokenType::String(ref string) => Literal::String(string.clone()),
             TokenType::Boolean(boolean) => Literal::Boolean(boolean),
+            TokenType::Symbol(Symbol::Minus) => match self.get_next()? {
+                Some(Token {
+                    token_type: TokenType::Number(num),
+                    ..
+                }) => Literal::Number(-*num),
+                Some(wrong_token) => {
+                    return Err(Error::UnexpectedToken(
+                        Self::token_to_span(wrong_token),
+                        wrong_token.clone(),
+                    ));
+                }
+                None => return Err(Error::UnexpectedEOF),
+            },
             _ => {
                 return Err(Error::UnexpectedToken(
                     self.current_span(),
