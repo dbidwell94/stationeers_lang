@@ -552,19 +552,14 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
             Expression::Syscall(spanned_call) => {
                 let sys_call = spanned_call.node;
-                let SysCall::System(call) = sys_call else {
-                    // Math syscalls might be handled differently or here
-                    // For now assuming System returns value
-                    return Err(Error::Unknown(
-                        "Math syscall not yet supported in declaration".into(),
-                        Some(spanned_call.span),
-                    ));
+                let res = match sys_call {
+                    SysCall::System(s) => {
+                        self.expression_syscall_system(s, spanned_call.span, scope)?
+                    }
+                    SysCall::Math(m) => self.expression_syscall_math(m, scope)?,
                 };
 
-                if self
-                    .expression_syscall_system(call, spanned_call.span, scope)?
-                    .is_none()
-                {
+                if res.is_none() {
                     return Err(Error::Unknown(
                         "SysCall did not return a value".into(),
                         Some(spanned_call.span),

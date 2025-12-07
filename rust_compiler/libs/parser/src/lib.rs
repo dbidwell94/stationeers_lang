@@ -1889,7 +1889,7 @@ impl<'a> Parser<'a> {
                 Ok(SysCall::Math(Math::Log(boxed!(arg))))
             }
             "max" => {
-                check_length(self, &invocation.arguments, 1)?;
+                check_length(self, &invocation.arguments, 2)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg1 = args.next().ok_or(Error::UnexpectedEOF)?;
                 let arg2 = args.next().ok_or(Error::UnexpectedEOF)?;
