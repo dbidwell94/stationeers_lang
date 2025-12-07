@@ -147,7 +147,6 @@ public static class Marshal
             };
 
             var tokens = Ffi.tokenize_line(strRef);
-            L.Debug($"Tokenized line '{inputString}' into {tokens.len} tokens.");
             return tokens.ToTokenList();
         }
     }

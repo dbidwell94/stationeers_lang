@@ -151,3 +151,12 @@ fn test_const_hash_expression() -> Result<()> {
     assert_eq!("(const i = hash(\"item\"))", expr.to_string());
     Ok(())
 }
+
+#[test]
+fn test_negative_literal_const() -> Result<()> {
+    let expr = parser!(r#"const i = -123"#).parse()?.unwrap();
+
+    assert_eq!("(const i = -123)", expr.to_string());
+
+    Ok(())
+}

@@ -10,67 +10,67 @@ documented! {
         /// `acos r? a(r?|num)`
         /// ## Slang
         /// `(number|var).acos();`
-        Acos(LiteralOrVariable),
+        Acos(Box<Spanned<Expression>>),
         /// Returns the angle in radians whose sine is the specified number.
         /// ## IC10
         /// `asin r? a(r?|num)`
         /// ## Slang
         /// `(number|var).asin();`
-        Asin(LiteralOrVariable),
+        Asin(Box<Spanned<Expression>>),
         /// Returns the angle in radians whose tangent is the specified number.
         /// ## IC10
         /// `atan r? a(r?|num)`
         /// ## Slang
         /// `(number|var).atan();`
-        Atan(LiteralOrVariable),
+        Atan(Box<Spanned<Expression>>),
         /// Returns the angle in radians whose tangent is the quotient of the specified numbers.
         /// ## IC10
         /// `atan2 r? a(r?|num) b(r?|num)`
         /// ## Slang
         /// `(number|var).atan2((number|var));`
-        Atan2(LiteralOrVariable, LiteralOrVariable),
+        Atan2(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
         /// Gets the absolute value of a number.
         /// ## IC10
         /// `abs r? a(r?|num)`
         /// ## Slang
         /// `(number|var).abs();`
-        Abs(LiteralOrVariable),
+        Abs(Box<Spanned<Expression>>),
         /// Rounds a number up to the nearest whole number.
         /// ## IC10
         /// `ceil r? a(r?|num)`
         /// ## Slang
         /// `(number|var).ceil();`
-        Ceil(LiteralOrVariable),
+        Ceil(Box<Spanned<Expression>>),
         /// Returns the cosine of the specified angle in radians.
         /// ## IC10
         /// `cos r? a(r?|num)`
         /// ## Slang
         /// `(number|var).cos();`
-        Cos(LiteralOrVariable),
+        Cos(Box<Spanned<Expression>>),
         /// Rounds a number down to the nearest whole number.
         /// ## IC10
         /// `floor r? a(r?|num)`
         /// ## Slang
         /// `(number|var).floor();`
-        Floor(LiteralOrVariable),
+        Floor(Box<Spanned<Expression>>),
         /// Computes the natural logarithm of a number.
         /// ## IC10
         /// `log r? a(r?|num)`
         /// ## Slang
         /// `(number|var).log();`
-        Log(LiteralOrVariable),
+        Log(Box<Spanned<Expression>>),
         /// Computes the maximum of two numbers.
         /// ## IC10
         /// `max r? a(r?|num) b(r?|num)`
         /// ## Slang
         /// `(number|var).max((number|var));`
-        Max(LiteralOrVariable, LiteralOrVariable),
+        Max(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
         /// Computes the minimum of two numbers.
         /// ## IC10
         /// `min r? a(r?|num) b(r?|num)`
         /// ## Slang
         /// `(number|var).min((number|var));`
-        Min(LiteralOrVariable, LiteralOrVariable),
+        Min(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
         /// Gets a random number between 0 and 1.
         /// ## IC10
         /// `rand r?`
@@ -82,25 +82,25 @@ documented! {
         /// `sin r? a(r?|num)`
         /// ## Slang
         /// `(number|var).sin();`
-        Sin(LiteralOrVariable),
+        Sin(Box<Spanned<Expression>>),
         /// Computes the square root of a number.
         /// ## IC10
         /// `sqrt r? a(r?|num)`
         /// ## Slang
         /// `(number|var).sqrt();`
-        Sqrt(LiteralOrVariable),
+        Sqrt(Box<Spanned<Expression>>),
         /// Returns the tangent of the specified angle in radians.
         /// ## IC10
         /// `tan r? a(r?|num)`
         /// ## Slang
         /// `(number|var).tan();`
-        Tan(LiteralOrVariable),
+        Tan(Box<Spanned<Expression>>),
         /// Truncates a number by removing the decimal portion.
         /// ## IC10
         /// `trunc r? a(r?|num)`
         /// ## Slang
         /// `(number|var).trunc();`
-        Trunc(LiteralOrVariable),
+        Trunc(Box<Spanned<Expression>>),
     }
 }
 
@@ -231,6 +231,7 @@ impl std::fmt::Display for System {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Eq)]
 /// This represents built in functions that cannot be overwritten, but can be invoked by the user as functions.
 pub enum SysCall {
