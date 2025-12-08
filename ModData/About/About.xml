@@ -4,71 +4,76 @@
   <Author>JoeDiertay</Author>
   <Version>0.1.1</Version>
   <Description>
-    [h1]Slang: High-Level Programming for Stationeers[/h1]
+[h1]Slang: High-Level Programming for Stationeers[/h1]
 
-    Stop writing assembly. Start writing code.
+Stop writing assembly. Start writing code.
 
-    Slang (Stationeers Language) brings modern programming to Stationeers. It allows you to write scripts using a familiar C-style syntax (variables, functions, if/else, loops) directly in the in-game editor. When you hit confirm, Slang compiles your code into optimized IC10 MIPS assembly instantly.
+Slang (Stationeers Language) brings modern programming to Stationeers. It allows you to write scripts using a familiar C-style syntax (variables, functions, if/else, loops) directly in the in-game editor. When you hit confirm, Slang compiles your code into optimized IC10 MIPS assembly instantly.
 
-    [b]NOTE: This project is in BETA. Expect updates and changes![/b]
+[b]NOTE: This project is in BETA. Expect updates and changes![/b]
 
-    [h2]Features[/h2]
-    [list]
-    [*] [b]In-Game Compilation:[/b] No external tools needed. Write Slang directly in the IC editor.
-    [*] [b]No More Register Juggling:[/b] Define variables with let (e.g., let temp = 300). The compiler manages r0-r15 for you.
-    [*] [b]Control Flow:[/b] Write readable logic with if, else, while, loop, break, and continue.
-    [*] [b]Functions:[/b] Create reusable code blocks with arguments.
-    [*] [b]Smart Editor:[/b] Get real-time syntax highlighting and error checking (red text) as you type.
-    [*] [b]Persistent Source:[/b] Your high-level Slang code is saved to the chip, so it's there when you come back.
-    [*] [b]Optimizations:[/b] Features like Constant Folding calculate math at compile time to save instructions.
-    [*] [b]Device Aliasing:[/b] Simple mapping: device sensor = "d0".
-    [*] [b]Temperature Literals:[/b] Don't worry about converting Celsius to Kelvin anymore. Define your temperatures as whatever you want and append the proper suffix at the end (ex. 20c, 68f, 293.15k)
-    [/list]
+[h2]Features[/h2]
+[list]
+[*] [b]In-Game Compilation:[/b] No external tools needed. Write Slang directly in the IC editor.
+[*] [b]No More Register Juggling:[/b] Define variables with let (e.g., let temp = 300). The compiler manages r0-r15 for you.
+[*] [b]Control Flow:[/b] Write readable logic with if, else, while, loop, break, and continue.
+[*] [b]Functions:[/b] Create reusable code blocks with arguments.
+[*] [b]Smart Editor:[/b] Get real-time syntax highlighting and error checking (red text) as you type.
+[*] [b]Persistent Source:[/b] Your high-level Slang code is saved to the chip, so it's there when you come back.
+[*] [b]Optimizations:[/b] Features like Constant Folding calculate math at compile time to save instructions.
+[*] [b]Device Aliasing:[/b] Simple mapping: device sensor = "d0".
+[*] [b]Temperature Literals:[/b] Don't worry about converting Celsius to Kelvin anymore. Define your temperatures as whatever you want and append the proper suffix at the end (ex. 20c, 68f, 293.15k)
+[/list]
 
-    [h2]Installation[/h2]
-    This is a StationeersLaunchPad Plugin Mod.
-    1. Install BepInEx (required).
-    2. Install StationeersLaunchPad.
-    3. Subscribe to Slang.
+[h2]Installation[/h2]
+This is a StationeersLaunchPad Plugin Mod.
+1. Install BepInEx (required).
+2. Install StationeersLaunchPad.
+3. Subscribe to Slang.
 
-    [h2]Usage[/h2]
-    1. Open any IC10 housing or editor in-game.
-    2. Write your Slang code.
-    3. Press [b]Confirm[/b]. The mod compiles your code to IC10 and loads it onto the chip.
+[h2]Usage[/h2]
+1. Open any IC10 housing or editor in-game.
+2. Write your Slang code.
+3. Press [b]Confirm[/b]. The mod compiles your code to IC10 and loads it onto the chip.
 
-    [h2]Example Code[/h2]
-    [code]
-    device airCon = "d0";
-    device gasSensor = "d1";
+[h2]Example Code[/h2]
+[code]
+device airCon = "d0";
+device gasSensor = "d1";
 
-    loop {
+loop {
     yield();
     // yes, ideally you would use a latch here, but this is just a simple example :)
     airCon.On = gasSensor.Temperature >= 28c;
-    }
-    [/code]
+}
+[/code]
 
-    [h2]Known Issues (Beta)[/h2]
-    [list]
-    [*] [b]Code Size:[/b] Compiled output is currently more verbose than hand-optimized assembly. Optimization passes are planned.
-    [*] [b]Stack Access:[/b] Direct stack memory access is disabled to prevent conflicts with the compiler's internal memory management.
-    [*] [b]Documentation:[/b] In-game tooltips for syscalls (like load, set) are WIP. Check the "Slang" entry in the Stationpedia (F1) for help.
-    [*] [b]Debugging:[/b] Runtime errors currently point to the compiled IC10 line number, not your Slang source line. Source mapping is coming soon.
-    [/list]
+[h2]Known Issues (Beta)[/h2]
+[list]
+[*] [b]Code Size:[/b] Compiled output is currently more verbose than hand-optimized assembly. Optimization passes are planned.
+[*] [b]Stack Access:[/b] Direct stack memory access is disabled to prevent conflicts with the compiler's internal memory management.
+[*] [b]Documentation:[/b] In-game tooltips for syscalls (like load, set) are WIP. Check the "Slang" entry in the Stationpedia (F1) for help.
+[*] [b]Debugging:[/b] Runtime errors currently point to the compiled IC10 line number, not your Slang source line. Source mapping is coming soon.
+[/list]
 
-    [h2]Planned Features[/h2]
-    [list]
-    [*] Side-by-side view: Slang vs. Compiled IC10.
-    [*] Compiler optimizations (dead code elimination, smarter register allocation).
-    [*] Enhanced LSP features (Autocomplete, Go to Definition).
-    [*] Full feature parity with all IC10 instructions.
-    [*] Tutorials and beginner script examples.
-    [/list]
+[h2]Planned Features[/h2]
+[list]
+[*] Side-by-side view: Slang vs. Compiled IC10.
+[*] Compiler optimizations (dead code elimination, smarter register allocation).
+[*] Enhanced LSP features (Autocomplete, Go to Definition).
+[*] Full feature parity with all IC10 instructions.
+[*] Tutorials and beginner script examples.
+[/list]
 
-    [h2]FAQ[/h2]
-    [b]Q: What is the DLL extracted to my temp folder?[/b]
-    A: The Slang compiler is built in Rust for performance and reliability. It is compiled as a native library and bundled with the mod. It must be extracted temporarily to function within the game's C# environment.
-    </Description>
+[h2]FAQ[/h2]
+[b]Q: What is the DLL extracted to my temp folder?[/b]
+A: The Slang compiler is built in Rust for performance and reliability. It is compiled as a native library and bundled with the mod. It must be extracted temporarily to function within the game's C# environment.
+
+[h2]Useful Links[/h2]
+[url=https://github.com/dbidwell94/stationeers_lang]Source Code on GitHub[/url]
+[url=https://discord.gg/stationeers]Stationeers Official Discord[/url]
+    [url=https://discord.gg/M4sCfYMacs]Stationeers Modding Discord[/url]
+  </Description>
   <ChangeLog xsi:nil="true" />
   <WorkshopHandle>3619985558</WorkshopHandle>
   <Tags>
