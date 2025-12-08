@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>StationeersSlang</AssemblyName>
     <Description>Slang Compiler Bridge</Description>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
@@ -37,10 +37,6 @@
       </Reference>
       <Reference Include="Assembly-CSharp">
         <HintPath>./ref/Assembly-CSharp.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="UniTask">
-        <HintPath>./ref/UniTask.dll</HintPath>
         <Private>False</Private>
       </Reference>
 

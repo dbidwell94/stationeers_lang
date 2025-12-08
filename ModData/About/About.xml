@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ModMetadata xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <Name>StationeersSlang</Name>
+  <Name>Slang</Name>
   <Author>JoeDiertay</Author>
-  <Version>0.1.1</Version>
+  <Version>0.1.2</Version>
   <Description>
 [h1]Slang: High-Level Programming for Stationeers[/h1]
 
