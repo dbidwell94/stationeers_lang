@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using Cysharp.Threading.Tasks;
+using System.Threading.Tasks;
 using StationeersIC10Editor;
 
 public class SlangFormatter : ICodeFormatter
@@ -98,29 +98,32 @@ public class SlangFormatter : ICodeFormatter
             inputSrc = this.RawText;
         }
 
-        HandleLsp(inputSrc, token).Forget();
+        _ = HandleLsp(inputSrc, token);
     }
 
-    private async UniTaskVoid HandleLsp(string inputSrc, CancellationToken cancellationToken)
+    private async Task HandleLsp(string inputSrc, CancellationToken cancellationToken)
     {
         try
         {
-            await UniTask.SwitchToThreadPool();
+            if (cancellationToken.IsCancellationRequested)
+                return;
+
+            await Task.Delay(200, cancellationToken: cancellationToken);
 
             if (cancellationToken.IsCancellationRequested)
                 return;
 
-            await System.Threading.Tasks.Task.Delay(200, cancellationToken: cancellationToken);
-
-            if (cancellationToken.IsCancellationRequested)
-                return;
-
-            var dict = Marshal
-                .DiagnoseSource(inputSrc)
-                .GroupBy(d => d.Range.StartLine)
-                .ToDictionary(g => g.Key);
-
-            await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
+            // Running this potentially CPU intensive work on a background thread.
+            var dict = await Task.Run(
+                () =>
+                {
+                    return Marshal
+                        .DiagnoseSource(inputSrc)
+                        .GroupBy(d => d.Range.StartLine)
+                        .ToDictionary(g => g.Key);
+                },
+                cancellationToken
+            );
 
             ApplyDiagnostics(dict);
         }
@@ -136,7 +139,6 @@ public class SlangFormatter : ICodeFormatter
     {
         HashSet<uint> linesToRefresh;
 
-        // CRITICAL FIX FOR LINE SHIFTS:
         // If the line count has changed (lines added/deleted), indices have shifted.
         // We must refresh ALL lines to ensure any line that shifted into a new position
         // gets scrubbed of its old visual state.
