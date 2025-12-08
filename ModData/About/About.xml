@@ -8,7 +8,7 @@
 
 Stop writing assembly. Start writing code.
 
-Slang (Stationeers Language) brings modern programming to Stationeers. It allows you to write scripts using a familiar C-style syntax (variables, functions, if/else, loops) directly in the in-game editor. When you hit confirm, Slang compiles your code into optimized IC10 MIPS assembly instantly.
+Slang (Stationeers Language) brings modern programming to Stationeers. It allows you to write scripts using a familiar C-style syntax (variables, functions, if/else, loops) directly in the in-game editor. When you hit confirm, Slang compiles your code into IC10 instantly.
 
 [b]NOTE: This project is in BETA. Expect updates and changes![/b]
 
@@ -91,7 +91,7 @@ A: Yes! Slang does not modify any existing IC10 code, it is only a compiler. As 
   <OrderBefore WorkshopHandle="3592775931" />
   <InGameDescription><![CDATA[
         <size=30><color=#ffff00>Slang - High Level Language Compiler</color></size>
-        A modern programming experience for Stationeers. Write C-style code that compiles to MIPS assembly instantly.
+        A modern programming experience for Stationeers. Write C-style code that compiles to IC10 instantly.
 
         <color=#ffa500><b>Features</b></color>
         - <b>In-Game Compilation:</b> Write high-level logic directly in the chip editor.
