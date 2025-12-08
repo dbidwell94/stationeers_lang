@@ -69,10 +69,13 @@ loop {
 [b]Q: What is the DLL extracted to my temp folder?[/b]
 A: The Slang compiler is built in Rust for performance and reliability. It is compiled as a native library and bundled with the mod. It must be extracted temporarily to function within the game's C# environment.
 
+[b]Q: Is this compatible with my current save?[/b]
+A: Yes! Slang does not modify any existing IC10 code, it is only a compiler. As a matter of fact: if you wish to stop using Slang at any time, your compiled IC10 will still exist on the chip. However: Slang adds a comment at the bottom of your compiled IC10 which is a GZIP and base64 encoded version of your Slang source code. This might break line limits with Slang not installed. If you wish to no longer use Slang, I recommend you remove this comment from the source code after uninstalling Slang.
+
 [h2]Useful Links[/h2]
 [url=https://github.com/dbidwell94/stationeers_lang]Source Code on GitHub[/url]
 [url=https://discord.gg/stationeers]Stationeers Official Discord[/url]
-    [url=https://discord.gg/M4sCfYMacs]Stationeers Modding Discord[/url]
+[url=https://discord.gg/M4sCfYMacs]Stationeers Modding Discord[/url]
   </Description>
   <ChangeLog xsi:nil="true" />
   <WorkshopHandle>3619985558</WorkshopHandle>
