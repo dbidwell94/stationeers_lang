@@ -9,97 +9,97 @@ documented! {
         /// ## IC10
         /// `acos r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).acos();`
+        /// `let item = acos(number|var|expression);`
         Acos(Box<Spanned<Expression>>),
         /// Returns the angle in radians whose sine is the specified number.
         /// ## IC10
         /// `asin r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).asin();`
+        /// `let item = asin(number|var|expression);`
         Asin(Box<Spanned<Expression>>),
         /// Returns the angle in radians whose tangent is the specified number.
         /// ## IC10
         /// `atan r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).atan();`
+        /// `let item = atan(number|var|expression);`
         Atan(Box<Spanned<Expression>>),
         /// Returns the angle in radians whose tangent is the quotient of the specified numbers.
         /// ## IC10
         /// `atan2 r? a(r?|num) b(r?|num)`
         /// ## Slang
-        /// `(number|var).atan2((number|var));`
+        /// `let item = atan2((number|var|expression), (number|var|expression));`
         Atan2(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
         /// Gets the absolute value of a number.
         /// ## IC10
         /// `abs r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).abs();`
+        /// `let item = abs((number|var|expression));`
         Abs(Box<Spanned<Expression>>),
         /// Rounds a number up to the nearest whole number.
         /// ## IC10
         /// `ceil r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).ceil();`
+        /// `let item = ceil((number|var|expression));`
         Ceil(Box<Spanned<Expression>>),
         /// Returns the cosine of the specified angle in radians.
         /// ## IC10
         /// `cos r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).cos();`
+        /// `let item = cos((number|var|expression));`
         Cos(Box<Spanned<Expression>>),
         /// Rounds a number down to the nearest whole number.
         /// ## IC10
         /// `floor r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).floor();`
+        /// `let item = floor((number|var|expression));`
         Floor(Box<Spanned<Expression>>),
         /// Computes the natural logarithm of a number.
         /// ## IC10
         /// `log r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).log();`
+        /// `let item = log((number|var|expression));`
         Log(Box<Spanned<Expression>>),
         /// Computes the maximum of two numbers.
         /// ## IC10
         /// `max r? a(r?|num) b(r?|num)`
         /// ## Slang
-        /// `(number|var).max((number|var));`
+        /// `let item = max((number|var|expression), (number|var|expression));`
         Max(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
         /// Computes the minimum of two numbers.
         /// ## IC10
         /// `min r? a(r?|num) b(r?|num)`
         /// ## Slang
-        /// `(number|var).min((number|var));`
+        /// `let item = min((number|var|expression), (number|var|expression));`
         Min(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
         /// Gets a random number between 0 and 1.
         /// ## IC10
         /// `rand r?`
         /// ## Slang
-        /// `rand();`
+        /// `let item = rand();`
         Rand,
         /// Returns the sine of the specified angle in radians.
         /// ## IC10
         /// `sin r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).sin();`
+        /// `let item = sin((number|var|expression));`
         Sin(Box<Spanned<Expression>>),
         /// Computes the square root of a number.
         /// ## IC10
         /// `sqrt r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).sqrt();`
+        /// `let item = sqrt((number|var|expression));`
         Sqrt(Box<Spanned<Expression>>),
         /// Returns the tangent of the specified angle in radians.
         /// ## IC10
         /// `tan r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).tan();`
+        /// `let item = tan((number|var|expression));`
         Tan(Box<Spanned<Expression>>),
         /// Truncates a number by removing the decimal portion.
         /// ## IC10
         /// `trunc r? a(r?|num)`
         /// ## Slang
-        /// `(number|var).trunc();`
+        /// `let item = trunc((number|var|expression));`
         Trunc(Box<Spanned<Expression>>),
     }
 }
@@ -160,7 +160,9 @@ documented! {
         /// ## IC10
         /// `l r? d? var`
         /// ## Slang
-        /// `load(deviceType, "LogicType");`
+        /// `let item = load(deviceHash, "LogicType");`
+        /// `let item = l(deviceHash, "LogicType");`
+        /// `let item = deviceAlias.LogicType;`
         LoadFromDevice(Spanned<LiteralOrVariable>, Spanned<Literal>),
         /// Function which gets a LogicType from all connected network devices that match
         /// the provided device hash and name, aggregating them via a batchMode
@@ -168,6 +170,7 @@ documented! {
         /// `lbn r? deviceHash nameHash logicType batchMode`
         /// ## Slang
         /// `loadBatchedNamed(deviceHash, deviceName, "LogicType", "BatchMode");`
+        /// `lbn(deviceHash, deviceName, "LogicType", "BatchMode");`
         LoadBatchNamed(
             Spanned<LiteralOrVariable>,
             Spanned<LiteralOrVariable>,
@@ -180,26 +183,31 @@ documented! {
         /// `lb r? deviceHash logicType batchMode`
         /// ## Slang
         /// `loadBatched(deviceHash, "Variable", "LogicType");`
+        /// `lb(deviceHash, "Variable", "LogicType");`
         LoadBatch(Spanned<LiteralOrVariable>, Spanned<Literal>, Spanned<Literal>),
         /// Represents a function which stores a setting into a specific device.
         /// ## IC10
         /// `s d? logicType r?`
         /// ## Slang
-        /// `set(deviceType, "Variable", (number|var));`
+        /// `set(deviceHash, "LogicType", (number|var));`
+        /// `s(deviceHash, "LogicType", (number|var));`
+        /// `deviceAlias.LogicType = (number|var);`
         SetOnDevice(Spanned<LiteralOrVariable>, Spanned<Literal>, Box<Spanned<Expression>>),
         /// Represents a function which stores a setting to all devices that match
         /// the given deviceHash
         /// ## IC10
         /// `sb deviceHash logicType r?`
         /// ## Slang
-        /// `setBatched(deviceHash, "LogicType", (number|var))`
+        /// `setBatched(deviceHash, "LogicType", (number|var));`
+        /// `sb(deviceHash, "LogicType", (number|var));`
         SetOnDeviceBatched(Spanned<LiteralOrVariable>, Spanned<Literal>, Box<Spanned<Expression>>),
         /// Represents a function which stores a setting to all devices that match
         /// both the given deviceHash AND the given nameHash
         /// ## IC10
         /// `sbn deviceHash nameHash logicType r?`
         /// ## Slang
-        /// `setBatchedNamed(deviceHash, nameHash, "LogicType", (number|var))`
+        /// `setBatchedNamed(deviceHash, nameHash, "LogicType", (number|var));`
+        /// `sbn(deviceHash, nameHash, "LogicType", (number|var));`
         SetOnDeviceBatchedNamed(
             Spanned<LiteralOrVariable>,
             Spanned<LiteralOrVariable>,
