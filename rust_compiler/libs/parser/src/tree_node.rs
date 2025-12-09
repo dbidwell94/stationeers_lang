@@ -213,7 +213,7 @@ impl<'a> std::fmt::Display for LiteralOrVariable<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ConstDeclarationExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
-    pub value: LiteralOr<'a, SysCall>,
+    pub value: LiteralOr<'a, SysCall<'a>>,
 }
 
 impl<'a> ConstDeclarationExpression<'a> {
@@ -365,8 +365,8 @@ pub enum Expression<'a> {
     Negation(Box<Spanned<Expression<'a>>>),
     Priority(Box<Spanned<Expression<'a>>>),
     Return(Box<Spanned<Expression<'a>>>),
-    Syscall(Spanned<SysCall>),
-    Variable(Spanned<String>),
+    Syscall(Spanned<SysCall<'a>>),
+    Variable(Spanned<Cow<'a, str>>),
     While(Spanned<WhileExpression<'a>>),
 }
 
