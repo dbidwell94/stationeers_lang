@@ -1,4 +1,5 @@
 use helpers::prelude::*;
+use logos::{Lexer, Logos};
 use rust_decimal::Decimal;
 
 // Define a local macro to consume the list
@@ -79,22 +80,151 @@ impl Temperature {
     }
 }
 
-#[derive(Debug, PartialEq, Hash, Eq, Clone)]
+macro_rules! symbol {
+    ($var:ident) => {
+        |_| Symbol::$var
+    };
+}
+
+macro_rules! keyword {
+    ($var:ident) => {
+        |_| Keyword::$var
+    };
+}
+
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Logos)]
 pub enum TokenType {
+    // matches strings with double quotes
+    #[regex(r#""(?:[^"\\]|\\.)*""#, |v| v.slice().to_string())]
+    // matches strings with single quotes
+    #[regex(r#"'(?:[^'\\]|\\.)*'"#, |v| v.slice().to_string())]
     /// Represents a string token
     String(String),
+
+    #[regex(r"[0-9][0-9_]*(\.[0-9][0-9_]*)?([cfk])?", parse_number)]
     /// Represents a number token
     Number(Number),
+
+    #[token("true", |_| true)]
+    #[token("false", |_| false)]
     /// Represents a boolean token
     Boolean(bool),
+
+    #[token("continue", keyword!(Continue))]
+    #[token("const", keyword!(Const))]
+    #[token("let", keyword!(Let))]
+    #[token("fn", keyword!(Fn))]
+    #[token("if", keyword!(If))]
+    #[token("device", keyword!(Device))]
+    #[token("else", keyword!(Else))]
+    #[token("return", keyword!(Return))]
+    #[token("enum", keyword!(Enum))]
+    #[token("loop", keyword!(Loop))]
+    #[token("break", keyword!(Break))]
+    #[token("while", keyword!(While))]
     /// Represents a keyword token
     Keyword(Keyword),
+
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |v| v.slice().to_string())]
     /// Represents an identifier token
     Identifier(String),
+
+    #[token("(", symbol!(LParen))]
+    #[token(")", symbol!(RParen))]
+    #[token("{", symbol!(LBrace))]
+    #[token("}", symbol!(RBrace))]
+    #[token("[", symbol!(LBracket))]
+    #[token("]", symbol!(RBracket))]
+    #[token(";", symbol!(Semicolon))]
+    #[token(":", symbol!(Colon))]
+    #[token(",", symbol!(Comma))]
+    #[token("+", symbol!(Plus))]
+    #[token("-", symbol!(Minus))]
+    #[token("*", symbol!(Asterisk))]
+    #[token("/", symbol!(Slash))]
+    #[token("<", symbol!(LessThan))]
+    #[token(">", symbol!(GreaterThan))]
+    #[token("=", symbol!(Assign))]
+    #[token("!", symbol!(LogicalNot))]
+    #[token(".", symbol!(Dot))]
+    #[token("^", symbol!(Caret))]
+    #[token("%", symbol!(Percent))]
+    #[token("==", symbol!(Equal))]
+    #[token("!=", symbol!(NotEqual))]
+    #[token("&&", symbol!(LogicalAnd))]
+    #[token("||", symbol!(LogicalOr))]
+    #[token("<=", symbol!(LessThanOrEqual))]
+    #[token(">=", symbol!(GreaterThanOrEqual))]
+    #[token("**", symbol!(Exp))]
     /// Represents a symbol token
     Symbol(Symbol),
+
+    #[regex(r"///[\n]*", |val| Comment::Doc(val.slice()[3..].trim().to_string()))]
+    #[regex(r"//[\n]*", |val| Comment::Line(val.slice()[2..].trim().to_string()))]
+    /// Represents a comment, both a line comment and a doc comment
+    Comment(Comment),
+
+    #[end]
     /// Represents an end of file token
     EOF,
+}
+
+#[derive(Hash, Debug, Eq, PartialEq, Clone)]
+pub enum Comment {
+    Line(String),
+    Doc(String),
+}
+
+fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType>) -> Option<Number> {
+    let slice = lexer.slice();
+    let last_char = slice.chars().last()?;
+    let (num_str, suffix) = match last_char {
+        'c' | 'k' | 'f' => (&slice[..slice.len() - 1], Some(last_char)),
+        _ => (slice, None),
+    };
+
+    let clean_str = if num_str.contains('_') {
+        num_str.replace('_', "")
+    } else {
+        num_str.to_string()
+    };
+
+    let num = if clean_str.contains('.') {
+        Number::Decimal(clean_str.parse::<Decimal>().ok()?)
+    } else {
+        Number::Integer(clean_str.parse::<i128>().ok()?)
+    };
+
+    if let Some(suffix) = suffix {
+        Some(
+            match suffix {
+                'c' => Temperature::Celsius(num),
+                'f' => Temperature::Fahrenheit(num),
+                'k' => Temperature::Kelvin(num),
+                _ => unreachable!(),
+            }
+            .to_kelvin(),
+        )
+    } else {
+        Some(num)
+    }
+}
+
+impl std::fmt::Display for Comment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Line(c) => write!(f, "// {}", c),
+            Self::Doc(d) => {
+                let lines = d
+                    .split('\n')
+                    .map(|s| format!("/// {s}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                write!(f, "{}", lines)
+            }
+        }
+    }
 }
 
 impl Documentation for TokenType {
@@ -128,6 +258,7 @@ impl From<TokenType> for u32 {
                 | Keyword::Return => 4,
                 _ => 5,
             },
+            TokenType::Comment(_) => 8,
             TokenType::Identifier(s) => {
                 if is_syscall(&s) {
                     10
@@ -160,6 +291,7 @@ impl std::fmt::Display for TokenType {
             TokenType::Keyword(k) => write!(f, "{:?}", k),
             TokenType::Identifier(i) => write!(f, "{}", i),
             TokenType::Symbol(s) => write!(f, "{}", s),
+            TokenType::Comment(c) => write!(f, "{}", c),
             TokenType::EOF => write!(f, "EOF"),
         }
     }

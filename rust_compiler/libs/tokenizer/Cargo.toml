@@ -8,6 +8,7 @@ rust_decimal = { workspace = true }
 quick-error = { workspace = true }
 lsp-types = { workspace = true }
 helpers = { path = "../helpers" }
+logos = "0.16"
 
 [dev-dependencies]
 anyhow = { version = "^1" }
