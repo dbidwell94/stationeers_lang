@@ -8,6 +8,7 @@ quick-error = { workspace = true }
 tokenizer = { path = "../tokenizer" }
 helpers = { path = "../helpers" }
 lsp-types = { workspace = true }
+thiserror = "2"
 
 
 [dev-dependencies]

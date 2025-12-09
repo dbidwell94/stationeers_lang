@@ -111,7 +111,7 @@ macro_rules! self_matches_current {
 
 pub struct Parser<'a> {
     tokenizer: TokenizerBuffer<'a>,
-    current_token: Option<Token>,
+    current_token: Option<Token<'a>>,
     pub errors: Vec<Error>,
 }
 
@@ -126,12 +126,11 @@ impl<'a> Parser<'a> {
 
     /// Calculates a Span from a given Token reference.
     fn token_to_span(t: &Token) -> Span {
-        let len = t.original_string.as_ref().map(|s| s.len()).unwrap_or(0);
         Span {
             start_line: t.line,
-            start_col: t.column,
+            start_col: t.span.start,
             end_line: t.line,
-            end_col: t.column + len,
+            end_col: t.span.end,
         }
     }
 

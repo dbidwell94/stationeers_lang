@@ -1,6 +1,57 @@
 use helpers::prelude::*;
-use logos::{Lexer, Logos};
+use logos::{Lexer, Logos, Skip, Span};
+use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use rust_decimal::Decimal;
+use thiserror::Error;
+
+#[derive(Debug, Error, Default, Clone, PartialEq)]
+pub enum LexError {
+    #[error("Attempted to parse an invalid number: {2}")]
+    NumberParseError(usize, Span, String),
+
+    #[error("An invalid character was found in token stream: {2}")]
+    InvalidInput(usize, Span, String),
+
+    #[default]
+    #[error("An unknown error occurred")]
+    Other,
+}
+
+impl From<LexError> for Diagnostic {
+    fn from(value: LexError) -> Self {
+        match value {
+            LexError::NumberParseError(line, col, str) | LexError::InvalidInput(line, col, str) => {
+                Diagnostic {
+                    range: Range {
+                        start: Position {
+                            character: col.start as u32,
+                            line: line as u32,
+                        },
+                        end: Position {
+                            line: line as u32,
+                            character: col.end as u32,
+                        },
+                    },
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    message: str,
+                    ..Default::default()
+                }
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl LexError {
+    pub fn from_lexer<'a>(lex: &mut Lexer<'a, TokenType<'a>>) -> Self {
+        let mut span = lex.span();
+        let line = lex.extras.line_count;
+        span.start -= lex.extras.line_start_index;
+        span.end -= lex.extras.line_start_index;
+
+        Self::InvalidInput(line, span, lex.slice().chars().as_str().to_string())
+    }
+}
 
 // Define a local macro to consume the list
 macro_rules! generate_check {
@@ -11,29 +62,34 @@ macro_rules! generate_check {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Token {
-    /// The type of the token
-    pub token_type: TokenType,
-    /// The line where the token was found
-    pub line: usize,
-    /// The column where the token was found
-    pub column: usize,
-    pub original_string: Option<String>,
+#[derive(Default)]
+pub struct Extras {
+    pub line_count: usize,
+    pub line_start_index: usize,
 }
 
-impl Token {
-    pub fn new(
-        token_type: TokenType,
-        line: usize,
-        column: usize,
-        original: Option<String>,
-    ) -> Self {
+fn update_line_index<'a>(lex: &mut Lexer<'a, TokenType<'a>>) -> Skip {
+    lex.extras.line_count += 1;
+    lex.extras.line_start_index = lex.span().end;
+    Skip
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Token<'a> {
+    /// The type of the token
+    pub token_type: TokenType<'a>,
+    /// The line where the token was found
+    pub line: usize,
+    /// The span where the token starts and ends
+    pub span: Span,
+}
+
+impl<'a> Token<'a> {
+    pub fn new(token_type: TokenType<'a>, line: usize, span: Span) -> Self {
         Self {
             token_type,
             line,
-            column,
-            original_string: original,
+            span,
         }
     }
 }
@@ -93,13 +149,19 @@ macro_rules! keyword {
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Logos)]
-pub enum TokenType {
+#[logos(skip r"[ \t\f]+")]
+#[logos(extras = Extras)]
+#[logos(error(LexError, LexError::from_lexer))]
+pub enum TokenType<'a> {
+    #[regex(r"\n", update_line_index)]
+    Newline,
+
     // matches strings with double quotes
-    #[regex(r#""(?:[^"\\]|\\.)*""#, |v| v.slice().to_string())]
+    #[regex(r#""(?:[^"\\]|\\.)*""#)]
     // matches strings with single quotes
-    #[regex(r#"'(?:[^'\\]|\\.)*'"#, |v| v.slice().to_string())]
+    #[regex(r#"'(?:[^'\\]|\\.)*'"#)]
     /// Represents a string token
-    String(String),
+    String(&'a str),
 
     #[regex(r"[0-9][0-9_]*(\.[0-9][0-9_]*)?([cfk])?", parse_number)]
     /// Represents a number token
@@ -125,9 +187,9 @@ pub enum TokenType {
     /// Represents a keyword token
     Keyword(Keyword),
 
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |v| v.slice().to_string())]
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     /// Represents an identifier token
-    Identifier(String),
+    Identifier(&'a str),
 
     #[token("(", symbol!(LParen))]
     #[token(")", symbol!(RParen))]
@@ -159,10 +221,10 @@ pub enum TokenType {
     /// Represents a symbol token
     Symbol(Symbol),
 
-    #[regex(r"///[\n]*", |val| Comment::Doc(val.slice()[3..].trim().to_string()))]
-    #[regex(r"//[\n]*", |val| Comment::Line(val.slice()[2..].trim().to_string()))]
+    #[regex(r"///[\n]*", |val| Comment::Doc(val.slice()[3..].trim()))]
+    #[regex(r"//[\n]*", |val| Comment::Line(val.slice()[2..].trim()))]
     /// Represents a comment, both a line comment and a doc comment
-    Comment(Comment),
+    Comment(Comment<'a>),
 
     #[end]
     /// Represents an end of file token
@@ -170,14 +232,14 @@ pub enum TokenType {
 }
 
 #[derive(Hash, Debug, Eq, PartialEq, Clone)]
-pub enum Comment {
-    Line(String),
-    Doc(String),
+pub enum Comment<'a> {
+    Line(&'a str),
+    Doc(&'a str),
 }
 
-fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType>) -> Option<Number> {
+fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexError> {
     let slice = lexer.slice();
-    let last_char = slice.chars().last()?;
+    let last_char = slice.chars().last().unwrap_or_default();
     let (num_str, suffix) = match last_char {
         'c' | 'k' | 'f' => (&slice[..slice.len() - 1], Some(last_char)),
         _ => (slice, None),
@@ -189,28 +251,39 @@ fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType>) -> Option<Number> {
         num_str.to_string()
     };
 
+    let line = lexer.extras.line_count;
+    let mut span = lexer.span();
+    span.end -= lexer.extras.line_start_index;
+    span.start -= lexer.extras.line_start_index;
+
     let num = if clean_str.contains('.') {
-        Number::Decimal(clean_str.parse::<Decimal>().ok()?)
+        Number::Decimal(
+            clean_str
+                .parse::<Decimal>()
+                .map_err(|_| LexError::NumberParseError(line, span, slice.to_string()))?,
+        )
     } else {
-        Number::Integer(clean_str.parse::<i128>().ok()?)
+        Number::Integer(
+            clean_str
+                .parse::<i128>()
+                .map_err(|_| LexError::NumberParseError(line, span, slice.to_string()))?,
+        )
     };
 
     if let Some(suffix) = suffix {
-        Some(
-            match suffix {
-                'c' => Temperature::Celsius(num),
-                'f' => Temperature::Fahrenheit(num),
-                'k' => Temperature::Kelvin(num),
-                _ => unreachable!(),
-            }
-            .to_kelvin(),
-        )
+        Ok(match suffix {
+            'c' => Temperature::Celsius(num),
+            'f' => Temperature::Fahrenheit(num),
+            'k' => Temperature::Kelvin(num),
+            _ => unreachable!(),
+        }
+        .to_kelvin())
     } else {
-        Some(num)
+        Ok(num)
     }
 }
 
-impl std::fmt::Display for Comment {
+impl<'a> std::fmt::Display for Comment<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Line(c) => write!(f, "// {}", c),
@@ -227,7 +300,7 @@ impl std::fmt::Display for Comment {
     }
 }
 
-impl Documentation for TokenType {
+impl<'a> Documentation for TokenType<'a> {
     fn docs(&self) -> String {
         match self {
             Self::Keyword(k) => k.docs(),
@@ -242,7 +315,7 @@ impl Documentation for TokenType {
 
 helpers::with_syscalls!(generate_check);
 
-impl From<TokenType> for u32 {
+impl<'a> From<TokenType<'a>> for u32 {
     fn from(value: TokenType) -> Self {
         match value {
             TokenType::String(_) => 1,
@@ -277,12 +350,12 @@ impl From<TokenType> for u32 {
                     7
                 }
             }
-            TokenType::EOF => 0,
+            _ => 0,
         }
     }
 }
 
-impl std::fmt::Display for TokenType {
+impl<'a> std::fmt::Display for TokenType<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenType::String(s) => write!(f, "{}", s),
@@ -293,6 +366,7 @@ impl std::fmt::Display for TokenType {
             TokenType::Symbol(s) => write!(f, "{}", s),
             TokenType::Comment(c) => write!(f, "{}", c),
             TokenType::EOF => write!(f, "EOF"),
+            _ => write!(f, ""),
         }
     }
 }

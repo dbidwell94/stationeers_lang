@@ -9,6 +9,7 @@ quick-error = { workspace = true }
 lsp-types = { workspace = true }
 helpers = { path = "../helpers" }
 logos = "0.16"
+thiserror = "2"
 
 [dev-dependencies]
 anyhow = { version = "^1" }
