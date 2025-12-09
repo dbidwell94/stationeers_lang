@@ -43,7 +43,7 @@ impl From<LexError> for Diagnostic {
 }
 
 impl LexError {
-    pub fn from_lexer<'a>(lex: &mut Lexer<'a, TokenType<'a>>) -> Self {
+    pub fn from_lexer<'a>(lex: &mut Lexer<'a, TokenType>) -> Self {
         let mut span = lex.span();
         let line = lex.extras.line_count;
         span.start -= lex.extras.line_start_index;
@@ -68,30 +68,30 @@ pub struct Extras {
     pub line_start_index: usize,
 }
 
-fn update_line_index<'a>(lex: &mut Lexer<'a, TokenType<'a>>) -> Skip {
+fn update_line_index<'a>(lex: &mut Lexer<'a, TokenType>) -> Skip {
     lex.extras.line_count += 1;
     lex.extras.line_start_index = lex.span().end;
     Skip
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Token<'a> {
+pub struct Token {
     /// The type of the token
-    pub token_type: TokenType<'a>,
+    pub token_type: TokenType,
     /// The line where the token was found
     pub line: usize,
     /// The span where the token starts and ends
     pub span: Span,
 }
 
-impl<'a> std::fmt::Display for Token<'a> {
+impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.token_type)
     }
 }
 
-impl<'a> Token<'a> {
-    pub fn new(token_type: TokenType<'a>, line: usize, span: Span) -> Self {
+impl Token {
+    pub fn new(token_type: TokenType, line: usize, span: Span) -> Self {
         Self {
             token_type,
             line,
@@ -158,16 +158,22 @@ macro_rules! keyword {
 #[logos(skip r"[ \t\f]+")]
 #[logos(extras = Extras)]
 #[logos(error(LexError, LexError::from_lexer))]
-pub enum TokenType<'a> {
+pub enum TokenType {
     #[regex(r"\n", update_line_index)]
     Newline,
 
     // matches strings with double quotes
-    #[regex(r#""(?:[^"\\]|\\.)*""#)]
+    #[regex(r#""(?:[^"\\]|\\.)*""#, |v| {
+        let str = v.slice();
+        str[1..str.len() - 1].to_string()
+    })]
     // matches strings with single quotes
-    #[regex(r#"'(?:[^'\\]|\\.)*'"#)]
+    #[regex(r#"'(?:[^'\\]|\\.)*'"#, |v| {
+        let str = v.slice();
+        str[1..str.len() - 1].to_string()
+    })]
     /// Represents a string token
-    String(&'a str),
+    String(String),
 
     #[regex(r"[0-9][0-9_]*(\.[0-9][0-9_]*)?([cfk])?", parse_number)]
     /// Represents a number token
@@ -193,9 +199,9 @@ pub enum TokenType<'a> {
     /// Represents a keyword token
     Keyword(Keyword),
 
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |v| v.slice().to_string())]
     /// Represents an identifier token
-    Identifier(&'a str),
+    Identifier(String),
 
     #[token("(", symbol!(LParen))]
     #[token(")", symbol!(RParen))]
@@ -227,10 +233,10 @@ pub enum TokenType<'a> {
     /// Represents a symbol token
     Symbol(Symbol),
 
-    #[regex(r"///[\n]*", |val| Comment::Doc(val.slice()[3..].trim()))]
-    #[regex(r"//[\n]*", |val| Comment::Line(val.slice()[2..].trim()))]
+    #[regex(r"///[\n]*", |val| Comment::Doc(val.slice()[3..].trim().to_string()))]
+    #[regex(r"//[\n]*", |val| Comment::Line(val.slice()[2..].trim().to_string()))]
     /// Represents a comment, both a line comment and a doc comment
-    Comment(Comment<'a>),
+    Comment(Comment),
 
     #[end]
     /// Represents an end of file token
@@ -238,12 +244,12 @@ pub enum TokenType<'a> {
 }
 
 #[derive(Hash, Debug, Eq, PartialEq, Clone)]
-pub enum Comment<'a> {
-    Line(&'a str),
-    Doc(&'a str),
+pub enum Comment {
+    Line(String),
+    Doc(String),
 }
 
-fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexError> {
+fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType>) -> Result<Number, LexError> {
     let slice = lexer.slice();
     let last_char = slice.chars().last().unwrap_or_default();
     let (num_str, suffix) = match last_char {
@@ -289,7 +295,7 @@ fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexE
     }
 }
 
-impl<'a> std::fmt::Display for Comment<'a> {
+impl std::fmt::Display for Comment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Line(c) => write!(f, "// {}", c),
@@ -306,7 +312,7 @@ impl<'a> std::fmt::Display for Comment<'a> {
     }
 }
 
-impl<'a> Documentation for TokenType<'a> {
+impl Documentation for TokenType {
     fn docs(&self) -> String {
         match self {
             Self::Keyword(k) => k.docs(),
@@ -321,7 +327,7 @@ impl<'a> Documentation for TokenType<'a> {
 
 helpers::with_syscalls!(generate_check);
 
-impl<'a> From<TokenType<'a>> for u32 {
+impl From<TokenType> for u32 {
     fn from(value: TokenType) -> Self {
         match value {
             TokenType::String(_) => 1,
@@ -361,7 +367,7 @@ impl<'a> From<TokenType<'a>> for u32 {
     }
 }
 
-impl<'a> std::fmt::Display for TokenType<'a> {
+impl std::fmt::Display for TokenType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenType::String(s) => write!(f, "{}", s),

@@ -44,7 +44,7 @@ pub trait Tokenize: Read + Seek {}
 impl<T> Tokenize for T where T: Read + Seek {}
 
 pub struct Tokenizer<'a> {
-    lexer: Lexer<'a, TokenType<'a>>,
+    lexer: Lexer<'a, TokenType>,
     returned_eof: bool,
 }
 
@@ -58,14 +58,14 @@ impl<'a> From<&'a str> for Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
-    fn get_token(&mut self, t_type: TokenType<'a>) -> Token<'a> {
+    fn get_token(&mut self, t_type: TokenType) -> Token {
         let mut span = self.lexer.span();
         span.start -= self.lexer.extras.line_start_index;
         span.end -= self.lexer.extras.line_start_index;
         Token::new(t_type, self.lexer.extras.line_count, span)
     }
 
-    pub fn next_token(&mut self) -> Result<Option<Token<'a>>, Error> {
+    pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
         let to_return = self
             .lexer
             .next()
@@ -79,7 +79,7 @@ impl<'a> Tokenizer<'a> {
 // ... Iterator and TokenizerBuffer implementations remain unchanged ...
 // They just call the methods above which now use the passed-in start coordinates.
 impl<'a> Iterator for Tokenizer<'a> {
-    type Item = Result<Token<'a>, Error>;
+    type Item = Result<Token, Error>;
     fn next(&mut self) -> Option<Self::Item> {
         match self.lexer.next() {
             None => {
@@ -104,8 +104,8 @@ impl<'a> Iterator for Tokenizer<'a> {
 
 pub struct TokenizerBuffer<'a> {
     tokenizer: Tokenizer<'a>,
-    buffer: VecDeque<Token<'a>>,
-    history: VecDeque<Token<'a>>,
+    buffer: VecDeque<Token>,
+    history: VecDeque<Token>,
     index: i64,
 }
 
@@ -118,7 +118,7 @@ impl<'a> TokenizerBuffer<'a> {
             index: 0,
         }
     }
-    pub fn next_token(&mut self) -> Result<Option<Token<'a>>, Error> {
+    pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
         if let Some(token) = self.buffer.pop_front() {
             self.history.push_back(token.clone());
             self.index += 1;
@@ -133,7 +133,7 @@ impl<'a> TokenizerBuffer<'a> {
         self.index += 1;
         Ok(token)
     }
-    pub fn peek(&mut self) -> Result<Option<Token<'a>>, Error> {
+    pub fn peek(&mut self) -> Result<Option<Token>, Error> {
         if let Some(token) = self.buffer.front() {
             return Ok(Some(token.clone()));
         }

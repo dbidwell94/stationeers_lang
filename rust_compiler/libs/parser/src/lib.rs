@@ -5,7 +5,6 @@ pub mod sys_call;
 pub mod tree_node;
 
 use crate::sys_call::{Math, System};
-use quick_error::quick_error;
 use std::io::SeekFrom;
 use sys_call::SysCall;
 use thiserror::Error;
@@ -28,27 +27,27 @@ macro_rules! boxed {
 }
 
 #[derive(Error, Debug)]
-pub enum Error<'a> {
+pub enum Error {
     #[error("Tokenizer Error: {0}")]
     TokenizerError(#[from] tokenizer::Error),
 
     #[error("Unexpected token: {1}")]
-    UnexpectedToken(Span, Token<'a>),
+    UnexpectedToken(Span, Token),
 
     #[error("Duplicate identifier: {1}")]
-    DuplicateIdentifier(Span, Token<'a>),
+    DuplicateIdentifier(Span, Token),
 
     #[error("Invalid Syntax: {1}")]
-    InvalidSyntax(Span, Token<'a>),
+    InvalidSyntax(Span, String),
 
     #[error("Unsupported Keyword: {1}")]
-    UnsupportedKeyword(Span, Token<'a>),
+    UnsupportedKeyword(Span, Token),
 
     #[error("Unexpected End of File")]
     UnexpectedEOF,
 }
 
-impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
+impl From<Error> for lsp_types::Diagnostic {
     fn from(value: Error) -> Self {
         use Error::*;
         use lsp_types::*;
@@ -107,8 +106,8 @@ macro_rules! self_matches_current {
 
 pub struct Parser<'a> {
     tokenizer: TokenizerBuffer<'a>,
-    current_token: Option<Token<'a>>,
-    pub errors: Vec<Error<'a>>,
+    current_token: Option<Token>,
+    pub errors: Vec<Error>,
 }
 
 impl<'a> Parser<'a> {
@@ -160,9 +159,10 @@ impl<'a> Parser<'a> {
 
         let node = parser(self)?;
 
-        let end_token = self.current_token;
+        let end_token = &self.current_token;
 
         let (end_line, end_col) = end_token
+            .clone()
             .map(|t| (t.line, t.span.end))
             .unwrap_or((start_line, start_col));
 
@@ -207,7 +207,7 @@ impl<'a> Parser<'a> {
         let first_token = self.tokenizer.peek().unwrap_or(None);
         let (start_line, start_col) = first_token
             .as_ref()
-            .map(|tok| (tok.line, tok.column))
+            .map(|tok| (tok.line, tok.span.start))
             .unwrap_or((1, 1));
 
         let mut expressions = Vec::<Spanned<Expression>>::new();
@@ -238,10 +238,7 @@ impl<'a> Parser<'a> {
 
         let end_token_opt = self.tokenizer.peek().unwrap_or(None);
         let (end_line, end_col) = end_token_opt
-            .map(|tok| {
-                let len = tok.original_string.as_ref().map(|s| s.len()).unwrap_or(0);
-                (tok.line, tok.column + len)
-            })
+            .map(|tok| (tok.line, tok.span.end))
             .unwrap_or((start_line, start_col));
 
         let span = Span {

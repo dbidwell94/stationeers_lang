@@ -22,7 +22,7 @@ macro_rules! compile {
     (result $source:expr) => {{
         let mut writer = std::io::BufWriter::new(Vec::new());
         let compiler = crate::Compiler::new(
-            parser::Parser::new(tokenizer::Tokenizer::from(String::from($source))),
+            parser::Parser::new(tokenizer::Tokenizer::from($source)),
             &mut writer,
             Some(crate::CompilerConfig { debug: true }),
         );
@@ -32,7 +32,7 @@ macro_rules! compile {
     (debug $source:expr) => {{
         let mut writer = std::io::BufWriter::new(Vec::new());
         let compiler = crate::Compiler::new(
-            parser::Parser::new(tokenizer::Tokenizer::from(String::from($source))),
+            parser::Parser::new(tokenizer::Tokenizer::from($source)),
             &mut writer,
             Some(crate::CompilerConfig { debug: true }),
         );

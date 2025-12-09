@@ -50,8 +50,13 @@ fn run_logic() -> Result<(), StationlangError> {
     let args = Args::parse();
     let input_file = args.input_file;
 
-    let tokenizer: Tokenizer = match input_file {
-        Some(input_file) => Tokenizer::from_path(&input_file)?,
+    let input_string = match input_file {
+        Some(input_path) => {
+            let mut buf = String::new();
+            let mut file = std::fs::File::open(input_path).unwrap();
+            file.read_to_string(&mut buf).unwrap();
+            buf
+        }
         None => {
             let mut buf = String::new();
             let stdin = std::io::stdin();
@@ -62,9 +67,11 @@ fn run_logic() -> Result<(), StationlangError> {
                 return Ok(());
             }
 
-            Tokenizer::from(buf)
+            buf
         }
     };
+
+    let tokenizer = Tokenizer::from(input_string.as_str());
 
     let parser = ASTParser::new(tokenizer);
 
