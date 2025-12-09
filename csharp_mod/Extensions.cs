@@ -101,9 +101,9 @@ public static unsafe class SlangExtensions
                     Range = new Slang.Range
                     {
                         EndCol = Math.Max(item.range.end_col, 0),
-                        EndLine = item.range.end_line - 1,
+                        EndLine = item.range.end_line,
                         StartCol = Math.Max(item.range.start_col, 0),
-                        StartLine = item.range.end_line - 1,
+                        StartLine = item.range.start_line,
                     },
                 }
             );
