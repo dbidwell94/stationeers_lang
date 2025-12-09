@@ -66,15 +66,17 @@ pub enum VariableLocation<'a> {
     Device(Cow<'a, str>),
 }
 
-pub struct VariableScope<'a> {
+// FIX: Added 'b lifetime for the parent reference
+pub struct VariableScope<'a, 'b> {
     temporary_vars: VecDeque<u8>,
     persistant_vars: VecDeque<u8>,
     var_lookup_table: HashMap<Cow<'a, str>, VariableLocation<'a>>,
     stack_offset: u16,
-    parent: Option<&'a VariableScope<'a>>,
+    parent: Option<&'b VariableScope<'a, 'b>>,
 }
 
-impl<'a> Default for VariableScope<'a> {
+// FIX: Updated Default impl to include 'b
+impl<'a, 'b> Default for VariableScope<'a, 'b> {
     fn default() -> Self {
         Self {
             parent: None,
@@ -86,7 +88,8 @@ impl<'a> Default for VariableScope<'a> {
     }
 }
 
-impl<'a> VariableScope<'a> {
+// FIX: Updated impl block to include 'b
+impl<'a, 'b> VariableScope<'a, 'b> {
     #[allow(dead_code)]
     pub const TEMP_REGISTER_COUNT: u8 = 7;
     pub const PERSIST_REGISTER_COUNT: u8 = 7;
@@ -109,7 +112,8 @@ impl<'a> VariableScope<'a> {
             })
     }
 
-    pub fn scoped(parent: &'a VariableScope<'a>) -> Self {
+    // FIX: parent is now &'b VariableScope<'a, 'b>
+    pub fn scoped(parent: &'b VariableScope<'a, 'b>) -> Self {
         Self {
             parent: Option::Some(parent),
             temporary_vars: parent.temporary_vars.clone(),
@@ -206,7 +210,7 @@ impl<'a> VariableScope<'a> {
             return Ok(loc);
         }
 
-        Err(Error::UnknownVariable(Cow::from(var_name.to_owned()), span))
+        Err(Error::UnknownVariable(var_name.clone(), span))
     }
 
     pub fn has_parent(&self) -> bool {

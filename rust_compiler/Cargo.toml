@@ -43,6 +43,6 @@ parser = { path = "libs/parser" }
 compiler = { path = "libs/compiler" }
 helpers = { path = "libs/helpers" }
 safer-ffi = { workspace = true }
+anyhow = { version = "^1.0", features = ["backtrace"] }
 
 [dev-dependencies]
-anyhow = { version = "^1.0", features = ["backtrace"] }

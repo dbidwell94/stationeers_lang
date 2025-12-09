@@ -152,12 +152,12 @@ struct CompilationResult<'a> {
     temp_name: Option<Cow<'a, str>>,
 }
 
-pub struct Compiler<'a, W: std::io::Write> {
+pub struct Compiler<'a, 'w, W: std::io::Write> {
     pub parser: ASTParser<'a>,
     function_locations: HashMap<Cow<'a, str>, usize>,
     function_metadata: HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>,
     devices: HashMap<Cow<'a, str>, Cow<'a, str>>,
-    output: &'a mut BufWriter<W>,
+    output: &'w mut BufWriter<W>,
     current_line: usize,
     declared_main: bool,
     config: CompilerConfig,
@@ -167,10 +167,10 @@ pub struct Compiler<'a, W: std::io::Write> {
     pub errors: Vec<Error<'a>>,
 }
 
-impl<'a, W: std::io::Write> Compiler<'a, W> {
+impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
     pub fn new(
         parser: ASTParser<'a>,
-        writer: &'a mut BufWriter<W>,
+        writer: &'w mut BufWriter<W>,
         config: Option<CompilerConfig>,
     ) -> Self {
         Self {
@@ -258,7 +258,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression(
         &mut self,
         expr: Spanned<Expression<'a>>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompilationResult<'a>>, Error<'a>> {
         match expr.node {
             Expression::Function(expr_func) => {
@@ -459,7 +459,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn resolve_device(
         &mut self,
         expr: Spanned<Expression<'a>>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Cow<'a, str>, Option<Cow<'a, str>>), Error<'a>> {
         // If it's a direct variable reference, check if it's a known device alias first
         if let Expression::Variable(ref name) = expr.node
@@ -516,7 +516,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         &mut self,
         var_name: Spanned<Cow<'a, str>>,
         expr: Spanned<Expression<'a>>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompilationResult<'a>>, Error<'a>> {
         let name_str = var_name.node;
         let name_span = var_name.span;
@@ -599,8 +599,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     ));
                 };
 
-                let loc =
-                    scope.add_variable(name_str, LocationRequest::Persist, Some(name_span))?;
+                let loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
                 self.emit_variable_assignment(
                     name_str,
                     &loc,
@@ -612,8 +615,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             // Support assigning binary expressions to variables directly
             Expression::Binary(bin_expr) => {
                 let result = self.expression_binary(bin_expr, scope)?;
-                let var_loc =
-                    scope.add_variable(name_str, LocationRequest::Persist, Some(name_span))?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
 
                 if let CompilationResult {
                     location: VariableLocation::Constant(Literal::Number(num)),
@@ -636,8 +642,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             }
             Expression::Logical(log_expr) => {
                 let result = self.expression_logical(log_expr, scope)?;
-                let var_loc =
-                    scope.add_variable(name_str, LocationRequest::Persist, Some(name_span))?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
 
                 // Move result from temp to new persistent variable
                 let result_reg = self.resolve_register(&result.location)?;
@@ -661,8 +670,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     }
                 };
 
-                let var_loc =
-                    scope.add_variable(name_str, LocationRequest::Persist, Some(name_span))?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
 
                 // Handle loading from stack if necessary
                 let src_str = match src_loc {
@@ -713,8 +725,11 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
                     ));
                 };
 
-                let var_loc =
-                    scope.add_variable(name_str, LocationRequest::Persist, Some(name_span))?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
                 let result_reg = self.resolve_register(&comp_res.location)?;
 
                 self.emit_variable_assignment(name_str, &var_loc, result_reg)?;
@@ -742,7 +757,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_const_declaration(
         &mut self,
         expr: ConstDeclarationExpression<'a>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompilationResult<'a>, Error<'a>> {
         let ConstDeclarationExpression {
             name: const_name,
@@ -777,7 +792,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_assignment(
         &mut self,
         expr: AssignmentExpression<'a>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let AssignmentExpression {
             assignee,
@@ -865,7 +880,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_function_invocation(
         &mut self,
         invoke_expr: Spanned<InvocationExpression<'a>>,
-        stack: &mut VariableScope<'a>,
+        stack: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let InvocationExpression { name, arguments } = invoke_expr.node;
 
@@ -1062,7 +1077,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_if(
         &mut self,
         expr: IfExpression<'a>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let end_label = self.next_label_name();
         let else_label = if expr.else_branch.is_some() {
@@ -1109,7 +1124,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_loop(
         &mut self,
         expr: LoopExpression<'a>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let start_label = self.next_label_name();
         let end_label = self.next_label_name();
@@ -1135,7 +1150,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_while(
         &mut self,
         expr: WhileExpression<'a>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let start_label = self.next_label_name();
         let end_label = self.next_label_name();
@@ -1222,7 +1237,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn compile_operand(
         &mut self,
         expr: Spanned<Expression<'a>>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Cow<'a, str>, Option<Cow<'a, str>>), Error<'a>> {
         // Optimization for literals
         if let Expression::Literal(spanned_lit) = &expr.node {
@@ -1293,7 +1308,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn compile_literal_or_variable(
         &mut self,
         val: LiteralOrVariable<'a>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Cow<'a, str>, Option<Cow<'a, str>>), Error<'a>> {
         let dummy_span = Span {
             start_line: 0,
@@ -1321,7 +1336,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_binary(
         &mut self,
         expr: Spanned<BinaryExpression<'a>>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompilationResult<'a>, Error<'a>> {
         fn fold_binary_expression<'a>(expr: &BinaryExpression<'a>) -> Option<Number> {
             let (lhs, rhs) = match &expr {
@@ -1414,7 +1429,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_logical(
         &mut self,
         expr: Spanned<LogicalExpression<'a>>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompilationResult<'a>, Error<'a>> {
         match expr.node {
             LogicalExpression::Not(inner) => {
@@ -1480,10 +1495,10 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         }
     }
 
-    fn expression_block(
+    fn expression_block<'v>(
         &mut self,
         mut expr: BlockExpression<'a>,
-        parent_scope: &mut VariableScope<'a>,
+        parent_scope: &'v mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         // First, sort the expressions to ensure functions are hoisted
         expr.0.sort_by(|a, b| {
@@ -1549,7 +1564,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_return(
         &mut self,
         expr: Spanned<Expression<'a>>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<VariableLocation<'a>, Error<'a>> {
         if let Expression::Negation(neg_expr) = &expr.node
             && let Expression::Literal(spanned_lit) = &neg_expr.node
@@ -1686,7 +1701,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         &mut self,
         expr: System<'a>,
         span: Span,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompilationResult<'a>>, Error<'a>> {
         macro_rules! cleanup {
             ($($to_clean:expr),*) => {
@@ -1943,7 +1958,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_syscall_math(
         &mut self,
         expr: Math<'a>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompilationResult<'a>>, Error<'a>> {
         macro_rules! cleanup {
             ($($to_clean:expr),*) => {
@@ -2139,7 +2154,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
     fn expression_function(
         &mut self,
         expr: Spanned<FunctionExpression<'a>>,
-        scope: &mut VariableScope<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let FunctionExpression {
             name,
@@ -2222,7 +2237,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         self.write_output("push ra")?;
         block_scope.add_variable(
-            format!("{}_ra", name.node),
+            Cow::from(format!("{}_ra", name.node)),
             LocationRequest::Stack,
             Some(name.span),
         )?;
@@ -2249,7 +2264,8 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         }
 
         // Get the saved return address and save it back into `ra`
-        let ra_res = block_scope.get_location_of(format!("{}_ra", name.node), Some(name.span));
+        let ra_res =
+            block_scope.get_location_of(&Cow::from(format!("{}_ra", name.node)), Some(name.span));
 
         let ra_stack_offset = match ra_res {
             Ok(VariableLocation::Stack(offset)) => offset,

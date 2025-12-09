@@ -12,18 +12,36 @@ use thiserror::Error;
 use tokenizer::{self, Tokenizer};
 
 #[derive(Error, Debug)]
-enum StationlangError {
+enum Error<'a> {
     #[error(transparent)]
-    Tokenizer(#[from] tokenizer::Error),
+    Tokenizer(tokenizer::Error),
 
     #[error(transparent)]
-    Parser(#[from] parser::Error),
+    Parser(parser::Error<'a>),
 
     #[error(transparent)]
-    Compile(#[from] compiler::Error),
+    Compile(compiler::Error<'a>),
 
     #[error(transparent)]
     IO(#[from] std::io::Error),
+}
+
+impl<'a> From<parser::Error<'a>> for Error<'a> {
+    fn from(value: parser::Error<'a>) -> Self {
+        Self::Parser(value)
+    }
+}
+
+impl<'a> From<compiler::Error<'a>> for Error<'a> {
+    fn from(value: compiler::Error<'a>) -> Self {
+        Self::Compile(value)
+    }
+}
+
+impl<'a> From<tokenizer::Error> for Error<'a> {
+    fn from(value: tokenizer::Error) -> Self {
+        Self::Tokenizer(value)
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -37,7 +55,7 @@ struct Args {
     output_file: Option<PathBuf>,
 }
 
-fn run_logic() -> Result<(), StationlangError> {
+fn run_logic<'a>() -> Result<(), Error<'a>> {
     let args = Args::parse();
     let input_file = args.input_file;
 
@@ -63,7 +81,6 @@ fn run_logic() -> Result<(), StationlangError> {
     };
 
     let tokenizer = Tokenizer::from(input_string.as_str());
-
     let parser = ASTParser::new(tokenizer);
 
     let mut writer: BufWriter<Box<dyn Write>> = match args.output_file {
@@ -73,20 +90,17 @@ fn run_logic() -> Result<(), StationlangError> {
 
     let compiler = Compiler::new(parser, &mut writer, None);
 
-    let mut errors = compiler.compile();
+    let errors = compiler.compile();
 
     if !errors.is_empty() {
         let mut std_error = stderr();
-        let last = errors.pop();
-        let errors = errors.into_iter().map(StationlangError::from);
+        let errors = errors.into_iter().map(Error::from);
 
         std_error.write_all(b"Compilation error:\n")?;
 
         for err in errors {
             std_error.write_all(format!("{}\n", err).as_bytes())?;
         }
-
-        return Err(StationlangError::from(last.unwrap()));
     }
 
     writer.flush()?;
@@ -94,7 +108,7 @@ fn run_logic() -> Result<(), StationlangError> {
     Ok(())
 }
 
-fn main() -> Result<(), StationlangError> {
+fn main() -> anyhow::Result<()> {
     run_logic()?;
 
     Ok(())
