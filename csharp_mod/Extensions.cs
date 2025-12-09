@@ -55,7 +55,7 @@ public static unsafe class SlangExtensions
 
             var color = GetColorForKind(token.token_kind);
 
-            int colIndex = token.column - 1;
+            int colIndex = token.column;
             if (colIndex < 0)
                 colIndex = 0;
 
@@ -100,9 +100,9 @@ public static unsafe class SlangExtensions
                     Severity = item.severity,
                     Range = new Slang.Range
                     {
-                        EndCol = Math.Max(item.range.end_col - 2, 0),
+                        EndCol = Math.Max(item.range.end_col, 0),
                         EndLine = item.range.end_line - 1,
-                        StartCol = Math.Max(item.range.start_col - 2, 0),
+                        StartCol = Math.Max(item.range.start_col, 0),
                         StartLine = item.range.end_line - 1,
                     },
                 }
