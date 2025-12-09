@@ -5,25 +5,28 @@
 
 use lsp_types::{Diagnostic, DiagnosticSeverity};
 use parser::tree_node::{Literal, Span};
-use std::collections::{HashMap, VecDeque};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, VecDeque},
+};
 use thiserror::Error;
 
 const TEMP: [u8; 7] = [1, 2, 3, 4, 5, 6, 7];
 const PERSIST: [u8; 7] = [8, 9, 10, 11, 12, 13, 14];
 
 #[derive(Error, Debug)]
-pub enum Error {
+pub enum Error<'a> {
     #[error("{0} already exists.")]
-    DuplicateVariable(String, Option<Span>),
+    DuplicateVariable(Cow<'a, str>, Option<Span>),
 
     #[error("{0} does not exist.")]
-    UnknownVariable(String, Option<Span>),
+    UnknownVariable(Cow<'a, str>, Option<Span>),
 
     #[error("{0}")]
-    Unknown(String, Option<Span>),
+    Unknown(Cow<'a, str>, Option<Span>),
 }
 
-impl From<Error> for lsp_types::Diagnostic {
+impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
     fn from(value: Error) -> Self {
         match value {
             Error::DuplicateVariable(_, span)
@@ -50,7 +53,7 @@ pub enum LocationRequest {
 }
 
 #[derive(Clone)]
-pub enum VariableLocation {
+pub enum VariableLocation<'a> {
     /// Represents a temporary register (r1 - r7)
     Temporary(u8),
     /// Represents a persistant register (r8 - r14)
@@ -58,15 +61,15 @@ pub enum VariableLocation {
     /// Represents a a stack offset (current stack - offset = variable loc)
     Stack(u16),
     /// Represents a constant value and should be directly substituted as such.
-    Constant(Literal),
+    Constant(Literal<'a>),
     /// Represents a device pin. This will contain the exact `d0-d5` string
-    Device(String),
+    Device(Cow<'a, str>),
 }
 
 pub struct VariableScope<'a> {
     temporary_vars: VecDeque<u8>,
     persistant_vars: VecDeque<u8>,
-    var_lookup_table: HashMap<String, VariableLocation>,
+    var_lookup_table: HashMap<Cow<'a, str>, VariableLocation<'a>>,
     stack_offset: u16,
     parent: Option<&'a VariableScope<'a>>,
 }
@@ -123,12 +126,11 @@ impl<'a> VariableScope<'a> {
     /// to the stack.
     pub fn add_variable(
         &mut self,
-        var_name: impl Into<String>,
+        var_name: Cow<'a, str>,
         location: LocationRequest,
         span: Option<Span>,
-    ) -> Result<VariableLocation, Error> {
-        let var_name = var_name.into();
-        if self.var_lookup_table.contains_key(var_name.as_str()) {
+    ) -> Result<VariableLocation<'a>, Error<'a>> {
+        if self.var_lookup_table.contains_key(&var_name) {
             return Err(Error::DuplicateVariable(var_name, span));
         }
         let var_location = match location {
@@ -163,11 +165,10 @@ impl<'a> VariableScope<'a> {
 
     pub fn define_const(
         &mut self,
-        var_name: impl Into<String>,
-        value: Literal,
+        var_name: Cow<'a, str>,
+        value: Literal<'a>,
         span: Option<Span>,
-    ) -> Result<VariableLocation, Error> {
-        let var_name = var_name.into();
+    ) -> Result<VariableLocation<'a>, Error<'a>> {
         if self.var_lookup_table.contains_key(&var_name) {
             return Err(Error::DuplicateVariable(var_name, span));
         }
@@ -180,13 +181,11 @@ impl<'a> VariableScope<'a> {
 
     pub fn get_location_of(
         &self,
-        var_name: impl Into<String>,
+        var_name: &Cow<'a, str>,
         span: Option<Span>,
-    ) -> Result<VariableLocation, Error> {
-        let var_name = var_name.into();
-
+    ) -> Result<VariableLocation<'a>, Error<'a>> {
         // 1. Check this scope
-        if let Some(var) = self.var_lookup_table.get(var_name.as_str()) {
+        if let Some(var) = self.var_lookup_table.get(var_name) {
             if let VariableLocation::Stack(inserted_at_offset) = var {
                 // Return offset relative to CURRENT sp
                 return Ok(VariableLocation::Stack(
@@ -207,7 +206,7 @@ impl<'a> VariableScope<'a> {
             return Ok(loc);
         }
 
-        Err(Error::UnknownVariable(var_name, span))
+        Err(Error::UnknownVariable(Cow::from(var_name.to_owned()), span))
     }
 
     pub fn has_parent(&self) -> bool {
@@ -217,11 +216,10 @@ impl<'a> VariableScope<'a> {
     #[allow(dead_code)]
     pub fn free_temp(
         &mut self,
-        var_name: impl Into<String>,
+        var_name: Cow<'a, str>,
         span: Option<Span>,
-    ) -> Result<(), Error> {
-        let var_name = var_name.into();
-        let Some(location) = self.var_lookup_table.remove(var_name.as_str()) else {
+    ) -> Result<(), Error<'a>> {
+        let Some(location) = self.var_lookup_table.remove(&var_name) else {
             return Err(Error::UnknownVariable(var_name, span));
         };
 
@@ -231,7 +229,7 @@ impl<'a> VariableScope<'a> {
             }
             VariableLocation::Persistant(_) => {
                 return Err(Error::UnknownVariable(
-                    String::from("Attempted to free a `let` variable."),
+                    Cow::from("Attempted to free a `let` variable."),
                     span,
                 ));
             }
