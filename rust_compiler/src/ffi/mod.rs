@@ -4,7 +4,7 @@ use parser::{sys_call::SysCall, Parser};
 use safer_ffi::prelude::*;
 use std::io::BufWriter;
 use tokenizer::{
-    token::{LexError, Token, TokenType},
+    token::{Token, TokenType},
     Tokenizer,
 };
 
@@ -140,14 +140,12 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
                 Err(ref e) => {
                     use tokenizer::token::LexError;
                     use tokenizer::Error::*;
-                    let (err_str, line, span) = match e {
-                        LexError(e) => match e {
-                            LexError::NumberParseError(line, span, err)
-                            | LexError::InvalidInput(line, span, err) => {
-                                (err.to_string(), line, span)
-                            }
-                            _ => continue,
-                        },
+                    let (err_str, _, span) = match e {
+                        LexError(LexError::NumberParse(line, span, err))
+                        | LexError(LexError::InvalidInput(line, span, err)) => {
+                            (err.to_string(), line, span)
+                        }
+
                         _ => continue,
                     };
 
@@ -160,10 +158,7 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
                     })
                 }
                 Ok(Token {
-                    line,
-                    span,
-                    token_type,
-                    ..
+                    span, token_type, ..
                 }) => tokens.push(FfiToken {
                     column: span.start as i32,
                     error: "".into(),

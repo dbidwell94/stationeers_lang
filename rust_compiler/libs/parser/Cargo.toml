@@ -4,11 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-quick-error = { workspace = true }
 tokenizer = { path = "../tokenizer" }
 helpers = { path = "../helpers" }
 lsp-types = { workspace = true }
-thiserror = "2"
+thiserror = { workspace = true }
 
 
 [dev-dependencies]

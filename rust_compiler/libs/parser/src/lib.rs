@@ -1,7 +1,6 @@
+pub mod sys_call;
 #[cfg(test)]
 mod test;
-
-pub mod sys_call;
 pub mod tree_node;
 
 use crate::sys_call::{Math, System};
@@ -28,8 +27,8 @@ macro_rules! boxed {
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("Tokenizer Error: {0}")]
-    TokenizerError(#[from] tokenizer::Error),
+    #[error(transparent)]
+    Tokenizer(#[from] tokenizer::Error),
 
     #[error("Unexpected token: {1}")]
     UnexpectedToken(Span, Token),
@@ -52,7 +51,7 @@ impl From<Error> for lsp_types::Diagnostic {
         use Error::*;
         use lsp_types::*;
         match value {
-            TokenizerError(e) => e.into(),
+            Tokenizer(e) => e.into(),
             UnexpectedToken(span, _)
             | DuplicateIdentifier(span, _)
             | InvalidSyntax(span, _)
@@ -216,7 +215,7 @@ impl<'a> Parser<'a> {
             match self.tokenizer.peek() {
                 Ok(None) => break,
                 Err(e) => {
-                    self.errors.push(Error::TokenizerError(e));
+                    self.errors.push(Error::Tokenizer(e));
                     break;
                 }
                 _ => {}

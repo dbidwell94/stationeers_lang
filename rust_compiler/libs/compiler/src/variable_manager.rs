@@ -5,25 +5,22 @@
 
 use lsp_types::{Diagnostic, DiagnosticSeverity};
 use parser::tree_node::{Literal, Span};
-use quick_error::quick_error;
 use std::collections::{HashMap, VecDeque};
+use thiserror::Error;
 
 const TEMP: [u8; 7] = [1, 2, 3, 4, 5, 6, 7];
 const PERSIST: [u8; 7] = [8, 9, 10, 11, 12, 13, 14];
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        DuplicateVariable(var: String, span: Option<Span>) {
-            display("{var} already exists.")
-        }
-        UnknownVariable(var: String, span: Option<Span>) {
-            display("{var} does not exist.")
-        }
-        Unknown(reason: String, span: Option<Span>) {
-            display("{reason}")
-        }
-    }
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("{0} already exists.")]
+    DuplicateVariable(String, Option<Span>),
+
+    #[error("{0} does not exist.")]
+    UnknownVariable(String, Option<Span>),
+
+    #[error("{0}")]
+    Unknown(String, Option<Span>),
 }
 
 impl From<Error> for lsp_types::Diagnostic {

@@ -1,26 +1,20 @@
 pub mod token;
 
 use logos::{Lexer, Logos};
-use quick_error::quick_error;
 use std::{
     cmp::Ordering,
     collections::VecDeque,
     io::{Read, Seek, SeekFrom},
 };
+use thiserror::Error;
 use token::{Token, TokenType};
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        IOError(err: std::io::Error) {
-            from()
-            display("IO Error: {}", err)
-            source(err)
-        }
-        LexError(err: token::LexError) {
-            from()
-        }
-    }
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("IO Error: {0}")]
+    IOError(#[from()] std::io::Error),
+    #[error(transparent)]
+    LexError(#[from] token::LexError),
 }
 
 impl From<Error> for lsp_types::Diagnostic {

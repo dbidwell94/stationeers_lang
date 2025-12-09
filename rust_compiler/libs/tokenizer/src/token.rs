@@ -7,7 +7,7 @@ use thiserror::Error;
 #[derive(Debug, Error, Default, Clone, PartialEq)]
 pub enum LexError {
     #[error("Attempted to parse an invalid number: {2}")]
-    NumberParseError(usize, Span, String),
+    NumberParse(usize, Span, String),
 
     #[error("An invalid character was found in token stream: {2}")]
     InvalidInput(usize, Span, String),
@@ -20,7 +20,7 @@ pub enum LexError {
 impl From<LexError> for Diagnostic {
     fn from(value: LexError) -> Self {
         match value {
-            LexError::NumberParseError(line, col, str) | LexError::InvalidInput(line, col, str) => {
+            LexError::NumberParse(line, col, str) | LexError::InvalidInput(line, col, str) => {
                 Diagnostic {
                     range: Range {
                         start: Position {
@@ -281,13 +281,13 @@ fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType>) -> Result<Number, LexError
         Number::Decimal(
             clean_str
                 .parse::<Decimal>()
-                .map_err(|_| LexError::NumberParseError(line, span, slice.to_string()))?,
+                .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
         )
     } else {
         Number::Integer(
             clean_str
                 .parse::<i128>()
-                .map_err(|_| LexError::NumberParseError(line, span, slice.to_string()))?,
+                .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
         )
     };
 

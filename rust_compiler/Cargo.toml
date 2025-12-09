@@ -7,7 +7,7 @@ edition = "2021"
 members = ["libs/*"]
 
 [workspace.dependencies]
-quick-error = "2"
+thiserror = "2"
 rust_decimal = "1"
 safer-ffi = { version = "0.1" }  # Safely share structs in memory between C# and Rust
 lsp-types = { version = "0.97" } # Allows for LSP style reporting to the frontend
@@ -36,7 +36,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 clap = { version = "^4.5", features = ["derive"] }
 lsp-types = { workspace = true }
-quick-error = { workspace = true }
+thiserror = { workspace = true }
 rust_decimal = { workspace = true }
 tokenizer = { path = "libs/tokenizer" }
 parser = { path = "libs/parser" }

@@ -11,11 +11,11 @@ use parser::{
         LoopExpression, MemberAccessExpression, Span, Spanned, WhileExpression,
     },
 };
-use quick_error::quick_error;
 use std::{
     collections::HashMap,
     io::{BufWriter, Write},
 };
+use thiserror::Error;
 use tokenizer::token::Number;
 
 macro_rules! debug {
@@ -50,40 +50,37 @@ fn extract_literal(literal: Literal, allow_strings: bool) -> Result<String, Erro
     })
 }
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        ParseError(error: parser::Error) {
-            from()
-        }
-        IoError(error: String) {
-            display("IO Error: {}", error)
-        }
-        ScopeError(error: variable_manager::Error) {
-            from()
-        }
-        DuplicateIdentifier(func_name: String, span: Span) {
-            display("`{func_name}` has already been defined")
-        }
-        UnknownIdentifier(ident: String, span: Span) {
-            display("`{ident}` is not found in the current scope.")
-        }
-        InvalidDevice(device: String, span: Span) {
-            display("`{device}` is not valid")
-        }
-        AgrumentMismatch(func_name: String, span: Span) {
-            display("Incorrect number of arguments passed into `{func_name}`")
-        }
-        ConstAssignment(ident: String, span: Span) {
-            display("Attempted to re-assign a value to const variable `{ident}`")
-        }
-        DeviceAssignment(ident: String, span: Span) {
-            display("Attempted to re-assign a value to a device const `{ident}`")
-        }
-        Unknown(reason: String, span: Option<Span>) {
-            display("{reason}")
-        }
-    }
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    Parse(#[from] parser::Error),
+
+    #[error(transparent)]
+    Scope(#[from] variable_manager::Error),
+
+    #[error("IO Error: {0}")]
+    IO(String),
+
+    #[error("`{0}` has already been defined.")]
+    DuplicateIdentifier(String, Span),
+
+    #[error("`{0}` is not found in the current scope.")]
+    UnknownIdentifier(String, Span),
+
+    #[error("`{0}` is not valid.")]
+    InvalidDevice(String, Span),
+
+    #[error("Incorrent number of arguments passed into `{0}`")]
+    AgrumentMismatch(String, Span),
+
+    #[error("Attempted to re-assign a value to const variable `{0}`")]
+    ConstAssignment(String, Span),
+
+    #[error("Attempted to re-assign a value to a device const `{0}`")]
+    DeviceAssignment(String, Span),
+
+    #[error("{0}")]
+    Unknown(String, Option<Span>),
 }
 
 impl From<Error> for lsp_types::Diagnostic {
@@ -91,13 +88,13 @@ impl From<Error> for lsp_types::Diagnostic {
         use Error::*;
         use lsp_types::*;
         match value {
-            ParseError(e) => e.into(),
-            IoError(e) => Diagnostic {
+            Parse(e) => e.into(),
+            IO(e) => Diagnostic {
                 message: e.to_string(),
                 severity: Some(DiagnosticSeverity::ERROR),
                 ..Default::default()
             },
-            ScopeError(e) => e.into(),
+            Scope(e) => e.into(),
             DuplicateIdentifier(_, span)
             | UnknownIdentifier(_, span)
             | InvalidDevice(_, span)
@@ -122,7 +119,7 @@ impl From<Error> for lsp_types::Diagnostic {
 // Map io::Error to Error manually since we can't clone io::Error
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
-        Error::IoError(err.to_string())
+        Error::IO(err.to_string())
     }
 }
 
@@ -181,7 +178,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
 
         // Copy errors from parser
         for e in std::mem::take(&mut self.parser.errors) {
-            self.errors.push(Error::ParseError(e));
+            self.errors.push(Error::Parse(e));
         }
 
         // We treat parse_all result as potentially partial
@@ -190,7 +187,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
             Ok(None) => return self.errors,
             Err(e) => {
                 // Should be covered by parser.errors, but just in case
-                self.errors.push(Error::ParseError(e));
+                self.errors.push(Error::Parse(e));
                 return self.errors;
             }
         };
@@ -979,7 +976,7 @@ impl<'a, W: std::io::Write> Compiler<'a, W> {
         for register in active_registers {
             let VariableLocation::Stack(stack_offset) = stack
                 .get_location_of(format!("temp_{register}"), None)
-                .map_err(Error::ScopeError)?
+                .map_err(Error::Scope)?
             else {
                 // This shouldn't happen if we just added it
                 return Err(Error::Unknown(

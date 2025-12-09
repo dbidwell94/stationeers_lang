@@ -272,8 +272,8 @@ dependencies = [
  "lsp-types",
  "parser",
  "pretty_assertions",
- "quick-error",
  "rust_decimal",
+ "thiserror",
  "tokenizer",
 ]
 
@@ -571,7 +571,6 @@ dependencies = [
  "helpers",
  "lsp-types",
  "pretty_assertions",
- "quick-error",
  "thiserror",
  "tokenizer",
 ]
@@ -648,12 +647,6 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
-
-[[package]]
-name = "quick-error"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quote"
@@ -924,9 +917,9 @@ dependencies = [
  "helpers",
  "lsp-types",
  "parser",
- "quick-error",
  "rust_decimal",
  "safer-ffi",
+ "thiserror",
  "tokenizer",
 ]
 
@@ -1042,7 +1035,6 @@ dependencies = [
  "helpers",
  "logos",
  "lsp-types",
- "quick-error",
  "rust_decimal",
  "thiserror",
 ]

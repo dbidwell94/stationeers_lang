@@ -1,8 +1,6 @@
-use std::ops::Deref;
-
-use crate::sys_call;
-
 use super::sys_call::SysCall;
+use crate::sys_call;
+use std::ops::Deref;
 use tokenizer::token::Number;
 
 #[derive(Debug, Eq, PartialEq, Clone)]

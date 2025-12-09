@@ -1,8 +1,5 @@
 #![allow(clippy::result_large_err)]
 
-#[macro_use]
-extern crate quick_error;
-
 use clap::Parser;
 use compiler::Compiler;
 use parser::Parser as ASTParser;
@@ -11,28 +8,22 @@ use std::{
     io::{stderr, BufWriter, Read, Write},
     path::PathBuf,
 };
+use thiserror::Error;
 use tokenizer::{self, Tokenizer};
 
-quick_error! {
-    #[derive(Debug)]
-    enum StationlangError {
-        TokenizerError(err: tokenizer::Error) {
-            from()
-            display("Tokenizer error: {}", err)
-        }
-        ParserError(err: parser::Error) {
-            from()
-            display("Parser error: {}", err)
-        }
-        CompileError(err: compiler::Error) {
-            from()
-            display("Compile error: {}", err)
-        }
-        IoError(err: std::io::Error) {
-            from()
-            display("IO error: {}", err)
-        }
-    }
+#[derive(Error, Debug)]
+enum StationlangError {
+    #[error(transparent)]
+    Tokenizer(#[from] tokenizer::Error),
+
+    #[error(transparent)]
+    Parser(#[from] parser::Error),
+
+    #[error(transparent)]
+    Compile(#[from] compiler::Error),
+
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
 }
 
 #[derive(Parser, Debug)]
