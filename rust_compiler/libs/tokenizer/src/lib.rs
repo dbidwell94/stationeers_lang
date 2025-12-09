@@ -5,9 +5,7 @@ use quick_error::quick_error;
 use std::{
     cmp::Ordering,
     collections::VecDeque,
-    io::{BufReader, Cursor, Read, Seek, SeekFrom},
-    iter::Peekable,
-    path::PathBuf,
+    io::{Read, Seek, SeekFrom},
 };
 use token::{Token, TokenType};
 
@@ -60,7 +58,7 @@ impl<'a> From<&'a str> for Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
-    fn to_token(&mut self, t_type: TokenType<'a>) -> Token<'a> {
+    fn get_token(&mut self, t_type: TokenType<'a>) -> Token<'a> {
         let mut span = self.lexer.span();
         span.start -= self.lexer.extras.line_start_index;
         span.end -= self.lexer.extras.line_start_index;
@@ -72,13 +70,9 @@ impl<'a> Tokenizer<'a> {
             .lexer
             .next()
             .transpose()
-            .map(|t| t.map(|t| self.to_token(t)))?;
+            .map(|t| t.map(|t| self.get_token(t)))?;
 
         Ok(to_return)
-    }
-
-    pub fn peek_next(&mut self) -> Result<Option<Token<'a>>, Error> {
-        todo!()
     }
 }
 
@@ -101,10 +95,8 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
             }
             Some(t) => match t {
-                Err(e) => {
-                    todo!()
-                }
-                Ok(t) => Some(Ok(self.to_token(t))),
+                Err(e) => Some(Err(e.into())),
+                Ok(t) => Some(Ok(self.get_token(t))),
             },
         }
     }
@@ -126,7 +118,7 @@ impl<'a> TokenizerBuffer<'a> {
             index: 0,
         }
     }
-    pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
+    pub fn next_token(&mut self) -> Result<Option<Token<'a>>, Error> {
         if let Some(token) = self.buffer.pop_front() {
             self.history.push_back(token.clone());
             self.index += 1;
@@ -141,12 +133,16 @@ impl<'a> TokenizerBuffer<'a> {
         self.index += 1;
         Ok(token)
     }
-    pub fn peek(&mut self) -> Result<Option<Token>, Error> {
+    pub fn peek(&mut self) -> Result<Option<Token<'a>>, Error> {
         if let Some(token) = self.buffer.front() {
             return Ok(Some(token.clone()));
         }
-        let token = self.tokenizer.peek_next()?;
-        Ok(token)
+
+        let Some(new_token) = self.tokenizer.next_token()? else {
+            return Ok(None);
+        };
+        self.buffer.push_front(new_token.clone());
+        Ok(Some(new_token))
     }
     pub fn loc(&self) -> i64 {
         self.index

@@ -8,6 +8,7 @@ use crate::sys_call::{Math, System};
 use quick_error::quick_error;
 use std::io::SeekFrom;
 use sys_call::SysCall;
+use thiserror::Error;
 use tokenizer::{
     self, Tokenizer, TokenizerBuffer,
     token::{Keyword, Symbol, Token, TokenType},
@@ -26,33 +27,28 @@ macro_rules! boxed {
     };
 }
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        TokenizerError(err: tokenizer::Error) {
-            from()
-            display("Tokenizer Error: {}", err)
-            source(err)
-        }
-        UnexpectedToken(span: Span, token: Token) {
-            display("Unexpected token: {}", token.token_type)
-        }
-        DuplicateIdentifier(span: Span, token: Token) {
-            display("Duplicate identifier: {}", token.token_type)
-        }
-        InvalidSyntax(span: Span, reason: String) {
-            display("Invalid syntax: {}", reason)
-        }
-        UnsupportedKeyword(span: Span, token: Token) {
-            display("Unsupported keyword: {}", token.token_type)
-        }
-        UnexpectedEOF {
-            display("Unexpected EOF")
-        }
-    }
+#[derive(Error, Debug)]
+pub enum Error<'a> {
+    #[error("Tokenizer Error: {0}")]
+    TokenizerError(#[from] tokenizer::Error),
+
+    #[error("Unexpected token: {1}")]
+    UnexpectedToken(Span, Token<'a>),
+
+    #[error("Duplicate identifier: {1}")]
+    DuplicateIdentifier(Span, Token<'a>),
+
+    #[error("Invalid Syntax: {1}")]
+    InvalidSyntax(Span, Token<'a>),
+
+    #[error("Unsupported Keyword: {1}")]
+    UnsupportedKeyword(Span, Token<'a>),
+
+    #[error("Unexpected End of File")]
+    UnexpectedEOF,
 }
 
-impl From<Error> for lsp_types::Diagnostic {
+impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
     fn from(value: Error) -> Self {
         use Error::*;
         use lsp_types::*;
@@ -112,7 +108,7 @@ macro_rules! self_matches_current {
 pub struct Parser<'a> {
     tokenizer: TokenizerBuffer<'a>,
     current_token: Option<Token<'a>>,
-    pub errors: Vec<Error>,
+    pub errors: Vec<Error<'a>>,
 }
 
 impl<'a> Parser<'a> {
@@ -159,18 +155,15 @@ impl<'a> Parser<'a> {
 
         let (start_line, start_col) = start_token
             .as_ref()
-            .map(|t| (t.line, t.column))
+            .map(|t| (t.line, t.span.start))
             .unwrap_or((1, 1));
 
         let node = parser(self)?;
 
-        let end_token = self.current_token.as_ref();
+        let end_token = self.current_token;
 
         let (end_line, end_col) = end_token
-            .map(|t| {
-                let len = t.original_string.as_ref().map(|s| s.len()).unwrap_or(0);
-                (t.line, t.column + len)
-            })
+            .map(|t| (t.line, t.span.end))
             .unwrap_or((start_line, start_col));
 
         Ok(Spanned {

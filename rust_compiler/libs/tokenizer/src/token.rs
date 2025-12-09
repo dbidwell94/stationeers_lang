@@ -84,6 +84,12 @@ pub struct Token<'a> {
     pub span: Span,
 }
 
+impl<'a> std::fmt::Display for Token<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.token_type)
+    }
+}
+
 impl<'a> Token<'a> {
     pub fn new(token_type: TokenType<'a>, line: usize, span: Span) -> Self {
         Self {
