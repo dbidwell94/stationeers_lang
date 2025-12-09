@@ -143,7 +143,7 @@ impl<'a> Parser<'a> {
     /// Helper to run a parsing closure and wrap the result in a Spanned struct
     fn spanned<F, T>(&mut self, parser: F) -> Result<Spanned<T>, Error<'a>>
     where
-        F: FnOnce(&mut Self) -> Result<T, Error>,
+        F: FnOnce(&mut Self) -> Result<T, Error<'a>>,
     {
         let start_token = if self.current_token.is_some() {
             self.current_token.clone()
@@ -269,12 +269,12 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn assign_next(&'a mut self) -> Result<(), Error<'a>> {
+    fn assign_next(&mut self) -> Result<(), Error<'a>> {
         self.current_token = self.tokenizer.next_token()?;
         Ok(())
     }
 
-    fn get_next(&'a mut self) -> Result<Option<Token<'a>>, Error<'a>> {
+    fn get_next(&mut self) -> Result<Option<Token<'a>>, Error<'a>> {
         self.assign_next()?;
         Ok(self.current_token.clone())
     }
@@ -317,7 +317,7 @@ impl<'a> Parser<'a> {
                 self.assign_next()?; // consume Dot
 
                 let identifier_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
-                let identifier_span = Self::token_to_span(identifier_token);
+                let identifier_span = Self::token_to_span(&identifier_token);
                 let identifier = match identifier_token.token_type {
                     TokenType::Identifier(ref id) => id.clone(),
                     _ => {
@@ -354,8 +354,8 @@ impl<'a> Parser<'a> {
                         {
                             let next_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
                             return Err(Error::UnexpectedToken(
-                                Self::token_to_span(next_token),
-                                next_token.clone(),
+                                Self::token_to_span(&next_token),
+                                next_token,
                             ));
                         }
 
@@ -495,10 +495,7 @@ impl<'a> Parser<'a> {
                 let span = self.current_span();
                 let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
                 if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
-                    return Err(Error::UnexpectedToken(
-                        Self::token_to_span(next),
-                        next.clone(),
-                    ));
+                    return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
                 }
                 Some(Spanned {
                     span,
@@ -510,10 +507,7 @@ impl<'a> Parser<'a> {
                 let span = self.current_span();
                 let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
                 if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
-                    return Err(Error::UnexpectedToken(
-                        Self::token_to_span(next),
-                        next.clone(),
-                    ));
+                    return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
                 }
                 Some(Spanned {
                     span,
@@ -714,7 +708,7 @@ impl<'a> Parser<'a> {
         }
 
         let identifier_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
-        let identifier_span = Self::token_to_span(identifier_token);
+        let identifier_span = Self::token_to_span(&identifier_token);
         let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
             _ => {
@@ -1524,8 +1518,8 @@ impl<'a> Parser<'a> {
     }
 
     fn syscall(&mut self) -> Result<SysCall<'a>, Error<'a>> {
-        fn check_length<'a>(
-            parser: &'a Parser,
+        fn check_length<'a, 't: 'a>(
+            parser: &'t Parser,
             arguments: &[Spanned<Expression<'a>>],
             length: usize,
         ) -> Result<(), Error<'a>> {
