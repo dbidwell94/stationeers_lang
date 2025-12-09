@@ -154,7 +154,7 @@ impl<'a> Parser<'a> {
         let (start_line, start_col) = start_token
             .as_ref()
             .map(|t| (t.line, t.span.start))
-            .unwrap_or((1, 1));
+            .unwrap_or((0, 0));
 
         let node = parser(self)?;
 
@@ -207,7 +207,7 @@ impl<'a> Parser<'a> {
         let (start_line, start_col) = first_token
             .as_ref()
             .map(|tok| (tok.line, tok.span.start))
-            .unwrap_or((1, 1));
+            .unwrap_or((0, 0));
 
         let mut expressions = Vec::<Spanned<Expression>>::new();
 

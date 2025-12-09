@@ -11,7 +11,7 @@ use token::{Token, TokenType};
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("IO Error: {0}")]
+    #[error(transparent)]
     IOError(#[from()] std::io::Error),
     #[error(transparent)]
     LexError(#[from] token::LexError),
