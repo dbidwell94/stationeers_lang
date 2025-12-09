@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use helpers::prelude::*;
 use logos::{Lexer, Logos, Skip, Span};
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
@@ -43,7 +45,7 @@ impl From<LexError> for Diagnostic {
 }
 
 impl LexError {
-    pub fn from_lexer<'a>(lex: &mut Lexer<'a, TokenType>) -> Self {
+    pub fn from_lexer<'a>(lex: &mut Lexer<'a, TokenType<'a>>) -> Self {
         let mut span = lex.span();
         let line = lex.extras.line_count;
         span.start -= lex.extras.line_start_index;
@@ -68,30 +70,30 @@ pub struct Extras {
     pub line_start_index: usize,
 }
 
-fn update_line_index<'a>(lex: &mut Lexer<'a, TokenType>) -> Skip {
+fn update_line_index<'a>(lex: &mut Lexer<'a, TokenType<'a>>) -> Skip {
     lex.extras.line_count += 1;
     lex.extras.line_start_index = lex.span().end;
     Skip
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Token {
+pub struct Token<'a> {
     /// The type of the token
-    pub token_type: TokenType,
+    pub token_type: TokenType<'a>,
     /// The line where the token was found
     pub line: usize,
     /// The span where the token starts and ends
     pub span: Span,
 }
 
-impl std::fmt::Display for Token {
+impl<'a> std::fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.token_type)
     }
 }
 
-impl Token {
-    pub fn new(token_type: TokenType, line: usize, span: Span) -> Self {
+impl<'a> Token<'a> {
+    pub fn new(token_type: TokenType<'a>, line: usize, span: Span) -> Self {
         Self {
             token_type,
             line,
@@ -158,22 +160,22 @@ macro_rules! keyword {
 #[logos(skip r"[ \t\f]+")]
 #[logos(extras = Extras)]
 #[logos(error(LexError, LexError::from_lexer))]
-pub enum TokenType {
+pub enum TokenType<'a> {
     #[regex(r"\n", update_line_index)]
     Newline,
 
     // matches strings with double quotes
     #[regex(r#""(?:[^"\\]|\\.)*""#, |v| {
         let str = v.slice();
-        str[1..str.len() - 1].to_string()
+        Cow::from(&str[1..str.len() - 1])
     })]
     // matches strings with single quotes
     #[regex(r#"'(?:[^'\\]|\\.)*'"#, |v| {
         let str = v.slice();
-        str[1..str.len() - 1].to_string()
+        Cow::from(&str[1..str.len() - 1])
     })]
     /// Represents a string token
-    String(String),
+    String(Cow<'a, str>),
 
     #[regex(r"[0-9][0-9_]*(\.[0-9][0-9_]*)?([cfk])?", parse_number)]
     /// Represents a number token
@@ -199,9 +201,9 @@ pub enum TokenType {
     /// Represents a keyword token
     Keyword(Keyword),
 
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |v| v.slice().to_string())]
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |v| Cow::from(v.slice()))]
     /// Represents an identifier token
-    Identifier(String),
+    Identifier(Cow<'a, str>),
 
     #[token("(", symbol!(LParen))]
     #[token(")", symbol!(RParen))]
@@ -236,29 +238,29 @@ pub enum TokenType {
     #[token("//", |lex| Comment::Line(read_line(lex)))]
     #[token("///", |lex| Comment::Doc(read_line(lex)))]
     /// Represents a comment, both a line comment and a doc comment
-    Comment(Comment),
+    Comment(Comment<'a>),
 
     #[end]
     /// Represents an end of file token
     EOF,
 }
 
-fn read_line<'a>(lexer: &mut Lexer<'a, TokenType>) -> String {
+fn read_line<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Cow<'a, str> {
     let rem = lexer.remainder();
     let len = rem.find('\n').unwrap_or(rem.len());
     let content = rem[..len].trim().to_string();
 
     lexer.bump(len);
-    content
+    Cow::from(content)
 }
 
 #[derive(Hash, Debug, Eq, PartialEq, Clone)]
-pub enum Comment {
-    Line(String),
-    Doc(String),
+pub enum Comment<'a> {
+    Line(Cow<'a, str>),
+    Doc(Cow<'a, str>),
 }
 
-fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType>) -> Result<Number, LexError> {
+fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexError> {
     let slice = lexer.slice();
     let last_char = slice.chars().last().unwrap_or_default();
     let (num_str, suffix) = match last_char {
@@ -304,7 +306,7 @@ fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType>) -> Result<Number, LexError
     }
 }
 
-impl std::fmt::Display for Comment {
+impl<'a> std::fmt::Display for Comment<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Line(c) => write!(f, "// {}", c),
@@ -321,7 +323,7 @@ impl std::fmt::Display for Comment {
     }
 }
 
-impl Documentation for TokenType {
+impl<'a> Documentation for TokenType<'a> {
     fn docs(&self) -> String {
         match self {
             Self::Keyword(k) => k.docs(),
@@ -336,7 +338,7 @@ impl Documentation for TokenType {
 
 helpers::with_syscalls!(generate_check);
 
-impl From<TokenType> for u32 {
+impl<'a> From<TokenType<'a>> for u32 {
     fn from(value: TokenType) -> Self {
         match value {
             TokenType::String(_) => 1,
@@ -376,7 +378,7 @@ impl From<TokenType> for u32 {
     }
 }
 
-impl std::fmt::Display for TokenType {
+impl<'a> std::fmt::Display for TokenType<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenType::String(s) => write!(f, "{}", s),

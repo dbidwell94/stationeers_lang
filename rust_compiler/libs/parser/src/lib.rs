@@ -26,27 +26,27 @@ macro_rules! boxed {
 }
 
 #[derive(Error, Debug)]
-pub enum Error {
+pub enum Error<'a> {
     #[error(transparent)]
     Tokenizer(#[from] tokenizer::Error),
 
     #[error("Unexpected token: {1}")]
-    UnexpectedToken(Span, Token),
+    UnexpectedToken(Span, Token<'a>),
 
     #[error("Duplicate identifier: {1}")]
-    DuplicateIdentifier(Span, Token),
+    DuplicateIdentifier(Span, Token<'a>),
 
     #[error("Invalid Syntax: {1}")]
     InvalidSyntax(Span, String),
 
     #[error("Unsupported Keyword: {1}")]
-    UnsupportedKeyword(Span, Token),
+    UnsupportedKeyword(Span, Token<'a>),
 
     #[error("Unexpected End of File")]
     UnexpectedEOF,
 }
 
-impl From<Error> for lsp_types::Diagnostic {
+impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
     fn from(value: Error) -> Self {
         use Error::*;
         use lsp_types::*;
@@ -105,8 +105,8 @@ macro_rules! self_matches_current {
 
 pub struct Parser<'a> {
     tokenizer: TokenizerBuffer<'a>,
-    current_token: Option<Token>,
-    pub errors: Vec<Error>,
+    current_token: Option<Token<'a>>,
+    pub errors: Vec<Error<'a>>,
 }
 
 impl<'a> Parser<'a> {
@@ -119,7 +119,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Calculates a Span from a given Token reference.
-    fn token_to_span(t: &Token) -> Span {
+    fn token_to_span<'t>(t: &'t Token<'a>) -> Span {
         Span {
             start_line: t.line,
             start_col: t.span.start,
@@ -269,14 +269,14 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn assign_next(&mut self) -> Result<(), Error> {
+    fn assign_next(&'a mut self) -> Result<(), Error> {
         self.current_token = self.tokenizer.next_token()?;
         Ok(())
     }
 
-    fn get_next(&mut self) -> Result<Option<&Token>, Error> {
+    fn get_next(&'a mut self) -> Result<Option<Token>, Error> {
         self.assign_next()?;
-        Ok(self.current_token.as_ref())
+        Ok(self.current_token.clone())
     }
 
     fn expression(&mut self) -> Result<Option<Spanned<tree_node::Expression>>, Error> {
