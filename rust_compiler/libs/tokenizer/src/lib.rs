@@ -66,13 +66,13 @@ impl<'a> Tokenizer<'a> {
     }
 
     pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
-        let to_return = self
-            .lexer
-            .next()
-            .transpose()
-            .map(|t| t.map(|t| self.get_token(t)))?;
+        let mut current = self.lexer.next().transpose();
 
-        Ok(to_return)
+        while matches!(current, Ok(Some(TokenType::Comment(_)))) {
+            current = self.lexer.next().transpose();
+        }
+
+        Ok(current.map(|t| t.map(|t| self.get_token(t)))?)
     }
 }
 

@@ -233,14 +233,23 @@ pub enum TokenType {
     /// Represents a symbol token
     Symbol(Symbol),
 
-    #[regex(r"///[\n]*", |val| Comment::Doc(val.slice()[3..].trim().to_string()))]
-    #[regex(r"//[\n]*", |val| Comment::Line(val.slice()[2..].trim().to_string()))]
+    #[token("//", |lex| Comment::Line(read_line(lex)))]
+    #[token("///", |lex| Comment::Doc(read_line(lex)))]
     /// Represents a comment, both a line comment and a doc comment
     Comment(Comment),
 
     #[end]
     /// Represents an end of file token
     EOF,
+}
+
+fn read_line<'a>(lexer: &mut Lexer<'a, TokenType>) -> String {
+    let rem = lexer.remainder();
+    let len = rem.find('\n').unwrap_or(rem.len());
+    let content = rem[..len].trim().to_string();
+
+    lexer.bump(len);
+    content
 }
 
 #[derive(Hash, Debug, Eq, PartialEq, Clone)]
