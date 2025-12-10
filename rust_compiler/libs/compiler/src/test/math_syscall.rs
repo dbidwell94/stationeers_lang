@@ -243,18 +243,28 @@ fn test_max() -> Result<()> {
     Ok(())
 }
 
-// #[test]
+#[test]
 fn test_max_from_game() -> Result<()> {
     let compiled = compile! {
-        result
+        debug
         r#"
         let item = 0;
         item = max(1, 2);
         "#
     };
 
-    println!("{compiled:?}");
-    assert!(compiled.is_empty());
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 0 #item
+            max r15 1 2
+            move r8 r15 #item
+            "
+        }
+    );
 
     Ok(())
 }

@@ -295,7 +295,6 @@ impl<'a> Parser<'a> {
             self,
             TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign)
         ) {
-            println!("{lhs}");
             return Ok(Some(self.infix(lhs)?));
         } else if self_matches_current!(
             self,
@@ -645,6 +644,15 @@ impl<'a> Parser<'a> {
                 .spanned(|p| p.priority())?
                 .node
                 .ok_or(Error::UnexpectedEOF)?,
+
+            TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
+                let spanned_call = self.spanned(|p| p.syscall())?;
+
+                Spanned {
+                    span: spanned_call.span,
+                    node: Expression::Syscall(spanned_call),
+                }
+            }
 
             TokenType::Identifier(_)
                 if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
