@@ -1,5 +1,10 @@
 # Changelog
 
+[0.2.2]
+
+- Fixed some formatting issues when converting Markdown to Text Mesh Pro for
+  Stationpedia
+
 [0.2.1]
 
 - Added support for `loadSlot` and `setSlot`
