@@ -1,5 +1,10 @@
 # Changelog
 
+[0.2.1]
+
+- Added support for `loadSlot` and `setSlot`
+- Fixed bug where syscalls like `max(1, 2)` were not allowed in assignment expressions
+
 [0.2.0]
 
 - Completely re-wrote the tokenizer to use `logos`

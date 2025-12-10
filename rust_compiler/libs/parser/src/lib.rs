@@ -1059,7 +1059,9 @@ impl<'a> Parser<'a> {
 
         if token_matches!(
             temp_token,
-            TokenType::Symbol(Symbol::Semicolon) | TokenType::Symbol(Symbol::RParen)
+            TokenType::Symbol(Symbol::Semicolon)
+                | TokenType::Symbol(Symbol::RParen)
+                | TokenType::Symbol(Symbol::Comma)
         ) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
         }

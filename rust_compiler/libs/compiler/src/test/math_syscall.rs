@@ -249,7 +249,7 @@ fn test_max_from_game() -> Result<()> {
         debug
         r#"
         let item = 0;
-        item = max(1, 2);
+        item = max(1 + 2, 2);
         "#
     };
 
@@ -260,7 +260,7 @@ fn test_max_from_game() -> Result<()> {
             j main
             main:
             move r8 0 #item
-            max r15 1 2
+            max r15 3 2
             move r8 r15 #item
             "
         }
