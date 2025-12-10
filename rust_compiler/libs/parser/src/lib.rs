@@ -295,6 +295,7 @@ impl<'a> Parser<'a> {
             self,
             TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign)
         ) {
+            println!("{lhs}");
             return Ok(Some(self.infix(lhs)?));
         } else if self_matches_current!(
             self,
@@ -1518,18 +1519,23 @@ impl<'a> Parser<'a> {
     }
 
     fn syscall(&mut self) -> Result<SysCall<'a>, Error<'a>> {
-        fn check_length<'a>(
-            span: Span,
-            arguments: &[Spanned<Expression<'a>>],
-            length: usize,
-        ) -> Result<(), Error<'a>> {
-            if arguments.len() != length {
+        let invocation = self.invocation()?;
+
+        let check_length = |len: usize| -> Result<(), Error> {
+            if invocation.arguments.len() != len {
                 return Err(Error::InvalidSyntax(
-                    span,
-                    format!("Expected {} arguments", length),
+                    self.current_span(),
+                    format!("Expected {} arguments", len),
                 ));
             }
             Ok(())
+        };
+
+        macro_rules! args {
+            ($count:expr) => {{
+                check_length($count)?;
+                invocation.arguments.into_iter()
+            }};
         }
 
         macro_rules! literal_or_variable {
@@ -1581,23 +1587,19 @@ impl<'a> Parser<'a> {
             };
         }
 
-        let invocation = self.invocation()?;
-
         match invocation.name.node.as_ref() {
             // System SysCalls
             "yield" => {
-                check_length(self.current_span(), &invocation.arguments, 0)?;
+                check_length(0)?;
                 Ok(SysCall::System(sys_call::System::Yield))
             }
             "sleep" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
-                let mut arg = invocation.arguments.into_iter();
-                let expr = arg.next().ok_or(Error::UnexpectedEOF)?;
+                let mut args = args!(1);
+                let expr = args.next().ok_or(Error::UnexpectedEOF)?;
                 Ok(SysCall::System(System::Sleep(boxed!(expr))))
             }
             "hash" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
-                let mut args = invocation.arguments.into_iter();
+                let mut args = args!(1);
                 let lit_str = literal_or_variable!(args.next());
 
                 let Spanned {
@@ -1617,8 +1619,7 @@ impl<'a> Parser<'a> {
                 })))
             }
             "load" | "l" => {
-                check_length(self.current_span(), &invocation.arguments, 2)?;
-                let mut args = invocation.arguments.into_iter();
+                let mut args = args!(2);
 
                 let tmp = args.next();
                 let device = literal_or_variable!(tmp);
@@ -1662,8 +1663,7 @@ impl<'a> Parser<'a> {
                 )))
             }
             "loadBatched" | "lb" => {
-                check_length(self.current_span(), &invocation.arguments, 3)?;
-                let mut args = invocation.arguments.into_iter();
+                let mut args = args!(3);
                 let tmp = args.next();
                 let device_hash = literal_or_variable!(tmp);
 
@@ -1680,8 +1680,7 @@ impl<'a> Parser<'a> {
                 )))
             }
             "loadBatchedNamed" | "lbn" => {
-                check_length(self.current_span(), &invocation.arguments, 4)?;
-                let mut args = invocation.arguments.into_iter();
+                let mut args = args!(4);
                 let tmp = args.next();
                 let dev_hash = literal_or_variable!(tmp);
 
@@ -1699,8 +1698,7 @@ impl<'a> Parser<'a> {
                 )))
             }
             "set" | "s" => {
-                check_length(self.current_span(), &invocation.arguments, 3)?;
-                let mut args = invocation.arguments.into_iter();
+                let mut args = args!(3);
                 let tmp = args.next();
                 let device = literal_or_variable!(tmp);
 
@@ -1720,8 +1718,7 @@ impl<'a> Parser<'a> {
                 )))
             }
             "setBatched" | "sb" => {
-                check_length(self.current_span(), &invocation.arguments, 3)?;
-                let mut args = invocation.arguments.into_iter();
+                let mut args = args!(3);
                 let tmp = args.next();
                 let device_hash = literal_or_variable!(tmp);
 
@@ -1739,8 +1736,7 @@ impl<'a> Parser<'a> {
                 )))
             }
             "setBatchedNamed" | "sbn" => {
-                check_length(self.current_span(), &invocation.arguments, 4)?;
-                let mut args = invocation.arguments.into_iter();
+                let mut args = args!(4);
                 let tmp = args.next();
                 let device_hash = literal_or_variable!(tmp);
 
@@ -1760,30 +1756,110 @@ impl<'a> Parser<'a> {
                     expr,
                 )))
             }
+            "loadSlot" | "ls" => {
+                let mut args = args!(3);
+                let next = args.next();
+                let dev_name = literal_or_variable!(next);
+                let next = args.next();
+                let slot_index = get_arg!(Literal, literal_or_variable!(next));
+                if !matches!(
+                    slot_index,
+                    Spanned {
+                        node: Literal::Number(_),
+                        ..
+                    },
+                ) {
+                    return Err(Error::InvalidSyntax(
+                        slot_index.span,
+                        "Expected a number".to_string(),
+                    ));
+                }
+                let next = args.next();
+                let slot_logic = get_arg!(Literal, literal_or_variable!(next));
+                if !matches!(
+                    slot_logic,
+                    Spanned {
+                        node: Literal::String(_),
+                        ..
+                    }
+                ) {
+                    return Err(Error::InvalidSyntax(
+                        slot_logic.span,
+                        "Expected a String".into(),
+                    ));
+                }
+
+                Ok(SysCall::System(System::LoadSlot(
+                    dev_name, slot_index, slot_logic,
+                )))
+            }
+            "setSlot" | "ss" => {
+                let mut args = args!(4);
+                let next = args.next();
+                let dev_name = literal_or_variable!(next);
+                let next = args.next();
+                let slot_index = get_arg!(Literal, literal_or_variable!(next));
+                if !matches!(
+                    slot_index,
+                    Spanned {
+                        node: Literal::Number(_),
+                        ..
+                    }
+                ) {
+                    return Err(Error::InvalidSyntax(
+                        slot_index.span,
+                        "Expected a number".into(),
+                    ));
+                }
+                let next = args.next();
+                let slot_logic = get_arg!(Literal, literal_or_variable!(next));
+                if !matches!(
+                    slot_logic,
+                    Spanned {
+                        node: Literal::String(_),
+                        ..
+                    }
+                ) {
+                    return Err(Error::InvalidSyntax(
+                        slot_logic.span,
+                        "Expected a string".into(),
+                    ));
+                }
+                let next = args.next();
+                let expr = next.ok_or(Error::UnexpectedEOF)?;
+
+                Ok(SysCall::System(System::SetSlot(
+                    dev_name,
+                    slot_index,
+                    slot_logic,
+                    Box::new(expr),
+                )))
+            }
+
             // Math SysCalls
             "acos" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let tmp = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Acos(boxed!(tmp))))
             }
             "asin" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let tmp = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Asin(boxed!(tmp))))
             }
             "atan" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let expr = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Atan(boxed!(expr))))
             }
             "atan2" => {
-                check_length(self.current_span(), &invocation.arguments, 2)?;
+                check_length(2)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg1 = args.next().ok_or(Error::UnexpectedEOF)?;
                 let arg2 = args.next().ok_or(Error::UnexpectedEOF)?;
@@ -1791,42 +1867,42 @@ impl<'a> Parser<'a> {
                 Ok(SysCall::Math(Math::Atan2(boxed!(arg1), boxed!(arg2))))
             }
             "abs" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let expr = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Abs(boxed!(expr))))
             }
             "ceil" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Ceil(boxed!(arg))))
             }
             "cos" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Cos(boxed!(arg))))
             }
             "floor" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Floor(boxed!(arg))))
             }
             "log" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Log(boxed!(arg))))
             }
             "max" => {
-                check_length(self.current_span(), &invocation.arguments, 2)?;
+                check_length(2)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg1 = args.next().ok_or(Error::UnexpectedEOF)?;
                 let arg2 = args.next().ok_or(Error::UnexpectedEOF)?;
@@ -1834,7 +1910,7 @@ impl<'a> Parser<'a> {
                 Ok(SysCall::Math(Math::Max(boxed!(arg1), boxed!(arg2))))
             }
             "min" => {
-                check_length(self.current_span(), &invocation.arguments, 2)?;
+                check_length(2)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg1 = args.next().ok_or(Error::UnexpectedEOF)?;
                 let arg2 = args.next().ok_or(Error::UnexpectedEOF)?;
@@ -1842,32 +1918,32 @@ impl<'a> Parser<'a> {
                 Ok(SysCall::Math(Math::Min(boxed!(arg1), boxed!(arg2))))
             }
             "rand" => {
-                check_length(self.current_span(), &invocation.arguments, 0)?;
+                check_length(0)?;
                 Ok(SysCall::Math(Math::Rand))
             }
             "sin" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Sin(boxed!(arg))))
             }
             "sqrt" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Sqrt(boxed!(arg))))
             }
             "tan" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg = args.next().ok_or(Error::UnexpectedEOF)?;
 
                 Ok(SysCall::Math(Math::Tan(boxed!(arg))))
             }
             "trunc" => {
-                check_length(self.current_span(), &invocation.arguments, 1)?;
+                check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
                 let arg = args.next().ok_or(Error::UnexpectedEOF)?;
 

@@ -243,6 +243,22 @@ fn test_max() -> Result<()> {
     Ok(())
 }
 
+// #[test]
+fn test_max_from_game() -> Result<()> {
+    let compiled = compile! {
+        result
+        r#"
+        let item = 0;
+        item = max(1, 2);
+        "#
+    };
+
+    println!("{compiled:?}");
+    assert!(compiled.is_empty());
+
+    Ok(())
+}
+
 #[test]
 fn test_min() -> Result<()> {
     let compiled = compile! {

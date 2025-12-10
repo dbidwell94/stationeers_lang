@@ -52,7 +52,7 @@ pub enum LocationRequest {
     Stack,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum VariableLocation<'a> {
     /// Represents a temporary register (r1 - r7)
     Temporary(u8),
@@ -66,7 +66,6 @@ pub enum VariableLocation<'a> {
     Device(Cow<'a, str>),
 }
 
-// FIX: Added 'b lifetime for the parent reference
 pub struct VariableScope<'a, 'b> {
     temporary_vars: VecDeque<u8>,
     persistant_vars: VecDeque<u8>,
@@ -75,7 +74,6 @@ pub struct VariableScope<'a, 'b> {
     parent: Option<&'b VariableScope<'a, 'b>>,
 }
 
-// FIX: Updated Default impl to include 'b
 impl<'a, 'b> Default for VariableScope<'a, 'b> {
     fn default() -> Self {
         Self {
@@ -88,7 +86,6 @@ impl<'a, 'b> Default for VariableScope<'a, 'b> {
     }
 }
 
-// FIX: Updated impl block to include 'b
 impl<'a, 'b> VariableScope<'a, 'b> {
     #[allow(dead_code)]
     pub const TEMP_REGISTER_COUNT: u8 = 7;
@@ -112,7 +109,6 @@ impl<'a, 'b> VariableScope<'a, 'b> {
             })
     }
 
-    // FIX: parent is now &'b VariableScope<'a, 'b>
     pub fn scoped(parent: &'b VariableScope<'a, 'b>) -> Self {
         Self {
             parent: Option::Some(parent),

@@ -157,3 +157,54 @@ fn test_load_from_device() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_load_from_slot() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        device airCon = "d0";
+
+        let setting = ls(airCon, 0, "Occupied");
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            ls r15 d0 0 Occupied
+            move r8 r15 #setting
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_set_slot() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        device airCon = "d0";
+
+        ss(airCon, 0, "Occupied", true);
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            ss d0 0 Occupied 1
+            "
+        }
+    );
+
+    Ok(())
+}

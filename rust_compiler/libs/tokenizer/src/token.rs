@@ -39,7 +39,7 @@ impl From<LexError> for Diagnostic {
                     ..Default::default()
                 }
             }
-            _ => todo!(),
+            _ => Diagnostic::default(),
         }
     }
 }

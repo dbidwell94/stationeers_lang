@@ -865,6 +865,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope.free_temp(c, None)?;
                 }
             }
+
             _ => {
                 return Err(Error::Unknown(
                     "Invalid assignment target. Only variables and member access are supported."
@@ -1951,6 +1952,55 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
+            }
+            System::LoadSlot(dev_name, slot_index, logic_type) => {
+                let (dev_hash, hash_cleanup) =
+                    self.compile_literal_or_variable(dev_name.node, scope)?;
+                let (slot_index, slot_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(slot_index.node),
+                    scope,
+                )?;
+                let (logic_type, logic_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(logic_type.node),
+                    scope,
+                )?;
+
+                self.write_output(format!(
+                    "ls r{} {} {} {}",
+                    VariableScope::RETURN_REGISTER,
+                    dev_hash,
+                    slot_index,
+                    logic_type
+                ))?;
+
+                cleanup!(hash_cleanup, slot_cleanup, logic_cleanup);
+
+                Ok(Some(CompilationResult {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            System::SetSlot(dev_name, slot_index, logic_type, var) => {
+                let (dev_name, name_cleanup) =
+                    self.compile_literal_or_variable(dev_name.node, scope)?;
+                let (slot_index, index_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(slot_index.node),
+                    scope,
+                )?;
+                let (logic_type, type_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(logic_type.node),
+                    scope,
+                )?;
+                let (var, var_cleanup) = self.compile_operand(*var, scope)?;
+
+                self.write_output(format!(
+                    "ss {} {} {} {}",
+                    dev_name, slot_index, logic_type, var
+                ))?;
+
+                cleanup!(name_cleanup, index_cleanup, type_cleanup, var_cleanup);
+
+                Ok(None)
             }
         }
     }
