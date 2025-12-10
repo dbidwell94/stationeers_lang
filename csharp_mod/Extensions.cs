@@ -134,6 +134,9 @@ public static unsafe class SlangExtensions
             case 7: // (punctuation)
                 return SlangFormatter.ColorDefault;
 
+            case 8: // Comments
+                return SlangFormatter.ColorComment;
+
             case 10: // (syscalls)
                 return SlangFormatter.ColorFunction;
 
