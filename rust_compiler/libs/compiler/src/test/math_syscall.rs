@@ -244,6 +244,32 @@ fn test_max() -> Result<()> {
 }
 
 #[test]
+fn test_max_from_game() -> Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        let item = 0;
+        item = max(1 + 2, 2);
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 0 #item
+            max r15 3 2
+            move r8 r15 #item
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_min() -> Result<()> {
     let compiled = compile! {
         debug

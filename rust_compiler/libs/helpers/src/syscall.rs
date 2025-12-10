@@ -9,9 +9,11 @@ macro_rules! with_syscalls {
             "load",
             "loadBatched",
             "loadBatchedNamed",
+            "loadSlot",
             "set",
             "setBatched",
             "setBatchedNamed",
+            "setSlot",
             "acos",
             "asin",
             "atan",
@@ -32,9 +34,11 @@ macro_rules! with_syscalls {
             "l",
             "lb",
             "lbn",
+            "ls",
             "s",
             "sb",
-            "sbn"
+            "sbn",
+            "ss"
         );
     };
 }

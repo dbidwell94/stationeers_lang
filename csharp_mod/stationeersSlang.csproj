@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>StationeersSlang</AssemblyName>
     <Description>Slang Compiler Bridge</Description>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>

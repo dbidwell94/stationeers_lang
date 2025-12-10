@@ -214,6 +214,30 @@ documented! {
             Spanned<Literal<'a>>,
             Box<Spanned<Expression<'a>>>,
         ),
+        /// Loads slot LogicSlotType from device into a variable
+        ///
+        /// ## IC10
+        /// `ls r0 d0 2 Occupied`
+        /// ## Slang
+        /// `let isOccupied = loadSlot(deviceHash, 2, "Occupied");`
+        /// `let isOccupied = ls(deviceHash, 2, "Occupied");`
+        LoadSlot(
+            Spanned<LiteralOrVariable<'a>>,
+            Spanned<Literal<'a>>,
+            Spanned<Literal<'a>>
+        ),
+        /// Stores a value of LogicType on a device by the index value
+        /// ## IC10
+        /// `ss d0 0 "Open" 1`
+        /// ## Slang
+        /// `setSlot(deviceHash, 0, "Open", true);`
+        /// `ss(deviceHash, 0, "Open", true);`
+        SetSlot(
+            Spanned<LiteralOrVariable<'a>>,
+            Spanned<Literal<'a>>,
+            Spanned<Literal<'a>>,
+            Box<Spanned<Expression<'a>>>
+        )
     }
 }
 
@@ -235,6 +259,8 @@ impl<'a> std::fmt::Display for System<'a> {
             System::SetOnDeviceBatchedNamed(a, b, c, d) => {
                 write!(f, "setOnDeviceBatchedNamed({}, {}, {}, {})", a, b, c, d)
             }
+            System::LoadSlot(a, b, c) => write!(f, "loadSlot({}, {}, {})", a, b, c),
+            System::SetSlot(a, b, c, d) => write!(f, "setSlot({}, {}, {}, {})", a, b, c, d),
         }
     }
 }
