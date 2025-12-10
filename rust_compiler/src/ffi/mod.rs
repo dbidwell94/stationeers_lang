@@ -96,9 +96,10 @@ pub fn free_docs_vec(v: safer_ffi::Vec<FfiDocumentedItem>) {
 #[ffi_export]
 pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::String {
     let res = std::panic::catch_unwind(|| {
+        let input = String::from_utf16_lossy(input.as_slice());
         let mut writer = BufWriter::new(Vec::new());
 
-        let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
+        let tokenizer = Tokenizer::from(input.as_str());
         let parser = Parser::new(tokenizer);
         let compiler = Compiler::new(parser, &mut writer, None);
 
@@ -120,7 +121,8 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::
 #[ffi_export]
 pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<FfiToken> {
     let res = std::panic::catch_unwind(|| {
-        let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
+        let input = String::from_utf16_lossy(input.as_slice());
+        let tokenizer = Tokenizer::from(input.as_str());
 
         let mut tokens = Vec::new();
 
@@ -136,34 +138,31 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
             }
             match token {
                 Err(ref e) => {
+                    use tokenizer::token::LexError;
                     use tokenizer::Error::*;
-                    let (err_str, col, og) = match e {
-                        NumberParseError(_, _, col, og)
-                        | DecimalParseError(_, _, col, og)
-                        | UnknownSymbolError(_, _, col, og)
-                        | UnknownKeywordOrIdentifierError(_, _, col, og) => {
-                            (e.to_string(), col, og)
+                    let (err_str, _, span) = match e {
+                        LexError(LexError::NumberParse(line, span, err))
+                        | LexError(LexError::InvalidInput(line, span, err)) => {
+                            (err.to_string(), line, span)
                         }
+
                         _ => continue,
                     };
 
                     tokens.push(FfiToken {
-                        column: *col as i32,
+                        column: span.start as i32,
                         error: err_str.into(),
                         tooltip: "".into(),
-                        length: og.len() as i32,
+                        length: (span.end - span.start) as i32,
                         token_kind: 0,
                     })
                 }
                 Ok(Token {
-                    column,
-                    original_string,
-                    token_type,
-                    ..
+                    span, token_type, ..
                 }) => tokens.push(FfiToken {
-                    column: column as i32,
+                    column: span.start as i32,
                     error: "".into(),
-                    length: (original_string.unwrap_or_default().len()) as i32,
+                    length: (span.end - span.start) as i32,
                     tooltip: token_type.docs().into(),
                     token_kind: token_type.into(),
                 }),
@@ -179,8 +178,10 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
 #[ffi_export]
 pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<FfiDiagnostic> {
     let res = std::panic::catch_unwind(|| {
+        let input = String::from_utf16_lossy(input.as_slice());
+
         let mut writer = BufWriter::new(Vec::new());
-        let tokenizer = Tokenizer::from(String::from_utf16_lossy(input.as_slice()));
+        let tokenizer = Tokenizer::from(input.as_str());
         let compiler = Compiler::new(Parser::new(tokenizer), &mut writer, None);
 
         let diagnosis = compiler.compile();

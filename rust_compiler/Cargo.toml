@@ -1,13 +1,13 @@
 [package]
 name = "slang"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 
 [workspace]
 members = ["libs/*"]
 
 [workspace.dependencies]
-quick-error = "2"
+thiserror = "2"
 rust_decimal = "1"
 safer-ffi = { version = "0.1" }  # Safely share structs in memory between C# and Rust
 lsp-types = { version = "0.97" } # Allows for LSP style reporting to the frontend
@@ -36,13 +36,13 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 clap = { version = "^4.5", features = ["derive"] }
 lsp-types = { workspace = true }
-quick-error = { workspace = true }
+thiserror = { workspace = true }
 rust_decimal = { workspace = true }
 tokenizer = { path = "libs/tokenizer" }
 parser = { path = "libs/parser" }
 compiler = { path = "libs/compiler" }
 helpers = { path = "libs/helpers" }
 safer-ffi = { workspace = true }
+anyhow = { version = "^1.0", features = ["backtrace"] }
 
 [dev-dependencies]
-anyhow = { version = "^1.0", features = ["backtrace"] }

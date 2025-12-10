@@ -3,15 +3,10 @@ macro_rules! documented {
     // -------------------------------------------------------------------------
     // Internal Helper: Filter doc comments
     // -------------------------------------------------------------------------
-
-    // Case 1: Doc comment. Return Some("string").
-    // We match the specific structure of a doc attribute.
     (@doc_filter #[doc = $doc:expr]) => {
         Some($doc)
     };
 
-    // Case 2: Other attributes (derives, etc.). Return None.
-    // We catch any other token sequence inside the brackets.
     (@doc_filter #[$($attr:tt)*]) => {
         None
     };
@@ -30,23 +25,59 @@ macro_rules! documented {
     };
 
     // -------------------------------------------------------------------------
-    // Main Macro Entry Point
+    // Entry Point 1: Enum with a single Lifetime (e.g. enum Foo<'a>)
+    // -------------------------------------------------------------------------
+    (
+        $(#[$enum_attr:meta])* $vis:vis enum $name:ident < $lt:lifetime > {
+            $($body:tt)*
+        }
+    ) => {
+        documented!(@generate
+            meta: [$(#[$enum_attr])*],
+            vis: [$vis],
+            name: [$name],
+            generics: [<$lt>],
+            body: [$($body)*]
+        );
+    };
+
+    // -------------------------------------------------------------------------
+    // Entry Point 2: Regular Enum (No Generics)
     // -------------------------------------------------------------------------
     (
         $(#[$enum_attr:meta])* $vis:vis enum $name:ident {
+            $($body:tt)*
+        }
+    ) => {
+        documented!(@generate
+            meta: [$(#[$enum_attr])*],
+            vis: [$vis],
+            name: [$name],
+            generics: [],
+            body: [$($body)*]
+        );
+    };
+
+    // -------------------------------------------------------------------------
+    // Code Generator (Shared Logic)
+    // -------------------------------------------------------------------------
+    (@generate
+        meta: [$(#[$enum_attr:meta])*],
+        vis: [$vis:vis],
+        name: [$name:ident],
+        generics: [$($generics:tt)*],
+        body: [
             $(
-                // Capture attributes as a sequence of token trees inside brackets
-                // to avoid "local ambiguity" and handle multi-token attributes (like doc="...").
                 $(#[ $($variant_attr:tt)* ])*
                 $variant:ident
                 $( ($($tuple:tt)*) )?
                 $( {$($structure:tt)*} )?
             ),* $(,)?
-        }
+        ]
     ) => {
-        // 1. Generate the actual Enum definition
+        // 1. Generate the Enum Definition
         $(#[$enum_attr])*
-        $vis enum $name {
+        $vis enum $name $($generics)* {
             $(
                 $(#[ $($variant_attr)* ])*
                 $variant
@@ -55,20 +86,19 @@ macro_rules! documented {
             )*
         }
 
-        // 2. Implement the Documentation Trait
-        impl Documentation for $name {
+        // 2. Implement Documentation Trait
+        // We apply the captured generics (e.g., <'a>) to both the impl and the type
+        impl $($generics)* Documentation for $name $($generics)* {
             fn docs(&self) -> String {
                 match self {
                     $(
                         documented!(@arm $name $variant $( ($($tuple)*) )? $( {$($structure)*} )? ) => {
-                            // Create a temporary array of Option<&str> for all attributes
                             let doc_lines: &[Option<&str>] = &[
                                 $(
                                     documented!(@doc_filter #[ $($variant_attr)* ])
                                 ),*
                             ];
 
-                            // Filter out the Nones (non-doc attributes), join, and return
                             doc_lines.iter()
                                 .filter_map(|&d| d)
                                 .collect::<Vec<_>>()
@@ -80,7 +110,6 @@ macro_rules! documented {
                 }
             }
 
-            // 3. Implement Static Documentation Provider
             #[allow(dead_code)]
             fn get_all_documentation() -> Vec<(&'static str, String)> {
                 vec![
@@ -88,7 +117,6 @@ macro_rules! documented {
                         (
                             stringify!($variant),
                             {
-                                // Re-use the same extraction logic
                                 let doc_lines: &[Option<&str>] = &[
                                     $(
                                         documented!(@doc_filter #[ $($variant_attr)* ])

@@ -1,24 +1,22 @@
-use std::ops::Deref;
-
-use crate::sys_call;
-
 use super::sys_call::SysCall;
+use crate::sys_call;
+use std::{borrow::Cow, ops::Deref};
 use tokenizer::token::Number;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Literal {
+pub enum Literal<'a> {
     Number(Number),
-    String(String),
+    String(Cow<'a, str>),
     Boolean(bool),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum LiteralOr<T> {
-    Literal(Spanned<Literal>),
+pub enum LiteralOr<'a, T> {
+    Literal(Spanned<Literal<'a>>),
     Or(Spanned<T>),
 }
 
-impl<T: std::fmt::Display> std::fmt::Display for LiteralOr<T> {
+impl<'a, T: std::fmt::Display> std::fmt::Display for LiteralOr<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Literal(l) => write!(f, "{l}"),
@@ -27,7 +25,7 @@ impl<T: std::fmt::Display> std::fmt::Display for LiteralOr<T> {
     }
 }
 
-impl std::fmt::Display for Literal {
+impl<'a> std::fmt::Display for Literal<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Number(n) => write!(f, "{}", n),
@@ -38,16 +36,16 @@ impl std::fmt::Display for Literal {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum BinaryExpression {
-    Add(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    Multiply(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    Divide(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    Subtract(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    Exponent(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    Modulo(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+pub enum BinaryExpression<'a> {
+    Add(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    Multiply(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    Divide(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    Subtract(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    Exponent(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    Modulo(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
 }
 
-impl std::fmt::Display for BinaryExpression {
+impl<'a> std::fmt::Display for BinaryExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BinaryExpression::Add(l, r) => write!(f, "({} + {})", l, r),
@@ -61,19 +59,19 @@ impl std::fmt::Display for BinaryExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum LogicalExpression {
-    And(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    Or(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    Not(Box<Spanned<Expression>>),
-    Equal(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    NotEqual(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    GreaterThan(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    GreaterThanOrEqual(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    LessThan(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
-    LessThanOrEqual(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+pub enum LogicalExpression<'a> {
+    And(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    Or(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    Not(Box<Spanned<Expression<'a>>>),
+    Equal(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    NotEqual(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    GreaterThan(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    GreaterThanOrEqual(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    LessThan(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    LessThanOrEqual(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
 }
 
-impl std::fmt::Display for LogicalExpression {
+impl<'a> std::fmt::Display for LogicalExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LogicalExpression::And(l, r) => write!(f, "({} && {})", l, r),
@@ -90,25 +88,25 @@ impl std::fmt::Display for LogicalExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct AssignmentExpression {
-    pub assignee: Box<Spanned<Expression>>,
-    pub expression: Box<Spanned<Expression>>,
+pub struct AssignmentExpression<'a> {
+    pub assignee: Box<Spanned<Expression<'a>>>,
+    pub expression: Box<Spanned<Expression<'a>>>,
 }
 
-impl std::fmt::Display for AssignmentExpression {
+impl<'a> std::fmt::Display for AssignmentExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} = {})", self.assignee, self.expression)
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct FunctionExpression {
-    pub name: Spanned<String>,
-    pub arguments: Vec<Spanned<String>>,
-    pub body: BlockExpression,
+pub struct FunctionExpression<'a> {
+    pub name: Spanned<Cow<'a, str>>,
+    pub arguments: Vec<Spanned<Cow<'a, str>>>,
+    pub body: BlockExpression<'a>,
 }
 
-impl std::fmt::Display for FunctionExpression {
+impl<'a> std::fmt::Display for FunctionExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -125,9 +123,9 @@ impl std::fmt::Display for FunctionExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct BlockExpression(pub Vec<Spanned<Expression>>);
+pub struct BlockExpression<'a>(pub Vec<Spanned<Expression<'a>>>);
 
-impl std::fmt::Display for BlockExpression {
+impl<'a> std::fmt::Display for BlockExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -142,12 +140,12 @@ impl std::fmt::Display for BlockExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct InvocationExpression {
-    pub name: Spanned<String>,
-    pub arguments: Vec<Spanned<Expression>>,
+pub struct InvocationExpression<'a> {
+    pub name: Spanned<Cow<'a, str>>,
+    pub arguments: Vec<Spanned<Expression<'a>>>,
 }
 
-impl std::fmt::Display for InvocationExpression {
+impl<'a> std::fmt::Display for InvocationExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -163,25 +161,25 @@ impl std::fmt::Display for InvocationExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct MemberAccessExpression {
-    pub object: Box<Spanned<Expression>>,
-    pub member: Spanned<String>,
+pub struct MemberAccessExpression<'a> {
+    pub object: Box<Spanned<Expression<'a>>>,
+    pub member: Spanned<Cow<'a, str>>,
 }
 
-impl std::fmt::Display for MemberAccessExpression {
+impl<'a> std::fmt::Display for MemberAccessExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.object, self.member)
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct MethodCallExpression {
-    pub object: Box<Spanned<Expression>>,
-    pub method: Spanned<String>,
-    pub arguments: Vec<Spanned<Expression>>,
+pub struct MethodCallExpression<'a> {
+    pub object: Box<Spanned<Expression<'a>>>,
+    pub method: Spanned<Cow<'a, str>>,
+    pub arguments: Vec<Spanned<Expression<'a>>>,
 }
 
-impl std::fmt::Display for MethodCallExpression {
+impl<'a> std::fmt::Display for MethodCallExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -198,12 +196,12 @@ impl std::fmt::Display for MethodCallExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum LiteralOrVariable {
-    Literal(Literal),
-    Variable(Spanned<String>),
+pub enum LiteralOrVariable<'a> {
+    Literal(Literal<'a>),
+    Variable(Spanned<Cow<'a, str>>),
 }
 
-impl std::fmt::Display for LiteralOrVariable {
+impl<'a> std::fmt::Display for LiteralOrVariable<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LiteralOrVariable::Literal(l) => write!(f, "{}", l),
@@ -213,46 +211,46 @@ impl std::fmt::Display for LiteralOrVariable {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ConstDeclarationExpression {
-    pub name: Spanned<String>,
-    pub value: LiteralOr<SysCall>,
+pub struct ConstDeclarationExpression<'a> {
+    pub name: Spanned<Cow<'a, str>>,
+    pub value: LiteralOr<'a, SysCall<'a>>,
 }
 
-impl ConstDeclarationExpression {
+impl<'a> ConstDeclarationExpression<'a> {
     pub fn is_syscall_supported(call: &SysCall) -> bool {
         use sys_call::System;
         matches!(call, SysCall::System(sys) if matches!(sys, System::Hash(_)))
     }
 }
 
-impl std::fmt::Display for ConstDeclarationExpression {
+impl<'a> std::fmt::Display for ConstDeclarationExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(const {} = {})", self.name, self.value)
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DeviceDeclarationExpression {
+pub struct DeviceDeclarationExpression<'a> {
     /// any variable-like name
-    pub name: Spanned<String>,
+    pub name: Spanned<Cow<'a, str>>,
     /// The device port, ex. (db, d0, d1, d2, d3, d4, d5)
-    pub device: String,
+    pub device: Cow<'a, str>,
 }
 
-impl std::fmt::Display for DeviceDeclarationExpression {
+impl<'a> std::fmt::Display for DeviceDeclarationExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(device {} = {})", self.name, self.device)
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct IfExpression {
-    pub condition: Box<Spanned<Expression>>,
-    pub body: Spanned<BlockExpression>,
-    pub else_branch: Option<Box<Spanned<Expression>>>,
+pub struct IfExpression<'a> {
+    pub condition: Box<Spanned<Expression<'a>>>,
+    pub body: Spanned<BlockExpression<'a>>,
+    pub else_branch: Option<Box<Spanned<Expression<'a>>>>,
 }
 
-impl std::fmt::Display for IfExpression {
+impl<'a> std::fmt::Display for IfExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(if ({}) {}", self.condition, self.body)?;
         if let Some(else_branch) = &self.else_branch {
@@ -263,23 +261,23 @@ impl std::fmt::Display for IfExpression {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct LoopExpression {
-    pub body: Spanned<BlockExpression>,
+pub struct LoopExpression<'a> {
+    pub body: Spanned<BlockExpression<'a>>,
 }
 
-impl std::fmt::Display for LoopExpression {
+impl<'a> std::fmt::Display for LoopExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(loop {})", self.body)
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct WhileExpression {
-    pub condition: Box<Spanned<Expression>>,
-    pub body: BlockExpression,
+pub struct WhileExpression<'a> {
+    pub condition: Box<Spanned<Expression<'a>>>,
+    pub body: BlockExpression<'a>,
 }
 
-impl std::fmt::Display for WhileExpression {
+impl<'a> std::fmt::Display for WhileExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(while {} {})", self.condition, self.body)
     }
@@ -347,32 +345,32 @@ impl<T> Deref for Spanned<T> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Expression {
-    Assignment(Spanned<AssignmentExpression>),
-    Binary(Spanned<BinaryExpression>),
-    Block(Spanned<BlockExpression>),
+pub enum Expression<'a> {
+    Assignment(Spanned<AssignmentExpression<'a>>),
+    Binary(Spanned<BinaryExpression<'a>>),
+    Block(Spanned<BlockExpression<'a>>),
     Break(Span),
-    ConstDeclaration(Spanned<ConstDeclarationExpression>),
+    ConstDeclaration(Spanned<ConstDeclarationExpression<'a>>),
     Continue(Span),
-    Declaration(Spanned<String>, Box<Spanned<Expression>>),
-    DeviceDeclaration(Spanned<DeviceDeclarationExpression>),
-    Function(Spanned<FunctionExpression>),
-    If(Spanned<IfExpression>),
-    Invocation(Spanned<InvocationExpression>),
-    Literal(Spanned<Literal>),
-    Logical(Spanned<LogicalExpression>),
-    Loop(Spanned<LoopExpression>),
-    MemberAccess(Spanned<MemberAccessExpression>),
-    MethodCall(Spanned<MethodCallExpression>),
-    Negation(Box<Spanned<Expression>>),
-    Priority(Box<Spanned<Expression>>),
-    Return(Box<Spanned<Expression>>),
-    Syscall(Spanned<SysCall>),
-    Variable(Spanned<String>),
-    While(Spanned<WhileExpression>),
+    Declaration(Spanned<Cow<'a, str>>, Box<Spanned<Expression<'a>>>),
+    DeviceDeclaration(Spanned<DeviceDeclarationExpression<'a>>),
+    Function(Spanned<FunctionExpression<'a>>),
+    If(Spanned<IfExpression<'a>>),
+    Invocation(Spanned<InvocationExpression<'a>>),
+    Literal(Spanned<Literal<'a>>),
+    Logical(Spanned<LogicalExpression<'a>>),
+    Loop(Spanned<LoopExpression<'a>>),
+    MemberAccess(Spanned<MemberAccessExpression<'a>>),
+    MethodCall(Spanned<MethodCallExpression<'a>>),
+    Negation(Box<Spanned<Expression<'a>>>),
+    Priority(Box<Spanned<Expression<'a>>>),
+    Return(Box<Spanned<Expression<'a>>>),
+    Syscall(Spanned<SysCall<'a>>),
+    Variable(Spanned<Cow<'a, str>>),
+    While(Spanned<WhileExpression<'a>>),
 }
 
-impl std::fmt::Display for Expression {
+impl<'a> std::fmt::Display for Expression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expression::Assignment(e) => write!(f, "{}", e),
