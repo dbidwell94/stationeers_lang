@@ -766,6 +766,7 @@ impl<'a> Parser<'a> {
             Expression::Binary(_)
             | Expression::Logical(_)
             | Expression::Invocation(_)
+            | Expression::Syscall(_)
             | Expression::Priority(_)
             | Expression::Literal(_)
             | Expression::Variable(_)

@@ -1562,31 +1562,33 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         mut expr: BlockExpression<'a>,
         parent_scope: &'v mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
+        fn get_expression_priority<'a>(expr: &Spanned<Expression<'a>>) -> u32 {
+            match expr.node {
+                Expression::ConstDeclaration(_) => 0,
+                Expression::DeviceDeclaration(_) => 1,
+                Expression::Function(_) => 2,
+                _ => 3,
+            }
+        }
+
         // First, sort the expressions to ensure functions are hoisted
         expr.0.sort_by(|a, b| {
-            if matches!(
-                b.node,
-                Expression::Function(_) | Expression::ConstDeclaration(_)
-            ) && matches!(
-                a.node,
-                Expression::Function(_) | Expression::ConstDeclaration(_)
-            ) {
-                std::cmp::Ordering::Equal
-            } else if matches!(
-                a.node,
-                Expression::Function(_) | Expression::ConstDeclaration(_)
-            ) {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            }
+            let a_cost = get_expression_priority(a);
+            let b_cost = get_expression_priority(b);
+
+            a_cost.cmp(&b_cost)
         });
 
         let mut scope = VariableScope::scoped(parent_scope);
 
         for expr in expr.0 {
             if !self.declared_main
-                && !matches!(expr.node, Expression::Function(_))
+                && !matches!(
+                    expr.node,
+                    Expression::Function(_)
+                        | Expression::ConstDeclaration(_)
+                        | Expression::DeviceDeclaration(_)
+                )
                 && !parent_scope.has_parent()
             {
                 self.write_output("main:")?;
