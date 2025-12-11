@@ -26,12 +26,18 @@ public static class TextMeshProFormatter
             RegexOptions.Singleline
         );
 
-        // 3. Handle Headers (## Header)
-        // Convert ## Header to large bold text
         text = Regex.Replace(
             text,
-            @"^##(\s+)?(.+)$",
-            "<size=120%><b>$1</b></size>",
+            @"^\s*##\s+(.+)$",
+            "<size=110%><color=#ffffff><b>$1</b></color></size>",
+            RegexOptions.Multiline
+        );
+
+        // 3. Handle # Headers SECOND (General)
+        text = Regex.Replace(
+            text,
+            @"^\s*#\s+(.+)$",
+            "<size=120%><color=#ffffff><b>$1</b></color></size>",
             RegexOptions.Multiline
         );
 

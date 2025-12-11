@@ -293,12 +293,12 @@ impl<'a> Parser<'a> {
         // Handle Infix operators (Binary, Logical, Assignment)
         if self_matches_peek!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question)
         ) {
             return Ok(Some(self.infix(lhs)?));
         } else if self_matches_current!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question)
         ) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
             return Ok(Some(self.infix(lhs)?));
@@ -769,6 +769,7 @@ impl<'a> Parser<'a> {
             | Expression::Priority(_)
             | Expression::Literal(_)
             | Expression::Variable(_)
+            | Expression::Ternary(_)
             | Expression::Negation(_)
             | Expression::MemberAccess(_)
             | Expression::MethodCall(_) => {}
@@ -788,7 +789,7 @@ impl<'a> Parser<'a> {
         // Include Assign in the operator loop
         while token_matches!(
             temp_token,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question | Symbol::Colon)
         ) {
             let operator = match temp_token.token_type {
                 TokenType::Symbol(s) => s,
@@ -1019,7 +1020,52 @@ impl<'a> Parser<'a> {
         }
         operators.retain(|symbol| !matches!(symbol, Symbol::LogicalOr));
 
-        // --- PRECEDENCE LEVEL 8: Assignment (=) ---
+        // -- PRECEDENCE LEVEL 8: Ternary (x ? 1 : 2)
+        for i in (0..operators.len()).rev() {
+            if matches!(operators[i], Symbol::Question) {
+                // Ensure next operator is a colon
+                if i + 1 >= operators.len() || !matches!(operators[i + 1], Symbol::Colon) {
+                    return Err(Error::InvalidSyntax(
+                        self.current_span(),
+                        "Ternary operator '?' missing matching ':'".to_string(),
+                    ));
+                }
+
+                let false_branch = expressions.remove(i + 2);
+                let true_branch = expressions.remove(i + 1);
+                let condition = expressions.remove(i);
+
+                let span = Span {
+                    start_line: condition.span.start_line,
+                    end_line: false_branch.span.end_line,
+                    start_col: condition.span.start_col,
+                    end_col: false_branch.span.end_col,
+                };
+
+                let ternary_node = Spanned {
+                    span,
+                    node: TernaryExpression {
+                        condition: Box::new(condition),
+                        true_value: Box::new(true_branch),
+                        false_value: Box::new(false_branch),
+                    },
+                };
+
+                expressions.insert(
+                    i,
+                    Spanned {
+                        node: Expression::Ternary(ternary_node),
+                        span,
+                    },
+                );
+
+                // Remove the `?` and the `:` from the operators list
+                operators.remove(i);
+                operators.remove(i);
+            }
+        }
+
+        // --- PRECEDENCE LEVEL 9: Assignment (=) ---
         // Assignment is Right Associative: a = b = c => a = (b = c)
         // We iterate Right to Left
         for (i, operator) in operators.iter().enumerate().rev() {
