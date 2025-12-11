@@ -1,9 +1,10 @@
 use crate::compile;
+use anyhow::Result;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn simple_binary_expression() -> anyhow::Result<()> {
+fn simple_binary_expression() -> Result<()> {
     let compiled = compile! {
         debug
         "
@@ -26,7 +27,7 @@ fn simple_binary_expression() -> anyhow::Result<()> {
 }
 
 #[test]
-fn nested_binary_expressions() -> anyhow::Result<()> {
+fn nested_binary_expressions() -> Result<()> {
     let compiled = compile! {
         debug
         "
@@ -71,7 +72,7 @@ fn nested_binary_expressions() -> anyhow::Result<()> {
 }
 
 #[test]
-fn stress_test_constant_folding() -> anyhow::Result<()> {
+fn stress_test_constant_folding() -> Result<()> {
     let compiled = compile! {
         debug
         "
@@ -94,7 +95,7 @@ fn stress_test_constant_folding() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_constant_folding_with_variables_mixed_in() -> anyhow::Result<()> {
+fn test_constant_folding_with_variables_mixed_in() -> Result<()> {
     let compiled = compile! {
         debug
         r#"
@@ -114,6 +115,58 @@ fn test_constant_folding_with_variables_mixed_in() -> anyhow::Result<()> {
             sub r3 1 r2
             add r4 r3 518.15
             move r8 r4 #i
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_ternary_expression() -> Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        let i = 1 > 2 ? 15 : 20;
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            sgt r1 1 2
+            select r2 r1 15 20
+            move r8 r2 #i
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_ternary_expression_assignment() -> Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        let i = 0;
+        i = 1 > 2 ? 15 : 20;
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 0 #i
+            sgt r1 1 2
+            select r2 r1 15 20
+            move r8 r2 #i
             "
         }
     );

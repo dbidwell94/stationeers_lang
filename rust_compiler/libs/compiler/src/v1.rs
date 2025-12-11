@@ -8,7 +8,7 @@ use parser::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
         InvocationExpression, Literal, LiteralOr, LiteralOrVariable, LogicalExpression,
-        LoopExpression, MemberAccessExpression, Span, Spanned, WhileExpression,
+        LoopExpression, MemberAccessExpression, Span, Spanned, TernaryExpression, WhileExpression,
     },
 };
 use std::{
@@ -145,6 +145,7 @@ pub struct CompilerConfig {
     pub debug: bool,
 }
 
+#[derive(Debug)]
 struct CompilationResult<'a> {
     location: VariableLocation<'a>,
     /// If Some, this is the name of the temporary variable that holds the result.
@@ -313,6 +314,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 self.expression_assignment(assign_expr.node, scope)?;
                 Ok(None)
             }
+            Expression::Ternary(tern) => Ok(Some(self.expression_ternary(tern.node, scope)?)),
             Expression::Invocation(expr_invoke) => {
                 self.expression_function_invocation(expr_invoke, scope)?;
                 // Invocation returns result in r15 (RETURN_REGISTER).
@@ -738,6 +740,23 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope.free_temp(temp, None)?;
                 }
 
+                (var_loc, None)
+            }
+            Expression::Ternary(ternary) => {
+                let res = self.expression_ternary(ternary.node, scope)?;
+                println!("{res:?}");
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
+
+                let res_register = self.resolve_register(&res.location)?;
+                self.emit_variable_assignment(name_str, &var_loc, res_register)?;
+
+                if let Some(name) = res.temp_name {
+                    scope.free_temp(name, None)?;
+                }
                 (var_loc, None)
             }
             _ => {
@@ -1206,6 +1225,45 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 None,
             ))
         }
+    }
+
+    fn expression_ternary(
+        &mut self,
+        expr: TernaryExpression<'a>,
+        scope: &mut VariableScope<'a, '_>,
+    ) -> Result<CompilationResult<'a>, Error<'a>> {
+        let TernaryExpression {
+            condition,
+            true_value,
+            false_value,
+        } = expr;
+
+        let (cond, cond_clean) = self.compile_operand(*condition, scope)?;
+        let (true_val, true_clean) = self.compile_operand(*true_value, scope)?;
+        let (false_val, false_clean) = self.compile_operand(*false_value, scope)?;
+
+        let result_name = self.next_temp_name();
+        let result_loc = scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
+        let result_reg = self.resolve_register(&result_loc)?;
+
+        self.write_output(format!(
+            "select {} {} {} {}",
+            result_reg, cond, true_val, false_val
+        ))?;
+
+        if let Some(clean) = cond_clean {
+            scope.free_temp(clean, None)?;
+        }
+        if let Some(clean) = true_clean {
+            scope.free_temp(clean, None)?;
+        }
+        if let Some(clean) = false_clean {
+            scope.free_temp(clean, None)?;
+        }
+        Ok(CompilationResult {
+            location: result_loc,
+            temp_name: Some(result_name),
+        })
     }
 
     /// Helper to resolve a location to a register string (e.g., "r0").

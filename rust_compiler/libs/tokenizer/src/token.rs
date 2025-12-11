@@ -225,6 +225,7 @@ pub enum TokenType<'a> {
     #[token(".", symbol!(Dot))]
     #[token("^", symbol!(Caret))]
     #[token("%", symbol!(Percent))]
+    #[token("?", symbol!(Question))]
     #[token("==", symbol!(Equal))]
     #[token("!=", symbol!(NotEqual))]
     #[token("&&", symbol!(LogicalAnd))]
@@ -535,6 +536,8 @@ pub enum Symbol {
     Caret,
     /// Represents the `%` symbol
     Percent,
+    /// Represents the `?` symbol
+    Question,
 
     // Double Character Symbols
     /// Represents the `==` symbol
@@ -601,6 +604,7 @@ impl std::fmt::Display for Symbol {
             Self::Asterisk => write!(f, "*"),
             Self::Slash => write!(f, "/"),
             Self::LessThan => write!(f, "<"),
+            Self::Question => write!(f, "?"),
             Self::LessThanOrEqual => write!(f, "<="),
             Self::GreaterThan => write!(f, ">"),
             Self::GreaterThanOrEqual => write!(f, ">="),

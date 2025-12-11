@@ -4,6 +4,13 @@
 
 - Fixed some formatting issues when converting Markdown to Text Mesh Pro for
   Stationpedia
+- Added support for ternary expressions
+  - `let i = someValue ? 4 : 5;`
+  - `i = someValue ? 4 : 5;`
+  - This greedily evaluates both sides, so side effects like calling functions
+    is not recommended i.e.
+    - `i = someValue : doSomething() : doSomethingElse();`
+    - Both sides will be evaluated before calling the `select` instruction
 
 [0.2.1]
 

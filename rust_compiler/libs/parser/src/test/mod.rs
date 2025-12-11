@@ -160,3 +160,37 @@ fn test_negative_literal_const() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_ternary_expression() -> Result<()> {
+    let expr = parser!(r#"let i = x ? 1 : 2;"#).parse()?.unwrap();
+
+    assert_eq!("(let i = (x ? 1 : 2))", expr.to_string());
+    Ok(())
+}
+
+#[test]
+fn test_complex_binary_with_ternary() -> Result<()> {
+    let expr = parser!("let i = (x ? 1 : 3) * 2;").parse()?.unwrap();
+
+    assert_eq!("(let i = ((x ? 1 : 3) * 2))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_operator_prescedence_with_ternary() -> Result<()> {
+    let expr = parser!("let x = x ? 1 : 3 * 2;").parse()?.unwrap();
+
+    assert_eq!("(let x = (x ? 1 : (3 * 2)))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_nested_ternary_right_associativity() -> Result<()> {
+    let expr = parser!("let i = a ? b : c ? d : e;").parse()?.unwrap();
+
+    assert_eq!("(let i = (a ? b : (c ? d : e)))", expr.to_string());
+    Ok(())
+}

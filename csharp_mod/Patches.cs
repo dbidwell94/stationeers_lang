@@ -12,6 +12,7 @@ public static class SlangPatches
 {
     private static ProgrammableChipMotherboard? _currentlyEditingMotherboard;
     private static AsciiString? _motherboardCachedCode;
+    private static Guid? _currentlyEditingGuid;
 
     [HarmonyPatch(
         typeof(ProgrammableChipMotherboard),
@@ -32,10 +33,12 @@ public static class SlangPatches
             return;
         }
 
-        var thisRef = Guid.NewGuid();
+        var thisRef = _currentlyEditingGuid ?? Guid.NewGuid();
 
         // Ensure we cache this compiled code for later retreival.
         GlobalCode.SetSource(thisRef, result);
+
+        _currentlyEditingGuid = null;
 
         // Append REF to the bottom
         compiled += $"\n{GlobalCode.SLANG_REF}{thisRef}";
@@ -77,6 +80,7 @@ public static class SlangPatches
             return;
         }
 
+        _currentlyEditingGuid = sourceRef;
         var slangSource = GlobalCode.GetSource(sourceRef);
 
         if (string.IsNullOrEmpty(slangSource))
@@ -223,6 +227,7 @@ public static class SlangPatches
 
         _currentlyEditingMotherboard = null;
         _motherboardCachedCode = null;
+        _currentlyEditingGuid = null;
     }
 
     [HarmonyPatch(typeof(Stationpedia), nameof(Stationpedia.Regenerate))]
