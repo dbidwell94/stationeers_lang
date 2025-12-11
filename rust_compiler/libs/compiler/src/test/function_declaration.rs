@@ -21,11 +21,54 @@ fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
             pop r13 #arg4
             pop r14 #arg3
             push ra
+            L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 3
             j ra
         "}
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_early_return() -> anyhow::Result<()> {
+    let compiled = compile!(debug r#"
+        // This is a test function declaration with no body
+        fn doSomething() {
+            if (1 == 1) {
+                return;
+            }
+            let i = 1 + 2;
+            return;
+        };
+        doSomething();
+    "#);
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            doSomething:
+            push ra
+            seq r1 1 1
+            beq r1 0 L2
+            j L1
+            L2:
+            move r8 3 #i
+            j L1
+            L1:
+            sub r0 sp 1
+            get ra db r0
+            sub sp sp 1
+            j ra
+            main:
+            jal doSomething
+            move r1 r15 #__binary_temp_2
+            "
+        }
     );
 
     Ok(())
@@ -47,6 +90,7 @@ fn test_function_declaration_with_register_params() -> anyhow::Result<()> {
             pop r8 #arg2
             pop r9 #arg1
             push ra
+            L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
