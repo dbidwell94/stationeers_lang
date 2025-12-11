@@ -23,6 +23,12 @@ public struct Diagnostic
     public Range Range;
 }
 
+public struct SourceMapEntry
+{
+    public Range SlangSource;
+    public uint Ic10Line;
+}
+
 public static class Marshal
 {
     private static IntPtr _libraryHandle = IntPtr.Zero;
@@ -78,11 +84,16 @@ public static class Marshal
         }
     }
 
-    public static unsafe bool CompileFromString(string inputString, out string compiledString)
+    public static unsafe bool CompileFromString(
+        string inputString,
+        out string compiledString,
+        out List<SourceMapEntry> sourceMapEntries
+    )
     {
         if (String.IsNullOrEmpty(inputString) || !EnsureLibLoaded())
         {
             compiledString = String.Empty;
+            sourceMapEntries = new();
             return false;
         }
 
@@ -95,19 +106,16 @@ public static class Marshal
             };
 
             var result = Ffi.compile_from_string(input);
+
             try
             {
-                if ((ulong)result.len < 1)
-                {
-                    compiledString = String.Empty;
-                    return false;
-                }
-                compiledString = result.AsString();
+                sourceMapEntries = result.source_map.ToList();
+                compiledString = result.output_code.AsString();
                 return true;
             }
             finally
             {
-                result.Drop();
+                Ffi.free_ffi_compilation_result(result);
             }
         }
     }

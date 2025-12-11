@@ -95,6 +95,11 @@ impl From<lsp_types::Diagnostic> for FfiDiagnostic {
 }
 
 #[ffi_export]
+pub fn free_ffi_compilation_result(input: FfiCompilationResult) {
+    drop(input)
+}
+
+#[ffi_export]
 pub fn free_ffi_token_vec(v: safer_ffi::Vec<FfiToken>) {
     drop(v)
 }

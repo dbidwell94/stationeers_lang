@@ -26,7 +26,7 @@ public static class SlangPatches
         // guard to ensure we have valid IC10 before continuing
         if (
             !SlangPlugin.IsSlangSource(ref result)
-            || !Marshal.CompileFromString(result, out string compiled)
+            || !Marshal.CompileFromString(result, out var compiled, out var sourceMap)
             || string.IsNullOrEmpty(compiled)
         )
         {
@@ -37,6 +37,7 @@ public static class SlangPatches
 
         // Ensure we cache this compiled code for later retreival.
         GlobalCode.SetSource(thisRef, result);
+        GlobalCode.SetSourceMap(thisRef, sourceMap);
 
         _currentlyEditingGuid = null;
 

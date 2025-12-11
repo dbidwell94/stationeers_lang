@@ -15,9 +15,27 @@ public static class GlobalCode
     // so that save file data is smaller
     private static Dictionary<Guid, string> codeDict = new();
 
+    private static Dictionary<Guid, Dictionary<uint, List<Range>>> sourceMaps = new();
+
     public static void ClearCache()
     {
         codeDict.Clear();
+    }
+
+    public static void SetSourceMap(Guid reference, List<SourceMapEntry> sourceMapEntries)
+    {
+        var builtDictionary = new Dictionary<uint, List<Range>>();
+
+        foreach (var entry in sourceMapEntries)
+        {
+            if (!builtDictionary.ContainsKey(entry.Ic10Line))
+            {
+                builtDictionary[entry.Ic10Line] = new();
+            }
+            builtDictionary[entry.Ic10Line].Add(entry.SlangSource);
+        }
+
+        sourceMaps[reference] = builtDictionary;
     }
 
     public static string GetSource(Guid reference)

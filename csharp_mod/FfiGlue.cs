@@ -71,18 +71,6 @@ public unsafe struct Vec_uint8_t {
     public UIntPtr cap;
 }
 
-public unsafe partial class Ffi {
-    /// <summary>
-    /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
-    /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
-    /// This should result in the ability to compile many times without triggering frame drops
-    /// from the GC from a <c>GetBytes()</c> call on a string in C#.
-    /// </summary>
-    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
-    Vec_uint8_t compile_from_string (
-        slice_ref_uint16_t input);
-}
-
 [StructLayout(LayoutKind.Sequential, Size = 16)]
 public unsafe struct FfiRange_t {
     public UInt32 start_col;
@@ -92,6 +80,44 @@ public unsafe struct FfiRange_t {
     public UInt32 start_line;
 
     public UInt32 end_line;
+}
+
+[StructLayout(LayoutKind.Sequential, Size = 20)]
+public unsafe struct FfiSourceMapEntry_t {
+    public UInt32 line_number;
+
+    public FfiRange_t span;
+}
+
+/// <summary>
+/// Same as [<c>Vec<T></c>][<c>rust::Vec</c>], but with guaranteed <c>#[repr(C)]</c> layout
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Size = 24)]
+public unsafe struct Vec_FfiSourceMapEntry_t {
+    public FfiSourceMapEntry_t * ptr;
+
+    public UIntPtr len;
+
+    public UIntPtr cap;
+}
+
+[StructLayout(LayoutKind.Sequential, Size = 48)]
+public unsafe struct FfiCompilationResult_t {
+    public Vec_uint8_t output_code;
+
+    public Vec_FfiSourceMapEntry_t source_map;
+}
+
+public unsafe partial class Ffi {
+    /// <summary>
+    /// C# handles strings as UTF16. We do NOT want to allocate that memory in C# because
+    /// we want to avoid GC. So we pass it to Rust to handle all the memory allocations.
+    /// This should result in the ability to compile many times without triggering frame drops
+    /// from the GC from a <c>GetBytes()</c> call on a string in C#.
+    /// </summary>
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    FfiCompilationResult_t compile_from_string (
+        slice_ref_uint16_t input);
 }
 
 [StructLayout(LayoutKind.Sequential, Size = 48)]
@@ -144,6 +170,12 @@ public unsafe partial class Ffi {
     [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
     void free_docs_vec (
         Vec_FfiDocumentedItem_t v);
+}
+
+public unsafe partial class Ffi {
+    [DllImport(RustLib, ExactSpelling = true)] public static unsafe extern
+    void free_ffi_compilation_result (
+        FfiCompilationResult_t input);
 }
 
 public unsafe partial class Ffi {
