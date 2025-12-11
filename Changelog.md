@@ -4,6 +4,7 @@
 
 - Fixed stack underflow with function invocations
   - They are still "heavy", but they should work as expected now
+- Fixed issue where syscall functions were not allowed as infix operators
 
 [0.2.2]
 
