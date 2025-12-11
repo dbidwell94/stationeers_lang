@@ -17,6 +17,7 @@ fn no_arguments() -> anyhow::Result<()> {
         j main
         doSomething:
         push ra
+        L1:
         sub r0 sp 1
         get ra db r0
         sub sp sp 1
@@ -34,14 +35,17 @@ fn no_arguments() -> anyhow::Result<()> {
 
 #[test]
 fn let_var_args() -> anyhow::Result<()> {
-    // !IMPORTANT this needs to be stabilized as it currently incorrectly calculates sp offset at
-    // both ends of the cleanup lifecycle
     let compiled = compile! {
         debug
         "
-        fn doSomething(arg1) {};
-        let arg1 = 123;
-        let i = doSomething(arg1);
+        fn mul2(arg1) {
+            return arg1 * 2;
+        };
+        loop {
+            let arg1 = 123;
+            let i = mul2(arg1);
+            i = i ** 2;
+        }
         "
     };
 
@@ -50,23 +54,31 @@ fn let_var_args() -> anyhow::Result<()> {
         indoc! {
             "
             j main
-            doSomething:
+            mul2:
             pop r8 #arg1
             push ra
+            mul r1 r8 2
+            move r15 r1
+            j L1
+            L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
             j ra
             main:
+            L2:
             move r8 123 #arg1
             push r8
             push r8
-            jal doSomething
+            jal mul2
             sub r0 sp 1
             get r8 db r0
             sub sp sp 1
             move r9 r15 #i
-            sub sp sp 1
+            pow r1 r9 2
+            move r9 r1 #i
+            j L2
+            L3:
             "
         }
     );
@@ -97,7 +109,9 @@ fn inline_literal_args() -> anyhow::Result<()> {
     let compiled = compile! {
         debug
         "
-        fn doSomething(arg1, arg2) {};
+        fn doSomething(arg1, arg2) {
+            return 5;
+        };
         let thisVariableShouldStayInPlace = 123;
         let returnedValue = doSomething(12, 34);
         "
@@ -112,6 +126,9 @@ fn inline_literal_args() -> anyhow::Result<()> {
             pop r8 #arg2
             pop r9 #arg1
             push ra
+            move r15 5 #returnValue
+            j L1
+            L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
@@ -126,7 +143,6 @@ fn inline_literal_args() -> anyhow::Result<()> {
             get r8 db r0
             sub sp sp 1
             move r9 r15 #returnedValue
-            sub sp sp 1
             "
         }
     );
@@ -154,6 +170,7 @@ fn mixed_args() -> anyhow::Result<()> {
             pop r8 #arg2
             pop r9 #arg1
             push ra
+            L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
@@ -168,7 +185,6 @@ fn mixed_args() -> anyhow::Result<()> {
             get r8 db r0
             sub sp sp 1
             move r9 r15 #returnValue
-            sub sp sp 1
             "
         }
     );
@@ -198,6 +214,8 @@ fn with_return_statement() -> anyhow::Result<()> {
             pop r8 #arg1
             push ra
             move r15 456 #returnValue
+            j L1
+            L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
@@ -233,6 +251,7 @@ fn with_negative_return_literal() -> anyhow::Result<()> {
             doSomething:
             push ra
             move r15 -1 #returnValue
+            L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1

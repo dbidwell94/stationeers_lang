@@ -1,5 +1,10 @@
 # Changelog
 
+[0.2.3]
+
+- Fixed stack underflow with function invocations
+  - They are still "heavy", but they should work as expected now
+
 [0.2.2]
 
 - Fixed some formatting issues when converting Markdown to Text Mesh Pro for

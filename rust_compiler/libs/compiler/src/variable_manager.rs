@@ -94,19 +94,21 @@ impl<'a, 'b> VariableScope<'a, 'b> {
     pub const RETURN_REGISTER: u8 = 15;
     pub const TEMP_STACK_REGISTER: u8 = 0;
 
-    pub fn registers(&self) -> impl Iterator<Item = &u8> {
-        self.var_lookup_table
-            .values()
-            .filter(|val| {
-                matches!(
-                    val,
-                    VariableLocation::Temporary(_) | VariableLocation::Persistant(_)
-                )
-            })
-            .map(|loc| match loc {
-                VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => reg,
-                _ => unreachable!(),
-            })
+    pub fn registers(&self) -> Vec<u8> {
+        let mut used = Vec::new();
+
+        for r in TEMP {
+            if !self.temporary_vars.contains(&r) {
+                used.push(r);
+            }
+        }
+
+        for r in PERSIST {
+            if !self.persistant_vars.contains(&r) {
+                used.push(r);
+            }
+        }
+        used
     }
 
     pub fn scoped(parent: &'b VariableScope<'a, 'b>) -> Self {

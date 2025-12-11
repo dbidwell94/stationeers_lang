@@ -165,6 +165,7 @@ pub struct Compiler<'a, 'w, W: std::io::Write> {
     temp_counter: usize,
     label_counter: usize,
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>)>, // Stores (start_label, end_label)
+    current_return_label: Option<Cow<'a, str>>,
     pub errors: Vec<Error<'a>>,
 }
 
@@ -186,6 +187,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             temp_counter: 0,
             label_counter: 0,
             loop_stack: Vec::new(),
+            current_return_label: None,
             errors: Vec::new(),
         }
     }
@@ -900,7 +902,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
     fn expression_function_invocation(
         &mut self,
         invoke_expr: Spanned<InvocationExpression<'a>>,
-        stack: &mut VariableScope<'a, '_>,
+        parent_scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let InvocationExpression { name, arguments } = invoke_expr.node;
 
@@ -926,9 +928,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             // Best to skip generation of this call to prevent bad IC10
             return Ok(());
         }
+        let mut stack = VariableScope::scoped(parent_scope);
 
         // backup all used registers to the stack
-        let active_registers = stack.registers().cloned().collect::<Vec<_>>();
+        let active_registers = stack.registers();
         for register in &active_registers {
             stack.add_variable(
                 Cow::from(format!("temp_{register}")),
@@ -991,7 +994,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 }
                 Expression::Binary(bin_expr) => {
                     // Compile the binary expression to a temp register
-                    let result = self.expression_binary(bin_expr, stack)?;
+                    let result = self.expression_binary(bin_expr, &mut stack)?;
                     let reg_str = self.resolve_register(&result.location)?;
                     self.write_output(format!("push {reg_str}"))?;
                     if let Some(name) = result.temp_name {
@@ -1000,7 +1003,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 }
                 Expression::Logical(log_expr) => {
                     // Compile the logical expression to a temp register
-                    let result = self.expression_logical(log_expr, stack)?;
+                    let result = self.expression_logical(log_expr, &mut stack)?;
                     let reg_str = self.resolve_register(&result.location)?;
                     self.write_output(format!("push {reg_str}"))?;
                     if let Some(name) = result.temp_name {
@@ -1019,7 +1022,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                                 end_line: 0,
                             }, // Dummy span
                         },
-                        stack,
+                        &mut stack,
                     )?;
 
                     if let Some(result) = result_opt {
@@ -1592,7 +1595,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
             match expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(*ret_expr, &mut scope)?;
+                    self.expression_return(ret_expr, &mut scope)?;
                 }
                 _ => {
                     // Swallow errors within expressions so block can continue
@@ -1622,133 +1625,149 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
     /// Takes the result of the expression and stores it in VariableScope::RETURN_REGISTER
     fn expression_return(
         &mut self,
-        expr: Spanned<Expression<'a>>,
+        expr: Option<Box<Spanned<Expression<'a>>>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<VariableLocation<'a>, Error<'a>> {
-        if let Expression::Negation(neg_expr) = &expr.node
-            && let Expression::Literal(spanned_lit) = &neg_expr.node
-            && let Literal::Number(neg_num) = &spanned_lit.node
-        {
-            let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
-            self.emit_variable_assignment(
-                Cow::from("returnValue"),
-                &loc,
-                Cow::from(format!("-{neg_num}")),
-            )?;
-            return Ok(loc);
-        };
-
-        match expr.node {
-            Expression::Variable(var_name) => {
-                match scope.get_location_of(&var_name.node, Some(var_name.span)) {
-                    Ok(loc) => match loc {
-                        VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
-                            self.write_output(format!(
-                                "move r{} r{reg} {}",
-                                VariableScope::RETURN_REGISTER,
-                                debug!(self, "#returnValue")
-                            ))?;
-                        }
-                        VariableLocation::Constant(lit) => {
-                            let str = extract_literal(lit, false)?;
-                            self.write_output(format!(
-                                "move r{} {str} {}",
-                                VariableScope::RETURN_REGISTER,
-                                debug!(self, "#returnValue")
-                            ))?
-                        }
-                        VariableLocation::Stack(offset) => {
-                            self.write_output(format!(
-                                "sub r{} sp {offset}",
-                                VariableScope::TEMP_STACK_REGISTER
-                            ))?;
-                            self.write_output(format!(
-                                "get r{} db r{}",
-                                VariableScope::RETURN_REGISTER,
-                                VariableScope::TEMP_STACK_REGISTER
-                            ))?;
-                        }
-                        VariableLocation::Device(_) => {
-                            return Err(Error::Unknown(
-                                "You can not return a device from a function.".into(),
-                                Some(var_name.span),
-                            ));
-                        }
-                    },
-                    Err(_) => {
-                        self.errors.push(Error::UnknownIdentifier(
-                            var_name.node.clone(),
-                            var_name.span,
-                        ));
-                        // Proceed with dummy
-                    }
-                }
-            }
-            Expression::Literal(spanned_lit) => match spanned_lit.node {
-                Literal::Number(num) => {
-                    self.emit_variable_assignment(
-                        Cow::from("returnValue"),
-                        &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                        Cow::from(num.to_string()),
-                    )?;
-                }
-                Literal::Boolean(b) => {
-                    let val = if b { "1" } else { "0" };
-                    self.emit_variable_assignment(
-                        Cow::from("returnValue"),
-                        &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                        Cow::from(val.to_string()),
-                    )?;
-                }
-                _ => {}
-            },
-            Expression::Binary(bin_expr) => {
-                let result = self.expression_binary(bin_expr, scope)?;
-                let result_reg = self.resolve_register(&result.location)?;
-                self.write_output(format!(
-                    "move r{} {}",
-                    VariableScope::RETURN_REGISTER,
-                    result_reg
-                ))?;
-                if let Some(name) = result.temp_name {
-                    scope.free_temp(name, None)?;
-                }
-            }
-            Expression::Logical(log_expr) => {
-                let result = self.expression_logical(log_expr, scope)?;
-                let result_reg = self.resolve_register(&result.location)?;
-                self.write_output(format!(
-                    "move r{} {}",
-                    VariableScope::RETURN_REGISTER,
-                    result_reg
-                ))?;
-                if let Some(name) = result.temp_name {
-                    scope.free_temp(name, None)?;
-                }
-            }
-            Expression::MemberAccess(access) => {
-                // Return result of member access
-                let res_opt = self.expression(
-                    Spanned {
-                        node: Expression::MemberAccess(access),
-                        span: expr.span,
-                    },
-                    scope,
+        if let Some(expr) = expr {
+            if let Expression::Negation(neg_expr) = &expr.node
+                && let Expression::Literal(spanned_lit) = &neg_expr.node
+                && let Literal::Number(neg_num) = &spanned_lit.node
+            {
+                let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
+                self.emit_variable_assignment(
+                    Cow::from("returnValue"),
+                    &loc,
+                    Cow::from(format!("-{neg_num}")),
                 )?;
-                if let Some(res) = res_opt {
-                    let reg = self.resolve_register(&res.location)?;
-                    self.write_output(format!("move r{} {}", VariableScope::RETURN_REGISTER, reg))?;
-                    if let Some(temp) = res.temp_name {
-                        scope.free_temp(temp, None)?;
+                return Ok(loc);
+            };
+
+            match expr.node {
+                Expression::Variable(var_name) => {
+                    match scope.get_location_of(&var_name.node, Some(var_name.span)) {
+                        Ok(loc) => match loc {
+                            VariableLocation::Temporary(reg)
+                            | VariableLocation::Persistant(reg) => {
+                                self.write_output(format!(
+                                    "move r{} r{reg} {}",
+                                    VariableScope::RETURN_REGISTER,
+                                    debug!(self, "#returnValue")
+                                ))?;
+                            }
+                            VariableLocation::Constant(lit) => {
+                                let str = extract_literal(lit, false)?;
+                                self.write_output(format!(
+                                    "move r{} {str} {}",
+                                    VariableScope::RETURN_REGISTER,
+                                    debug!(self, "#returnValue")
+                                ))?
+                            }
+                            VariableLocation::Stack(offset) => {
+                                self.write_output(format!(
+                                    "sub r{} sp {offset}",
+                                    VariableScope::TEMP_STACK_REGISTER
+                                ))?;
+                                self.write_output(format!(
+                                    "get r{} db r{}",
+                                    VariableScope::RETURN_REGISTER,
+                                    VariableScope::TEMP_STACK_REGISTER
+                                ))?;
+                            }
+                            VariableLocation::Device(_) => {
+                                return Err(Error::Unknown(
+                                    "You can not return a device from a function.".into(),
+                                    Some(var_name.span),
+                                ));
+                            }
+                        },
+                        Err(_) => {
+                            self.errors.push(Error::UnknownIdentifier(
+                                var_name.node.clone(),
+                                var_name.span,
+                            ));
+                            // Proceed with dummy
+                        }
                     }
                 }
+                Expression::Literal(spanned_lit) => match spanned_lit.node {
+                    Literal::Number(num) => {
+                        self.emit_variable_assignment(
+                            Cow::from("returnValue"),
+                            &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                            Cow::from(num.to_string()),
+                        )?;
+                    }
+                    Literal::Boolean(b) => {
+                        let val = if b { "1" } else { "0" };
+                        self.emit_variable_assignment(
+                            Cow::from("returnValue"),
+                            &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                            Cow::from(val.to_string()),
+                        )?;
+                    }
+                    _ => {}
+                },
+                Expression::Binary(bin_expr) => {
+                    let result = self.expression_binary(bin_expr, scope)?;
+                    let result_reg = self.resolve_register(&result.location)?;
+                    self.write_output(format!(
+                        "move r{} {}",
+                        VariableScope::RETURN_REGISTER,
+                        result_reg
+                    ))?;
+                    if let Some(name) = result.temp_name {
+                        scope.free_temp(name, None)?;
+                    }
+                }
+                Expression::Logical(log_expr) => {
+                    let result = self.expression_logical(log_expr, scope)?;
+                    let result_reg = self.resolve_register(&result.location)?;
+                    self.write_output(format!(
+                        "move r{} {}",
+                        VariableScope::RETURN_REGISTER,
+                        result_reg
+                    ))?;
+                    if let Some(name) = result.temp_name {
+                        scope.free_temp(name, None)?;
+                    }
+                }
+                Expression::MemberAccess(access) => {
+                    // Return result of member access
+                    let res_opt = self.expression(
+                        Spanned {
+                            node: Expression::MemberAccess(access),
+                            span: expr.span,
+                        },
+                        scope,
+                    )?;
+                    if let Some(res) = res_opt {
+                        let reg = self.resolve_register(&res.location)?;
+                        self.write_output(format!(
+                            "move r{} {}",
+                            VariableScope::RETURN_REGISTER,
+                            reg
+                        ))?;
+                        if let Some(temp) = res.temp_name {
+                            scope.free_temp(temp, None)?;
+                        }
+                    }
+                }
+                _ => {
+                    return Err(Error::Unknown(
+                        format!("Unsupported `return` statement: {:?}", expr),
+                        None,
+                    ));
+                }
             }
-            _ => {
-                return Err(Error::Unknown(
-                    format!("Unsupported `return` statement: {:?}", expr),
-                    None,
-                ));
-            }
+        }
+
+        if let Some(label) = &self.current_return_label {
+            self.write_output(format!("j {}", label))?;
+        } else {
+            return Err(Error::Unknown(
+                "Return statement used outside of function context.".into(),
+                None,
+            ));
         }
 
         Ok(VariableLocation::Persistant(VariableScope::RETURN_REGISTER))
@@ -2344,8 +2363,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         }
 
         self.write_output("push ra")?;
+
+        let return_label = self.next_label_name();
+
+        let prev_return_label = self.current_return_label.replace(return_label.clone());
+
         block_scope.add_variable(
-            Cow::from(format!("{}_ra", name.node)),
+            return_label.clone(),
             LocationRequest::Stack,
             Some(name.span),
         )?;
@@ -2353,7 +2377,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         for expr in body.0 {
             match expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(*ret_expr, &mut block_scope)?;
+                    self.expression_return(ret_expr, &mut block_scope)?;
                 }
                 _ => {
                     // Swallow internal errors
@@ -2372,11 +2396,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         }
 
         // Get the saved return address and save it back into `ra`
-        let ra_res =
-            block_scope.get_location_of(&Cow::from(format!("{}_ra", name.node)), Some(name.span));
+        let ra_res = block_scope.get_location_of(&return_label, Some(name.span));
 
         let ra_stack_offset = match ra_res {
-            Ok(VariableLocation::Stack(offset)) => offset,
+            Ok(VariableLocation::Stack(offset)) => {
+                block_scope.free_temp(return_label.clone(), None)?;
+                offset
+            }
             _ => {
                 // If we can't find RA, we can't return properly.
                 // This usually implies a compiler bug or scope tracking error.
@@ -2386,6 +2412,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 ));
             }
         };
+
+        self.current_return_label = prev_return_label;
+
+        self.write_output(format!("{}:", return_label))?;
 
         self.write_output(format!(
             "sub r{0} sp {ra_stack_offset}",

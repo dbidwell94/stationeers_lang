@@ -381,7 +381,7 @@ pub enum Expression<'a> {
     MethodCall(Spanned<MethodCallExpression<'a>>),
     Negation(Box<Spanned<Expression<'a>>>),
     Priority(Box<Spanned<Expression<'a>>>),
-    Return(Box<Spanned<Expression<'a>>>),
+    Return(Option<Box<Spanned<Expression<'a>>>>),
     Syscall(Spanned<SysCall<'a>>),
     Ternary(Spanned<TernaryExpression<'a>>),
     Variable(Spanned<Cow<'a, str>>),
@@ -409,7 +409,15 @@ impl<'a> std::fmt::Display for Expression<'a> {
             Expression::MethodCall(e) => write!(f, "{}", e),
             Expression::Negation(e) => write!(f, "(-{})", e),
             Expression::Priority(e) => write!(f, "({})", e),
-            Expression::Return(e) => write!(f, "(return {})", e),
+            Expression::Return(e) => write!(
+                f,
+                "(return {})",
+                if let Some(e) = e {
+                    e.to_string()
+                } else {
+                    "".to_string()
+                }
+            ),
             Expression::Syscall(e) => write!(f, "{}", e),
             Expression::Ternary(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),

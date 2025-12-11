@@ -1225,18 +1225,34 @@ impl<'a> Parser<'a> {
             // Need to capture return span
             let ret_start_span = Self::token_to_span(&current_token);
             self.assign_next()?;
-            let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+            let expr = if token_matches!(
+                self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?,
+                TokenType::Symbol(Symbol::Semicolon)
+            ) {
+                // rewind 1 token so we can check for the semicolon at the bottom of this function.
+                self.tokenizer.seek(SeekFrom::Current(-1))?;
+                None
+            } else {
+                Some(self.expression()?.ok_or(Error::UnexpectedEOF)?)
+            };
 
             let ret_span = Span {
                 start_line: ret_start_span.start_line,
                 start_col: ret_start_span.start_col,
-                end_line: expression.span.end_line,
-                end_col: expression.span.end_col,
+                end_line: expr
+                    .as_ref()
+                    .map(|e| e.span.end_line)
+                    .unwrap_or(ret_start_span.end_line),
+                end_col: expr
+                    .as_ref()
+                    .map(|e| e.span.end_col)
+                    .unwrap_or(ret_start_span.end_col),
             };
 
             let return_expr = Spanned {
                 span: ret_span,
-                node: Expression::Return(boxed!(expression)),
+                node: Expression::Return(expr.map(Box::new)),
             };
             expressions.push(return_expr);
 
