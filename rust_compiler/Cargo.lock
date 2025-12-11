@@ -571,6 +571,7 @@ dependencies = [
  "helpers",
  "lsp-types",
  "pretty_assertions",
+ "safer-ffi",
  "thiserror",
  "tokenizer",
 ]

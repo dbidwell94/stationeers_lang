@@ -146,11 +146,16 @@ pub struct CompilerConfig {
 }
 
 #[derive(Debug)]
-struct CompilationResult<'a> {
+struct CompileLocation<'a> {
     location: VariableLocation<'a>,
     /// If Some, this is the name of the temporary variable that holds the result.
     /// It must be freed by the caller when done.
     temp_name: Option<Cow<'a, str>>,
+}
+
+pub struct CompilationResult<'a> {
+    pub errors: Vec<Error<'a>>,
+    pub source_map: HashMap<usize, Vec<Span>>,
 }
 
 pub struct Compiler<'a, 'w, W: std::io::Write> {
@@ -167,7 +172,7 @@ pub struct Compiler<'a, 'w, W: std::io::Write> {
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>)>, // Stores (start_label, end_label)
     current_return_label: Option<Cow<'a, str>>,
     /// stores (IC10 `line_num`, `Vec<Span>`)
-    pub source_map: HashMap<usize, Span>,
+    pub source_map: HashMap<usize, Vec<Span>>,
     /// Accumulative errors from the compilation process
     pub errors: Vec<Error<'a>>,
 }
@@ -196,7 +201,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         }
     }
 
-    pub fn compile(mut self) -> Vec<Error<'a>> {
+    pub fn compile(mut self) -> CompilationResult<'a> {
         let expr = self.parser.parse_all();
 
         // Copy errors from parser
@@ -207,11 +212,19 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         // We treat parse_all result as potentially partial
         let expr = match expr {
             Ok(Some(expr)) => expr,
-            Ok(None) => return self.errors,
+            Ok(None) => {
+                return CompilationResult {
+                    source_map: self.source_map,
+                    errors: self.errors,
+                };
+            }
             Err(e) => {
                 // Should be covered by parser.errors, but just in case
                 self.errors.push(Error::Parse(e));
-                return self.errors;
+                return CompilationResult {
+                    errors: self.errors,
+                    source_map: self.source_map,
+                };
             }
         };
 
@@ -231,7 +244,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
         if let Err(e) = self.write_output("j main", Some(span)) {
             self.errors.push(e);
-            return self.errors;
+            return CompilationResult {
+                errors: self.errors,
+                source_map: self.source_map,
+            };
         }
 
         let mut scope = VariableScope::default();
@@ -241,7 +257,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             self.errors.push(e);
         }
 
-        self.errors
+        CompilationResult {
+            errors: self.errors,
+            source_map: self.source_map,
+        }
     }
 
     fn write_output(
@@ -253,7 +272,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         self.output.write_all(b"\n")?;
 
         if let Some(span) = span {
-            self.source_map.insert(self.current_line, span);
+            self.source_map
+                .entry(self.current_line)
+                .or_default()
+                .push(span);
         }
 
         self.current_line += 1;
@@ -275,7 +297,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         &mut self,
         expr: Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<Option<CompilationResult<'a>>, Error<'a>> {
+    ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
         match expr.node {
             Expression::Function(expr_func) => {
                 self.expression_function(expr_func, scope)?;
@@ -342,7 +364,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     &temp_loc,
                     Cow::from(format!("r{}", VariableScope::RETURN_REGISTER)),
                 )?;
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: temp_loc,
                     temp_name: Some(temp_name),
                 }))
@@ -364,7 +386,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                         &loc,
                         Cow::from(num.to_string()),
                     )?;
-                    Ok(Some(CompilationResult {
+                    Ok(Some(CompileLocation {
                         location: loc,
                         temp_name: Some(temp_name),
                     }))
@@ -374,7 +396,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     let temp_name = self.next_temp_name();
                     let loc = scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
                     self.emit_variable_assignment(temp_name.clone(), &loc, Cow::from(val))?;
-                    Ok(Some(CompilationResult {
+                    Ok(Some(CompileLocation {
                         location: loc,
                         temp_name: Some(temp_name),
                     }))
@@ -383,21 +405,21 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             },
             Expression::Variable(name) => {
                 match scope.get_location_of(&name.node, Some(name.span)) {
-                    Ok(loc) => Ok(Some(CompilationResult {
+                    Ok(loc) => Ok(Some(CompileLocation {
                         location: loc,
                         temp_name: None, // User variable, do not free
                     })),
                     Err(_) => {
                         // fallback, check devices
                         if let Some(device) = self.devices.get(&name.node) {
-                            Ok(Some(CompilationResult {
+                            Ok(Some(CompileLocation {
                                 location: VariableLocation::Device(device.clone()),
                                 temp_name: None,
                             }))
                         } else {
                             self.errors
                                 .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-                            Ok(Some(CompilationResult {
+                            Ok(Some(CompileLocation {
                                 location: VariableLocation::Temporary(0),
                                 temp_name: None,
                             }))
@@ -428,7 +450,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope.free_temp(c, None)?;
                 }
 
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: loc,
                     temp_name: Some(result_name),
                 }))
@@ -459,7 +481,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope.free_temp(name, None)?;
                 }
 
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: result_loc,
                     temp_name: Some(result_name),
                 }))
@@ -537,7 +559,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         var_name: Spanned<Cow<'a, str>>,
         expr: Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<Option<CompilationResult<'a>>, Error<'a>> {
+    ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
         let name_str = var_name.node;
         let name_span = var_name.span;
 
@@ -553,7 +575,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 &loc,
                 Cow::from(format!("-{neg_num}")),
             )?;
-            return Ok(Some(CompilationResult {
+            return Ok(Some(CompileLocation {
                 location: loc,
                 temp_name: None,
             }));
@@ -643,7 +665,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     Some(name_span),
                 )?;
 
-                if let CompilationResult {
+                if let CompileLocation {
                     location: VariableLocation::Constant(Literal::Number(num)),
                     ..
                 } = result
@@ -787,7 +809,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
         };
 
-        Ok(Some(CompilationResult {
+        Ok(Some(CompileLocation {
             location: loc,
             temp_name,
         }))
@@ -797,7 +819,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         &mut self,
         expr: ConstDeclarationExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<CompilationResult<'a>, Error<'a>> {
+    ) -> Result<CompileLocation<'a>, Error<'a>> {
         let ConstDeclarationExpression {
             name: const_name,
             value: const_value,
@@ -822,7 +844,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             LiteralOr::Literal(Spanned { node, .. }) => node,
         };
 
-        Ok(CompilationResult {
+        Ok(CompileLocation {
             location: scope.define_const(const_name.node, value, Some(const_name.span))?,
             temp_name: None,
         })
@@ -1280,7 +1302,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         &mut self,
         expr: TernaryExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<CompilationResult<'a>, Error<'a>> {
+    ) -> Result<CompileLocation<'a>, Error<'a>> {
         let TernaryExpression {
             condition,
             true_value,
@@ -1316,7 +1338,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         if let Some(clean) = false_clean {
             scope.free_temp(clean, None)?;
         }
-        Ok(CompilationResult {
+        Ok(CompileLocation {
             location: result_loc,
             temp_name: Some(result_name),
         })
@@ -1452,7 +1474,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         &mut self,
         expr: Spanned<BinaryExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<CompilationResult<'a>, Error<'a>> {
+    ) -> Result<CompileLocation<'a>, Error<'a>> {
         fn fold_binary_expression<'a>(expr: &BinaryExpression<'a>) -> Option<Number> {
             let (lhs, rhs) = match &expr {
                 BinaryExpression::Add(l, r)
@@ -1499,7 +1521,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         }
 
         if let Some(const_lit) = fold_binary_expression(&expr.node) {
-            return Ok(CompilationResult {
+            return Ok(CompileLocation {
                 location: VariableLocation::Constant(Literal::Number(const_lit)),
                 temp_name: None,
             });
@@ -1545,7 +1567,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             scope.free_temp(name, None)?;
         }
 
-        Ok(CompilationResult {
+        Ok(CompileLocation {
             location: result_loc,
             temp_name: Some(result_name),
         })
@@ -1555,7 +1577,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         &mut self,
         expr: Spanned<LogicalExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<CompilationResult<'a>, Error<'a>> {
+    ) -> Result<CompileLocation<'a>, Error<'a>> {
         match expr.node {
             LogicalExpression::Not(inner) => {
                 let span = inner.span;
@@ -1573,7 +1595,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope.free_temp(name, None)?;
                 }
 
-                Ok(CompilationResult {
+                Ok(CompileLocation {
                     location: result_loc,
                     temp_name: Some(result_name),
                 })
@@ -1623,7 +1645,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope.free_temp(name, None)?;
                 }
 
-                Ok(CompilationResult {
+                Ok(CompileLocation {
                     location: result_loc,
                     temp_name: Some(result_name),
                 })
@@ -1869,7 +1891,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         expr: System<'a>,
         span: Span,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<Option<CompilationResult<'a>>, Error<'a>> {
+    ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
         macro_rules! cleanup {
             ($($to_clean:expr),*) => {
                 $(
@@ -1908,7 +1930,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     crc_hash_signed(&str_lit),
                 )));
 
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: loc,
                     temp_name: None,
                 }))
@@ -2061,7 +2083,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     Some(span),
                 )?;
 
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Temporary(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2091,7 +2113,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
                 cleanup!(device_hash_cleanup, logic_type_cleanup, batch_mode_cleanup);
 
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2129,7 +2151,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     batch_mode_cleanup
                 );
 
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2159,7 +2181,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
                 cleanup!(hash_cleanup, slot_cleanup, logic_cleanup);
 
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2194,7 +2216,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         expr: Math<'a>,
         span: Span,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<Option<CompilationResult<'a>>, Error<'a>> {
+    ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
         macro_rules! cleanup {
             ($($to_clean:expr),*) => {
                 $(
@@ -2213,7 +2235,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2226,7 +2248,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2239,7 +2261,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2258,7 +2280,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     Some(span),
                 )?;
                 cleanup!(var1_cleanup, var2_cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2271,7 +2293,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2284,7 +2306,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2297,7 +2319,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2310,7 +2332,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2323,7 +2345,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(cleanup);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2337,7 +2359,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(clean1, clean2);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2351,7 +2373,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(clean1, clean2);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2362,7 +2384,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     Some(span),
                 )?;
 
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2375,7 +2397,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(clean);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2388,7 +2410,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(clean);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2401,7 +2423,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(clean);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
@@ -2414,7 +2436,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 cleanup!(clean);
-                Ok(Some(CompilationResult {
+                Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
