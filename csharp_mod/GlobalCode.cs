@@ -15,6 +15,9 @@ public static class GlobalCode
     // so that save file data is smaller
     private static Dictionary<Guid, string> codeDict = new();
 
+    // This Dictionary stores the source maps for the given SLANG_REF, where
+    // the key is the IC10 line, and the value is a List of Slang ranges where that
+    // line would have come from
     private static Dictionary<Guid, Dictionary<uint, List<Range>>> sourceMaps = new();
 
     public static void ClearCache()
@@ -36,6 +39,30 @@ public static class GlobalCode
         }
 
         sourceMaps[reference] = builtDictionary;
+    }
+
+    public static bool GetSlangErrorLineFromICError(
+        Guid reference,
+        uint icErrorLine,
+        out uint slangSrc
+    )
+    {
+        slangSrc = icErrorLine;
+
+        if (!sourceMaps.ContainsKey(reference))
+        {
+            return false;
+        }
+
+        var foundRange = sourceMaps[reference][icErrorLine];
+
+        if (foundRange is null)
+        {
+            return false;
+        }
+
+        slangSrc = foundRange[0].StartLine;
+        return true;
     }
 
     public static string GetSource(Guid reference)

@@ -142,6 +142,39 @@ public static class SlangPatches
     }
 
     [HarmonyPatch(
+        typeof(ProgrammableChip),
+        nameof(ProgrammableChip.ErrorLineNumberString),
+        MethodType.Getter
+    )]
+    [HarmonyPostfix]
+    public static void pgc_ErrorLineNumberString(ProgrammableChip __instance, ref string __result)
+    {
+        if (
+            String.IsNullOrEmpty(__result)
+            || __result.LastIndexOf(GlobalCode.SLANG_REF) < 0
+            || !Guid.TryParse(
+                __result
+                    .Substring(
+                        __result.LastIndexOf(GlobalCode.SLANG_REF) + GlobalCode.SLANG_REF.Length
+                    )
+                    .Trim(),
+                out var slangGuid
+            )
+            || !uint.TryParse(__result.Trim(), out var ic10ErrorLineNumber)
+            || !GlobalCode.GetSlangErrorLineFromICError(
+                slangGuid,
+                ic10ErrorLineNumber,
+                out var slangErrorLineNumber
+            )
+        )
+        {
+            return;
+        }
+
+        __result = slangErrorLineNumber.ToString();
+    }
+
+    [HarmonyPatch(
         typeof(ProgrammableChipMotherboard),
         nameof(ProgrammableChipMotherboard.SerializeSave)
     )]
