@@ -1,12 +1,26 @@
-use compiler::Compiler;
+use compiler::{CompilationResult, Compiler};
 use helpers::Documentation;
-use parser::{sys_call::SysCall, Parser};
+use parser::{sys_call::SysCall, tree_node::Span, Parser};
 use safer_ffi::prelude::*;
 use std::io::BufWriter;
 use tokenizer::{
     token::{Token, TokenType},
     Tokenizer,
 };
+
+#[derive_ReprC]
+#[repr(C)]
+pub struct FfiSourceMapEntry {
+    pub line_number: u32,
+    pub span: FfiRange,
+}
+
+#[derive_ReprC]
+#[repr(C)]
+pub struct FfiCompilationResult {
+    pub output_code: safer_ffi::String,
+    pub source_map: safer_ffi::Vec<FfiSourceMapEntry>,
+}
 
 #[derive_ReprC]
 #[repr(C)]
@@ -32,6 +46,17 @@ pub struct FfiRange {
 pub struct FfiDocumentedItem {
     item_name: safer_ffi::String,
     docs: safer_ffi::String,
+}
+
+impl From<Span> for FfiRange {
+    fn from(value: Span) -> Self {
+        Self {
+            start_line: value.start_line as u32,
+            end_line: value.end_line as u32,
+            start_col: value.start_col as u32,
+            end_col: value.end_col as u32,
+        }
+    }
 }
 
 impl From<lsp_types::Range> for FfiRange {
@@ -70,6 +95,11 @@ impl From<lsp_types::Diagnostic> for FfiDiagnostic {
 }
 
 #[ffi_export]
+pub fn free_ffi_compilation_result(input: FfiCompilationResult) {
+    drop(input)
+}
+
+#[ffi_export]
 pub fn free_ffi_token_vec(v: safer_ffi::Vec<FfiToken>) {
     drop(v)
 }
@@ -94,7 +124,7 @@ pub fn free_docs_vec(v: safer_ffi::Vec<FfiDocumentedItem>) {
 /// This should result in the ability to compile many times without triggering frame drops
 /// from the GC from a `GetBytes()` call on a string in C#.
 #[ffi_export]
-pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::String {
+pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilationResult {
     let res = std::panic::catch_unwind(|| {
         let input = String::from_utf16_lossy(input.as_slice());
         let mut writer = BufWriter::new(Vec::new());
@@ -103,19 +133,45 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::
         let parser = Parser::new(tokenizer);
         let compiler = Compiler::new(parser, &mut writer, None);
 
-        if !compiler.compile().is_empty() {
-            return safer_ffi::String::EMPTY;
+        let res = compiler.compile();
+
+        if !res.errors.is_empty() {
+            return (safer_ffi::String::EMPTY, res.source_map);
         }
 
         let Ok(compiled_vec) = writer.into_inner() else {
-            return safer_ffi::String::EMPTY;
+            return (safer_ffi::String::EMPTY, res.source_map);
         };
 
         // Safety: I know the compiler only outputs valid utf8
-        safer_ffi::String::from(unsafe { String::from_utf8_unchecked(compiled_vec) })
+        (
+            safer_ffi::String::from(unsafe { String::from_utf8_unchecked(compiled_vec) }),
+            res.source_map,
+        )
     });
 
-    res.unwrap_or("".into())
+    if let Ok((res_str, source_map)) = res {
+        FfiCompilationResult {
+            source_map: source_map
+                .into_iter()
+                .flat_map(|(k, v)| {
+                    v.into_iter()
+                        .map(|span| FfiSourceMapEntry {
+                            span: span.into(),
+                            line_number: k as u32,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+                .into(),
+            output_code: res_str,
+        }
+    } else {
+        FfiCompilationResult {
+            output_code: "".into(),
+            source_map: vec![].into(),
+        }
+    }
 }
 
 #[ffi_export]
@@ -184,7 +240,9 @@ pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<
         let tokenizer = Tokenizer::from(input.as_str());
         let compiler = Compiler::new(Parser::new(tokenizer), &mut writer, None);
 
-        let diagnosis = compiler.compile();
+        let CompilationResult {
+            errors: diagnosis, ..
+        } = compiler.compile();
 
         let mut result_vec: Vec<FfiDiagnostic> = Vec::with_capacity(diagnosis.len());
 

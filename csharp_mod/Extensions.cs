@@ -113,6 +113,34 @@ public static unsafe class SlangExtensions
         return toReturn;
     }
 
+    public static unsafe List<SourceMapEntry> ToList(this Vec_FfiSourceMapEntry_t vec)
+    {
+        var toReturn = new List<SourceMapEntry>((int)vec.len);
+
+        var currentPtr = vec.ptr;
+
+        for (int i = 0; i < (int)vec.len; i++)
+        {
+            var item = currentPtr[i];
+
+            toReturn.Add(
+                new SourceMapEntry
+                {
+                    Ic10Line = item.line_number,
+                    SlangSource = new Range
+                    {
+                        EndCol = item.span.end_col,
+                        EndLine = item.span.end_line,
+                        StartCol = item.span.start_col,
+                        StartLine = item.span.start_line,
+                    },
+                }
+            );
+        }
+
+        return toReturn;
+    }
+
     private static uint GetColorForKind(uint kind)
     {
         switch (kind)

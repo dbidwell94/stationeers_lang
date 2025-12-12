@@ -1,7 +1,7 @@
 #![allow(clippy::result_large_err)]
 
 use clap::Parser;
-use compiler::Compiler;
+use compiler::{CompilationResult, Compiler};
 use parser::Parser as ASTParser;
 use std::{
     fs::File,
@@ -90,7 +90,7 @@ fn run_logic<'a>() -> Result<(), Error<'a>> {
 
     let compiler = Compiler::new(parser, &mut writer, None);
 
-    let errors = compiler.compile();
+    let CompilationResult { errors, .. } = compiler.compile();
 
     if !errors.is_empty() {
         let mut std_error = stderr();

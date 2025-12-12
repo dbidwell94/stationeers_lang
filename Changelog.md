@@ -1,5 +1,11 @@
 # Changelog
 
+[0.2.4]
+
+- Groundwork laid to collect and track source maps
+- IC Housing will now display the `Slang` source error line (if available)
+  instead of the `IC10` source error line
+
 [0.2.3]
 
 - Fixed stack underflow with function invocations

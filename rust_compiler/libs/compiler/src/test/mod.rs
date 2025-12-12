@@ -26,7 +26,7 @@ macro_rules! compile {
             &mut writer,
             Some(crate::CompilerConfig { debug: true }),
         );
-        compiler.compile()
+        compiler.compile().errors
     }};
 
     (debug $source:expr) => {{

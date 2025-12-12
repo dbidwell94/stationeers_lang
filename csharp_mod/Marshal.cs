@@ -10,10 +10,23 @@ using StationeersIC10Editor;
 
 public struct Range
 {
-    public uint StartCol;
-    public uint EndCol;
-    public uint StartLine;
-    public uint EndLine;
+    public uint StartCol = 0;
+    public uint EndCol = 0;
+    public uint StartLine = 0;
+    public uint EndLine = 0;
+
+    public Range(uint startLine, uint startCol, uint endLine, uint endCol)
+    {
+        StartLine = startLine;
+        StartCol = startCol;
+        EndLine = endLine;
+        EndCol = endCol;
+    }
+
+    public override string ToString()
+    {
+        return $"L{StartLine}C{StartCol} - L{EndLine}C{EndCol}";
+    }
 }
 
 public struct Diagnostic
@@ -21,6 +34,17 @@ public struct Diagnostic
     public string Message;
     public int Severity;
     public Range Range;
+}
+
+public struct SourceMapEntry
+{
+    public Range SlangSource;
+    public uint Ic10Line;
+
+    public override string ToString()
+    {
+        return $"IC10: {Ic10Line} Slang: `{SlangSource}`";
+    }
 }
 
 public static class Marshal
@@ -78,11 +102,16 @@ public static class Marshal
         }
     }
 
-    public static unsafe bool CompileFromString(string inputString, out string compiledString)
+    public static unsafe bool CompileFromString(
+        string inputString,
+        out string compiledString,
+        out List<SourceMapEntry> sourceMapEntries
+    )
     {
         if (String.IsNullOrEmpty(inputString) || !EnsureLibLoaded())
         {
             compiledString = String.Empty;
+            sourceMapEntries = new();
             return false;
         }
 
@@ -95,19 +124,16 @@ public static class Marshal
             };
 
             var result = Ffi.compile_from_string(input);
+
             try
             {
-                if ((ulong)result.len < 1)
-                {
-                    compiledString = String.Empty;
-                    return false;
-                }
-                compiledString = result.AsString();
+                sourceMapEntries = result.source_map.ToList();
+                compiledString = result.output_code.AsString();
                 return true;
             }
             finally
             {
-                result.Drop();
+                Ffi.free_ffi_compilation_result(result);
             }
         }
     }

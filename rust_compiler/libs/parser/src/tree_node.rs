@@ -1,5 +1,6 @@
 use super::sys_call::SysCall;
 use crate::sys_call;
+use safer_ffi::prelude::*;
 use std::{borrow::Cow, ops::Deref};
 use tokenizer::token::Number;
 
