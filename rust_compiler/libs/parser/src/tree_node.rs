@@ -1,5 +1,6 @@
 use super::sys_call::SysCall;
 use crate::sys_call;
+use helpers::Span;
 use safer_ffi::prelude::*;
 use std::{borrow::Cow, ops::Deref};
 use tokenizer::token::Number;
@@ -298,44 +299,6 @@ impl<'a> std::fmt::Display for TernaryExpression<'a> {
 impl<'a> std::fmt::Display for WhileExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(while {} {})", self.condition, self.body)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span {
-    pub start_line: usize,
-    pub end_line: usize,
-    pub start_col: usize,
-    pub end_col: usize,
-}
-
-impl From<Span> for lsp_types::Range {
-    fn from(value: Span) -> Self {
-        Self {
-            start: lsp_types::Position {
-                line: value.start_line as u32,
-                character: value.start_col as u32,
-            },
-            end: lsp_types::Position {
-                line: value.end_line as u32,
-                character: value.end_col as u32,
-            },
-        }
-    }
-}
-
-impl From<&Span> for lsp_types::Range {
-    fn from(value: &Span) -> Self {
-        Self {
-            start: lsp_types::Position {
-                line: value.start_line as u32,
-                character: value.start_col as u32,
-            },
-            end: lsp_types::Position {
-                line: value.end_line as u32,
-                character: value.end_col as u32,
-            },
-        }
     }
 }
 

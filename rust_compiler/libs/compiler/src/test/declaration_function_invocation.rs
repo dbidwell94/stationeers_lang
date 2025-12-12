@@ -24,7 +24,7 @@ fn no_arguments() -> anyhow::Result<()> {
         j ra
         main:
         jal doSomething
-        move r8 r15 #i
+        move r8 r15
         "
     };
 
@@ -55,7 +55,7 @@ fn let_var_args() -> anyhow::Result<()> {
             "
             j main
             mul2:
-            pop r8 #arg1
+            pop r8
             push ra
             mul r1 r8 2
             move r15 r1
@@ -67,16 +67,16 @@ fn let_var_args() -> anyhow::Result<()> {
             j ra
             main:
             L2:
-            move r8 123 #arg1
+            move r8 123
             push r8
             push r8
             jal mul2
             sub r0 sp 1
             get r8 db r0
             sub sp sp 1
-            move r9 r15 #i
+            move r9 r15
             pow r1 r9 2
-            move r9 r1 #i
+            move r9 r1
             j L2
             L3:
             "
@@ -123,10 +123,10 @@ fn inline_literal_args() -> anyhow::Result<()> {
             "
             j main
             doSomething:
-            pop r8 #arg2
-            pop r9 #arg1
+            pop r8
+            pop r9
             push ra
-            move r15 5 #returnValue
+            move r15 5
             j L1
             L1:
             sub r0 sp 1
@@ -134,7 +134,7 @@ fn inline_literal_args() -> anyhow::Result<()> {
             sub sp sp 1
             j ra
             main:
-            move r8 123 #thisVariableShouldStayInPlace
+            move r8 123
             push r8
             push 12
             push 34
@@ -142,7 +142,7 @@ fn inline_literal_args() -> anyhow::Result<()> {
             sub r0 sp 1
             get r8 db r0
             sub sp sp 1
-            move r9 r15 #returnedValue
+            move r9 r15
             "
         }
     );
@@ -167,8 +167,8 @@ fn mixed_args() -> anyhow::Result<()> {
             "
             j main
             doSomething:
-            pop r8 #arg2
-            pop r9 #arg1
+            pop r8
+            pop r9
             push ra
             L1:
             sub r0 sp 1
@@ -176,7 +176,7 @@ fn mixed_args() -> anyhow::Result<()> {
             sub sp sp 1
             j ra
             main:
-            move r8 123 #arg1
+            move r8 123
             push r8
             push r8
             push 456
@@ -184,7 +184,7 @@ fn mixed_args() -> anyhow::Result<()> {
             sub r0 sp 1
             get r8 db r0
             sub sp sp 1
-            move r9 r15 #returnValue
+            move r9 r15
             "
         }
     );
@@ -211,9 +211,9 @@ fn with_return_statement() -> anyhow::Result<()> {
             "
             j main
             doSomething:
-            pop r8 #arg1
+            pop r8
             push ra
-            move r15 456 #returnValue
+            move r15 456
             j L1
             L1:
             sub r0 sp 1
@@ -223,7 +223,7 @@ fn with_return_statement() -> anyhow::Result<()> {
             main:
             push 123
             jal doSomething
-            move r8 r15 #returned
+            move r8 r15
             "
         }
     );
@@ -250,7 +250,7 @@ fn with_negative_return_literal() -> anyhow::Result<()> {
             j main
             doSomething:
             push ra
-            move r15 -1 #returnValue
+            move r15 -1
             L1:
             sub r0 sp 1
             get ra db r0
@@ -258,7 +258,7 @@ fn with_negative_return_literal() -> anyhow::Result<()> {
             j ra
             main:
             jal doSomething
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );

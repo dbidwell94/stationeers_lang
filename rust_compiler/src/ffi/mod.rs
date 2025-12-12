@@ -1,6 +1,6 @@
 use compiler::{CompilationResult, Compiler};
-use helpers::Documentation;
-use parser::{sys_call::SysCall, tree_node::Span, Parser};
+use helpers::{Documentation, Span};
+use parser::{sys_call::SysCall, Parser};
 use safer_ffi::prelude::*;
 use std::io::BufWriter;
 use tokenizer::{

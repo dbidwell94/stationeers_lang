@@ -44,7 +44,7 @@ fn test_sleep() -> anyhow::Result<()> {
             j main
             main:
             sleep 3
-            move r8 15 #sleepAmount
+            move r8 15
             sleep r8
             mul r1 r8 2
             sleep r1
@@ -73,7 +73,7 @@ fn test_set_on_device() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 293.15 #internalTemp
+            move r8 293.15
             sgt r1 r8 298.15
             s d0 On r1
             "
@@ -150,7 +150,7 @@ fn test_load_from_device() -> anyhow::Result<()> {
             j main
             main:
             l r15 d0 On
-            move r8 r15 #setting
+            move r8 r15
             "
         }
     );
@@ -176,7 +176,7 @@ fn test_load_from_slot() -> anyhow::Result<()> {
             j main
             main:
             ls r15 d0 0 Occupied
-            move r8 r15 #setting
+            move r8 r15
             "
         }
     );

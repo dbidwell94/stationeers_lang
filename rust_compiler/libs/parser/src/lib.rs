@@ -4,6 +4,7 @@ mod test;
 pub mod tree_node;
 
 use crate::sys_call::{Math, System};
+use helpers::Span;
 use std::{borrow::Cow, io::SeekFrom};
 use sys_call::SysCall;
 use thiserror::Error;

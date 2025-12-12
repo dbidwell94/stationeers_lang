@@ -15,7 +15,7 @@ fn variable_declaration_numeric_literal() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 293.15 #i
+            move r8 293.15
             "
         }
     );
@@ -46,16 +46,16 @@ fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> 
             "
             j main
             main:
-            move r8 0 #a
-            move r9 1 #b
-            move r10 2 #c
-            move r11 3 #d
-            move r12 4 #e
-            move r13 5 #f
-            move r14 6 #g
-            push 7 #h
-            push 8 #i
-            push 9 #j
+            move r8 0
+            move r9 1
+            move r10 2
+            move r11 3
+            move r12 4
+            move r13 5
+            move r14 6
+            push 7
+            push 8
+            push 9
             sub sp sp 3
             "
         }
@@ -79,7 +79,7 @@ fn variable_declaration_negative() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 -1 #i
+            move r8 -1
             "
         }
     );
@@ -103,8 +103,8 @@ fn test_boolean_declaration() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 1 #t
-            move r9 0 #f
+            move r8 1
+            move r9 0
             "
         }
     );
@@ -132,7 +132,7 @@ fn test_boolean_return() -> anyhow::Result<()> {
             j main
             getTrue:
             push ra
-            move r15 1 #returnValue
+            move r15 1
             j L1
             L1:
             sub r0 sp 1
@@ -141,7 +141,7 @@ fn test_boolean_return() -> anyhow::Result<()> {
             j ra
             main:
             jal getTrue
-            move r8 r15 #val
+            move r8 r15
             "
         }
     );

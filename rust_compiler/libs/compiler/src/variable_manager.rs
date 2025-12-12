@@ -3,8 +3,9 @@
 // r1 - r7   : Temporary Variables
 // r8 - r14  : Persistant Variables
 
+use helpers::Span;
 use lsp_types::{Diagnostic, DiagnosticSeverity};
-use parser::tree_node::{Literal, Span};
+use parser::tree_node::Literal;
 use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
