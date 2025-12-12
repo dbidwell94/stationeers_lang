@@ -1,11 +1,33 @@
 namespace Slang;
 
 using System;
+using System.Runtime.CompilerServices;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Motherboards;
 using Assets.Scripts.UI;
 using HarmonyLib;
+
+class LineErrorData
+{
+    public AsciiString SourceRef;
+    public uint IC10ErrorSource;
+    public string SlangErrorReference;
+    public Range SlangErrorSpan;
+
+    public LineErrorData(
+        AsciiString sourceRef,
+        uint ic10ErrorSource,
+        string slangErrorRef,
+        Range slangErrorSpan
+    )
+    {
+        this.SourceRef = sourceRef;
+        this.IC10ErrorSource = ic10ErrorSource;
+        this.SlangErrorReference = slangErrorRef;
+        this.SlangErrorSpan = slangErrorSpan;
+    }
+}
 
 [HarmonyPatch]
 public static class SlangPatches
@@ -13,6 +35,9 @@ public static class SlangPatches
     private static ProgrammableChipMotherboard? _currentlyEditingMotherboard;
     private static AsciiString? _motherboardCachedCode;
     private static Guid? _currentlyEditingGuid;
+
+    private static ConditionalWeakTable<ProgrammableChip, LineErrorData> _errorReferenceTable =
+        new();
 
     [HarmonyPatch(
         typeof(ProgrammableChipMotherboard),
@@ -151,27 +176,88 @@ public static class SlangPatches
     {
         if (
             String.IsNullOrEmpty(__result)
-            || __result.LastIndexOf(GlobalCode.SLANG_REF) < 0
+            || !uint.TryParse(__result.Trim(), out var ic10ErrorLineNumber)
+        )
+        {
+            return;
+        }
+
+        var sourceAscii = __instance.GetSourceCode();
+
+        if (_errorReferenceTable.TryGetValue(__instance, out var cache))
+        {
+            if (cache.SourceRef.Equals(sourceAscii) && cache.IC10ErrorSource == ic10ErrorLineNumber)
+            {
+                __result = cache.SlangErrorReference;
+                return;
+            }
+        }
+
+        var source = System.Text.Encoding.UTF8.GetString(
+            System.Text.Encoding.ASCII.GetBytes(__instance.GetSourceCode())
+        );
+
+        var slangIndex = source.LastIndexOf(GlobalCode.SLANG_REF);
+
+        if (
+            slangIndex < 0
             || !Guid.TryParse(
-                __result
+                source
                     .Substring(
-                        __result.LastIndexOf(GlobalCode.SLANG_REF) + GlobalCode.SLANG_REF.Length
+                        source.LastIndexOf(GlobalCode.SLANG_REF) + GlobalCode.SLANG_REF.Length
                     )
                     .Trim(),
                 out var slangGuid
             )
-            || !uint.TryParse(__result.Trim(), out var ic10ErrorLineNumber)
             || !GlobalCode.GetSlangErrorLineFromICError(
                 slangGuid,
                 ic10ErrorLineNumber,
-                out var slangErrorLineNumber
+                out var slangErrorLineNumber,
+                out var slangSpan
             )
         )
         {
             return;
         }
 
+        L.Warning($"IC error at: {__result} -- Slang source error line: {slangErrorLineNumber}");
         __result = slangErrorLineNumber.ToString();
+        _errorReferenceTable.Remove(__instance);
+        _errorReferenceTable.Add(
+            __instance,
+            new LineErrorData(
+                sourceAscii,
+                ic10ErrorLineNumber,
+                slangErrorLineNumber.ToString(),
+                slangSpan
+            )
+        );
+    }
+
+    [HarmonyPatch(
+        typeof(ProgrammableChip),
+        nameof(ProgrammableChip.SetSourceCode),
+        new Type[] { typeof(string) }
+    )]
+    [HarmonyPostfix]
+    public static void pgc_SetSourceCode_string(ProgrammableChip __instance, string sourceCode)
+    {
+        _errorReferenceTable.Remove(__instance);
+    }
+
+    [HarmonyPatch(
+        typeof(ProgrammableChip),
+        nameof(ProgrammableChip.SetSourceCode),
+        new Type[] { typeof(string), typeof(ICircuitHolder) }
+    )]
+    [HarmonyPostfix]
+    public static void pgc_SetSourceCode_string_parent(
+        ProgrammableChip __instance,
+        string sourceCode,
+        ICircuitHolder parent
+    )
+    {
+        _errorReferenceTable.Remove(__instance);
     }
 
     [HarmonyPatch(

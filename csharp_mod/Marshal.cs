@@ -10,10 +10,23 @@ using StationeersIC10Editor;
 
 public struct Range
 {
-    public uint StartCol;
-    public uint EndCol;
-    public uint StartLine;
-    public uint EndLine;
+    public uint StartCol = 0;
+    public uint EndCol = 0;
+    public uint StartLine = 0;
+    public uint EndLine = 0;
+
+    public Range(uint startLine, uint startCol, uint endLine, uint endCol)
+    {
+        StartLine = startLine;
+        StartCol = startCol;
+        EndLine = endLine;
+        EndCol = endCol;
+    }
+
+    public override string ToString()
+    {
+        return $"L{StartLine}C{StartCol} - L{EndLine}C{EndCol}";
+    }
 }
 
 public struct Diagnostic
@@ -27,6 +40,11 @@ public struct SourceMapEntry
 {
     public Range SlangSource;
     public uint Ic10Line;
+
+    public override string ToString()
+    {
+        return $"IC10: {Ic10Line} Slang: `{SlangSource}`";
+    }
 }
 
 public static class Marshal

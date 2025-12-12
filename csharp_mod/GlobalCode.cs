@@ -44,10 +44,12 @@ public static class GlobalCode
     public static bool GetSlangErrorLineFromICError(
         Guid reference,
         uint icErrorLine,
-        out uint slangSrc
+        out uint slangSrc,
+        out Range slangSpan
     )
     {
         slangSrc = icErrorLine;
+        slangSpan = new Range { };
 
         if (!sourceMaps.ContainsKey(reference))
         {
@@ -62,6 +64,7 @@ public static class GlobalCode
         }
 
         slangSrc = foundRange[0].StartLine;
+        slangSpan = foundRange[0];
         return true;
     }
 
