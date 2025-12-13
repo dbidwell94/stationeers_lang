@@ -1,5 +1,10 @@
 # Changelog
 
+[0.3.1]
+
+- Fixed possible `KeyNotFoundException` in C# code due to invalid
+  dictionary access when an IC housing has an error
+
 [0.3.0]
 
 - Implemented a multi-pass optimizer
