@@ -812,3 +812,4 @@ fn remove_unreachable_code<'a>(
     }
     (output, changed)
 }
+

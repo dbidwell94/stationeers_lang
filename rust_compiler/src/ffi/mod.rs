@@ -1,8 +1,9 @@
 use compiler::{CompilationResult, Compiler};
 use helpers::{Documentation, Span};
+use optimizer::optimize;
 use parser::{sys_call::SysCall, Parser};
 use safer_ffi::prelude::*;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use tokenizer::{
     token::{Token, TokenType},
     Tokenizer,
@@ -127,16 +128,23 @@ pub fn free_docs_vec(v: safer_ffi::Vec<FfiDocumentedItem>) {
 pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilationResult {
     let res = std::panic::catch_unwind(|| {
         let input = String::from_utf16_lossy(input.as_slice());
-        let mut writer = BufWriter::new(Vec::new());
+        let mut tmp = BufWriter::new(Vec::new());
 
         let tokenizer = Tokenizer::from(input.as_str());
         let parser = Parser::new(tokenizer);
-        let compiler = Compiler::new(parser, &mut writer, None);
+        let compiler = Compiler::new(parser, &mut tmp, None);
 
         let res = compiler.compile();
 
         if !res.errors.is_empty() {
             return (safer_ffi::String::EMPTY, res.source_map);
+        }
+
+        let mut writer = BufWriter::new(Vec::new());
+
+        for instruction in optimize(res.instructions) {
+            _ = writer.write_all(instruction.instruction.to_string().as_bytes());
+            _ = writer.write_all(b"\n");
         }
 
         let Ok(compiled_vec) = writer.into_inner() else {
