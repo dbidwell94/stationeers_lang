@@ -423,11 +423,6 @@ fn register_forwarding<'a>(
                     break;
                 }
 
-                // Reg15 is a return register.
-
-                if temp_reg == 15 {
-                    break;
-                }
                 // If we hit a label/jump, we assume liveness might leak (conservative safety)
                 if matches!(
                     node.instruction,
@@ -871,4 +866,3 @@ fn remove_unreachable_code<'a>(
     }
     (output, changed)
 }
-

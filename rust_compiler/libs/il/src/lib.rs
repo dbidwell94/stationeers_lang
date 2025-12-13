@@ -30,7 +30,7 @@ impl<'a> Instructions<'a> {
     pub fn into_inner(self) -> Vec<InstructionNode<'a>> {
         self.0
     }
-    pub fn write(self, writer: &mut BufWriter<dyn Write>) -> Result<(), std::io::Error> {
+    pub fn write<W: Write>(self, writer: &mut BufWriter<W>) -> Result<(), std::io::Error> {
         for node in self.0 {
             writer.write_all(node.to_string().as_bytes())?;
             writer.write_all(b"\n")?;
