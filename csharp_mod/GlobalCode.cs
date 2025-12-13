@@ -56,6 +56,11 @@ public static class GlobalCode
             return false;
         }
 
+        if (!sourceMaps[reference].ContainsKey(icErrorLine))
+        {
+            return false;
+        }
+
         var foundRange = sourceMaps[reference][icErrorLine];
 
         if (foundRange is null)
