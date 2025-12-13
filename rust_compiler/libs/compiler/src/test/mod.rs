@@ -12,18 +12,16 @@ macro_rules! compile {
         let mut writer = std::io::BufWriter::new(Vec::new());
         let compiler = ::Compiler::new(
             parser::Parser::new(tokenizer::Tokenizer::from(String::from($source))),
-            &mut writer,
             None,
         );
-        compiler.compile();
+        let res = compiler.compile();
+        res.instructions.write(&mut writer)?;
         output!(writer)
     }};
 
     (result $source:expr) => {{
-        let mut writer = std::io::BufWriter::new(Vec::new());
         let compiler = crate::Compiler::new(
             parser::Parser::new(tokenizer::Tokenizer::from($source)),
-            &mut writer,
             Some(crate::CompilerConfig { debug: true }),
         );
         compiler.compile().errors
@@ -33,10 +31,10 @@ macro_rules! compile {
         let mut writer = std::io::BufWriter::new(Vec::new());
         let compiler = crate::Compiler::new(
             parser::Parser::new(tokenizer::Tokenizer::from($source)),
-            &mut writer,
             Some(crate::CompilerConfig { debug: true }),
         );
-        compiler.compile();
+        let res = compiler.compile();
+        res.instructions.write(&mut writer)?;
         output!(writer)
     }};
 }

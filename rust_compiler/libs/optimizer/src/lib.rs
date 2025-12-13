@@ -1,4 +1,4 @@
-use il::{Instruction, InstructionNode, Operand};
+use il::{Instruction, InstructionNode, Instructions, Operand};
 use rust_decimal::Decimal;
 use std::collections::{HashMap, HashSet};
 
@@ -6,7 +6,8 @@ mod leaf_function;
 use leaf_function::find_leaf_functions;
 
 /// Entry point for the optimizer.
-pub fn optimize<'a>(mut instructions: Vec<InstructionNode<'a>>) -> Vec<InstructionNode<'a>> {
+pub fn optimize<'a>(instructions: Instructions<'a>) -> Instructions<'a> {
+    let mut instructions = instructions.into_inner();
     let mut changed = true;
     let mut pass_count = 0;
     const MAX_PASSES: usize = 10;
@@ -49,13 +50,35 @@ pub fn optimize<'a>(mut instructions: Vec<InstructionNode<'a>>) -> Vec<Instructi
     }
 
     // Final Pass: Resolve Labels to Line Numbers
-    resolve_labels(instructions)
+    Instructions::new(resolve_labels(instructions))
+}
+
+/// Helper: Check if a function body contains unsafe stack manipulation.
+/// Returns true if the function modifies SP in a way that makes static RA offset analysis unsafe.
+fn function_has_complex_stack_ops(
+    instructions: &[InstructionNode],
+    start_idx: usize,
+    end_idx: usize,
+) -> bool {
+    for instruction in instructions.iter().take(end_idx).skip(start_idx) {
+        match instruction.instruction {
+            Instruction::Push(_) | Instruction::Pop(_) => return true,
+            // Check for explicit SP modification
+            Instruction::Add(Operand::StackPointer, _, _)
+            | Instruction::Sub(Operand::StackPointer, _, _)
+            | Instruction::Mul(Operand::StackPointer, _, _)
+            | Instruction::Div(Operand::StackPointer, _, _)
+            | Instruction::Move(Operand::StackPointer, _) => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Pass: Leaf Function Optimization
 /// If a function makes no calls (is a leaf), it doesn't need to save/restore `ra`.
 fn optimize_leaf_functions<'a>(
-    mut input: Vec<InstructionNode<'a>>,
+    input: Vec<InstructionNode<'a>>,
 ) -> (Vec<InstructionNode<'a>>, bool) {
     let leaves = find_leaf_functions(&input);
     if leaves.is_empty() {
@@ -64,40 +87,44 @@ fn optimize_leaf_functions<'a>(
 
     let mut changed = false;
     let mut to_remove = HashSet::new();
-    let mut current_function: Option<String> = None;
 
-    // Map of FunctionName -> The stack offset where RA was stored.
-    // We need this to adjust other stack accesses (arguments vs locals).
+    // We map function names to the INDEX of the instruction that restores RA.
+    // We use this to validate the function body later.
+    let mut func_restore_indices = HashMap::new();
     let mut func_ra_offsets = HashMap::new();
+
+    let mut current_function: Option<String> = None;
+    let mut function_start_indices = HashMap::new();
 
     // First scan: Identify instructions to remove and capture RA offsets
     for (i, node) in input.iter().enumerate() {
         match &node.instruction {
             Instruction::LabelDef(label) => {
                 current_function = Some(label.to_string());
+                function_start_indices.insert(label.to_string(), i);
             }
             Instruction::Push(Operand::ReturnAddress) => {
-                if let Some(func) = &current_function {
-                    if leaves.contains(func) {
-                        to_remove.insert(i);
-                        changed = true;
-                    }
+                if let Some(func) = &current_function
+                    && leaves.contains(func)
+                {
+                    to_remove.insert(i);
                 }
             }
             Instruction::Get(Operand::ReturnAddress, _, Operand::Register(_)) => {
                 // This is the restore instruction: `get ra db r0`
-                if let Some(func) = &current_function {
-                    if leaves.contains(func) {
-                        to_remove.insert(i);
-                        // Look back for the address calc: `sub r0 sp OFFSET`
-                        if i > 0 {
-                            if let Instruction::Sub(_, Operand::StackPointer, Operand::Number(n)) =
-                                &input[i - 1].instruction
-                            {
-                                func_ra_offsets.insert(func.clone(), *n);
-                                to_remove.insert(i - 1);
-                            }
-                        }
+                if let Some(func) = &current_function
+                    && leaves.contains(func)
+                {
+                    to_remove.insert(i);
+                    func_restore_indices.insert(func.clone(), i);
+
+                    // Look back for the address calc: `sub r0 sp OFFSET`
+                    if i > 0
+                        && let Instruction::Sub(_, Operand::StackPointer, Operand::Number(n)) =
+                            &input[i - 1].instruction
+                    {
+                        func_ra_offsets.insert(func.clone(), *n);
+                        to_remove.insert(i - 1);
                     }
                 }
             }
@@ -105,54 +132,80 @@ fn optimize_leaf_functions<'a>(
         }
     }
 
+    // Safety Check: Verify that functions marked for optimization don't have complex stack ops.
+    // If they do, unmark them.
+    let mut safe_functions = HashSet::new();
+
+    for (func, start_idx) in &function_start_indices {
+        if let Some(restore_idx) = func_restore_indices.get(func) {
+            // Check instructions between start and restore using the helper function.
+            // We need to skip the `push ra` we just marked for removal, otherwise the helper
+            // will flag it as a complex op (Push).
+            // `start_idx` is the LabelDef. `start_idx + 1` is typically `push ra`.
+
+            let check_start = if to_remove.contains(&(start_idx + 1)) {
+                start_idx + 2
+            } else {
+                start_idx + 1
+            };
+
+            // `restore_idx` points to the `get ra` instruction. The helper scans up to `end_idx` exclusive,
+            // so we don't need to worry about the restore instruction itself.
+            if !function_has_complex_stack_ops(&input, check_start, *restore_idx) {
+                safe_functions.insert(func.clone());
+                changed = true;
+            }
+        }
+    }
+
     if !changed {
         return (input, false);
     }
 
-    // Second scan: Rebuild with adjustments
+    // Second scan: Rebuild with adjustments, but only for SAFE functions
     let mut output = Vec::with_capacity(input.len());
     let mut processing_function: Option<String> = None;
 
     for (i, mut node) in input.into_iter().enumerate() {
-        if to_remove.contains(&i) {
-            continue;
+        if to_remove.contains(&i)
+            && let Some(func) = &processing_function
+            && safe_functions.contains(func)
+        {
+            continue; // SKIP (Remove)
         }
 
         if let Instruction::LabelDef(l) = &node.instruction {
             processing_function = Some(l.to_string());
         }
 
-        // Apply Stack Adjustments if we are inside a leaf function that we optimized
-        if let Some(func) = &processing_function {
-            if let Some(ra_offset) = func_ra_offsets.get(func) {
-                // If this is the stack cleanup `sub sp sp N`, decrement N by 1 (since we removed push ra)
-                if let Instruction::Sub(
-                    Operand::StackPointer,
-                    Operand::StackPointer,
-                    Operand::Number(n),
-                ) = &mut node.instruction
-                {
-                    let new_n = *n - Decimal::from(1);
-                    if new_n.is_zero() {
-                        continue; // Remove instruction if 0
-                    }
-                    *n = new_n;
+        // Apply Stack Adjustments
+        if let Some(func) = &processing_function
+            && safe_functions.contains(func)
+            && let Some(ra_offset) = func_ra_offsets.get(func)
+        {
+            // 1. Stack Cleanup Adjustment
+            if let Instruction::Sub(
+                Operand::StackPointer,
+                Operand::StackPointer,
+                Operand::Number(n),
+            ) = &mut node.instruction
+            {
+                // Decrease cleanup amount by 1 (for the removed RA)
+                let new_n = *n - Decimal::from(1);
+                if new_n.is_zero() {
+                    continue;
                 }
+                *n = new_n;
+            }
 
-                // Adjust stack variable accesses relative to the removed RA.
-                // Compiler layout: [Args] [RA] [Locals/Temps]
-                // Stack grows up (increment sp on push).
-                // Access is `sp - offset`.
-                // Deeper items (Args) have LARGER offsets than RA.
-                // Shallower items (Locals) have SMALLER offsets than RA.
-                // Since RA is gone, items deeper than RA (Args) effectively shift "down" (index - 1).
-                if let Instruction::Sub(_, Operand::StackPointer, Operand::Number(n)) =
-                    &mut node.instruction
-                {
-                    if *n > *ra_offset {
-                        *n -= Decimal::from(1);
-                    }
-                }
+            // 2. Stack Variable Offset Adjustment
+            // Since we verified the function is "Simple" (no nested stack mods),
+            // we can safely assume offsets > ra_offset need shifting.
+            if let Instruction::Sub(_, Operand::StackPointer, Operand::Number(n)) =
+                &mut node.instruction
+                && *n > *ra_offset
+            {
+                *n -= Decimal::from(1);
             }
         }
 
@@ -173,16 +226,11 @@ fn analyze_clobbers(instructions: &[InstructionNode]) -> HashMap<String, HashSet
             clobbers.insert(label.to_string(), HashSet::new());
         }
 
-        if let Some(label) = &current_label {
-            if let Some(reg) = get_destination_reg(&node.instruction) {
-                if let Some(set) = clobbers.get_mut(label) {
-                    set.insert(reg);
-                }
-            }
-
-            // Note: If we call another function, we technically clobber whatever IT clobbers
-            // (unless we save/restore it, which counts as a write anyway).
-            // This simple pass relies on the fact that any register modification (including restore) is a 'write'.
+        if let Some(label) = &current_label
+            && let Some(reg) = get_destination_reg(&node.instruction)
+            && let Some(set) = clobbers.get_mut(label)
+        {
+            set.insert(reg);
         }
     }
     clobbers
@@ -191,18 +239,18 @@ fn analyze_clobbers(instructions: &[InstructionNode]) -> HashMap<String, HashSet
 /// Pass: Function Call Optimization
 /// Removes Push/Restore pairs surrounding a JAL if the target function does not clobber that register.
 fn optimize_function_calls<'a>(
-    mut input: Vec<InstructionNode<'a>>,
+    input: Vec<InstructionNode<'a>>,
 ) -> (Vec<InstructionNode<'a>>, bool) {
     let clobbers = analyze_clobbers(&input);
     let mut changed = false;
     let mut to_remove = HashSet::new();
-    let mut stack_adjustments = HashMap::new(); // Index of `sub sp sp N` -> amount to subtract
+    let mut stack_adjustments = HashMap::new();
 
     let mut i = 0;
     while i < input.len() {
         if let Instruction::JumpAndLink(Operand::Label(target)) = &input[i].instruction {
             let target_key = target.to_string();
-            // If we don't have info on the function (e.g. extern or complex), skip
+
             if let Some(func_clobbers) = clobbers.get(&target_key) {
                 // 1. Identify Pushes immediately preceding the JAL
                 let mut pushes = Vec::new(); // (index, register)
@@ -221,54 +269,67 @@ fn optimize_function_calls<'a>(
                 }
 
                 // 2. Identify Restores immediately following the JAL
-                // Compiler emits: sub r0 sp Offset, get Reg db r0.
                 let mut restores = Vec::new(); // (index_of_get, register, index_of_sub)
                 let mut scan_fwd = i + 1;
                 while scan_fwd < input.len() {
-                    // Skip over the 'sub r0 sp X' address calculation lines
+                    // Skip 'sub r0 sp X'
                     if let Instruction::Sub(Operand::Register(0), Operand::StackPointer, _) =
                         &input[scan_fwd].instruction
                     {
                         // Check next instruction for the Get
-                        if scan_fwd + 1 < input.len() {
-                            if let Instruction::Get(Operand::Register(r), _, Operand::Register(0)) =
+                        if scan_fwd + 1 < input.len()
+                            && let Instruction::Get(Operand::Register(r), _, Operand::Register(0)) =
                                 &input[scan_fwd + 1].instruction
-                            {
-                                restores.push((scan_fwd + 1, *r, scan_fwd));
-                                scan_fwd += 2;
-                                continue;
-                            }
+                        {
+                            restores.push((scan_fwd + 1, *r, scan_fwd));
+                            scan_fwd += 2;
+                            continue;
                         }
                     }
                     break;
                 }
 
-                // 3. Check for Stack Cleanup `sub sp sp N`
+                // 3. Stack Cleanup
                 let cleanup_idx = scan_fwd;
-
                 let has_cleanup = if cleanup_idx < input.len() {
-                    if let Instruction::Sub(
-                        Operand::StackPointer,
-                        Operand::StackPointer,
-                        Operand::Number(_),
-                    ) = &input[cleanup_idx].instruction
-                    {
-                        true
-                    } else {
-                        false
-                    }
+                    matches!(
+                        input[cleanup_idx].instruction,
+                        Instruction::Sub(
+                            Operand::StackPointer,
+                            Operand::StackPointer,
+                            Operand::Number(_)
+                        )
+                    )
                 } else {
                     false
                 };
 
-                // "All or Nothing" strategy for the safe subset:
+                // SAFEGUARD: Check Counts!
+                // If we pushed r8 twice but only restored it once, we have an argument.
+                // We must ensure the number of pushes for each register MATCHES the number of restores.
+                let mut push_counts = HashMap::new();
+                for (_, r) in &pushes {
+                    *push_counts.entry(*r).or_insert(0) += 1;
+                }
+
+                let mut restore_counts = HashMap::new();
+                for (_, r, _) in &restores {
+                    *restore_counts.entry(*r).or_insert(0) += 1;
+                }
+
+                let counts_match = push_counts
+                    .iter()
+                    .all(|(reg, count)| restore_counts.get(reg).unwrap_or(&0) == count);
+                // Also check reverse to ensure we didn't restore something we didn't push (unlikely but possible)
+                let counts_match_reverse = restore_counts
+                    .iter()
+                    .all(|(reg, count)| push_counts.get(reg).unwrap_or(&0) == count);
+
+                // Clobber Check
                 let all_pushes_safe = pushes.iter().all(|(_, r)| !func_clobbers.contains(r));
 
-                let push_set: HashSet<u8> = pushes.iter().map(|(_, r)| *r).collect();
-                let restore_set: HashSet<u8> = restores.iter().map(|(_, r, _)| *r).collect();
-
-                if all_pushes_safe && has_cleanup && push_set == restore_set {
-                    // We can remove ALL saves/restores for this call!
+                if all_pushes_safe && has_cleanup && counts_match && counts_match_reverse {
+                    // We can remove ALL found pushes/restores safely
                     for (p_idx, _) in pushes {
                         to_remove.insert(p_idx);
                     }
@@ -278,7 +339,7 @@ fn optimize_function_calls<'a>(
                     }
 
                     // Reduce stack cleanup amount
-                    let num_removed = push_set.len() as i64;
+                    let num_removed = push_counts.values().sum::<i32>() as i64;
                     stack_adjustments.insert(cleanup_idx, num_removed);
                     changed = true;
                 }
@@ -295,15 +356,14 @@ fn optimize_function_calls<'a>(
             }
 
             // Apply stack adjustment
-            if let Some(reduction) = stack_adjustments.get(&idx) {
-                if let Instruction::Sub(dst, a, Operand::Number(n)) = &node.instruction {
-                    let new_n = n - Decimal::from(*reduction);
-                    if new_n.is_zero() {
-                        continue; // Remove the sub entirely if 0
-                    }
-                    node.instruction =
-                        Instruction::Sub(dst.clone(), a.clone(), Operand::Number(new_n));
+            if let Some(reduction) = stack_adjustments.get(&idx)
+                && let Instruction::Sub(dst, a, Operand::Number(n)) = &node.instruction
+            {
+                let new_n = n - Decimal::from(*reduction);
+                if new_n.is_zero() {
+                    continue; // Remove the sub entirely if 0
                 }
+                node.instruction = Instruction::Sub(dst.clone(), a.clone(), Operand::Number(new_n));
             }
 
             clean.push(node);
@@ -357,10 +417,16 @@ fn register_forwarding<'a>(
                     break;
                 }
                 // If the temp is redefined, then the old value is dead, so we are safe.
-                if let Some(redef) = get_destination_reg(&node.instruction) {
-                    if redef == temp_reg {
-                        break;
-                    }
+                if let Some(redef) = get_destination_reg(&node.instruction)
+                    && redef == temp_reg
+                {
+                    break;
+                }
+
+                // Reg15 is a return register.
+
+                if temp_reg == 15 {
+                    break;
                 }
                 // If we hit a label/jump, we assume liveness might leak (conservative safety)
                 if matches!(
@@ -436,17 +502,17 @@ fn resolve_labels<'a>(input: Vec<InstructionNode<'a>>) -> Vec<InstructionNode<'a
                     *op = num;
                 }
             }
-            Instruction::BranchEq(a, b, op)
-            | Instruction::BranchNe(a, b, op)
-            | Instruction::BranchGt(a, b, op)
-            | Instruction::BranchLt(a, b, op)
-            | Instruction::BranchGe(a, b, op)
-            | Instruction::BranchLe(a, b, op) => {
+            Instruction::BranchEq(_, _, op)
+            | Instruction::BranchNe(_, _, op)
+            | Instruction::BranchGt(_, _, op)
+            | Instruction::BranchLt(_, _, op)
+            | Instruction::BranchGe(_, _, op)
+            | Instruction::BranchLe(_, _, op) => {
                 if let Some(num) = get_line(op) {
                     *op = num;
                 }
             }
-            Instruction::BranchEqZero(a, op) | Instruction::BranchNeZero(a, op) => {
+            Instruction::BranchEqZero(_, op) | Instruction::BranchNeZero(_, op) => {
                 if let Some(num) = get_line(op) {
                     *op = num;
                 }
@@ -634,8 +700,7 @@ fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
     }
 }
 
-// --- Constant Propagation & Dead Code (Same as before) ---
-
+/// --- Constant Propagation & Dead Code ---
 fn constant_propagation<'a>(input: Vec<InstructionNode<'a>>) -> (Vec<InstructionNode<'a>>, bool) {
     let mut output = Vec::with_capacity(input.len());
     let mut changed = false;
@@ -648,13 +713,8 @@ fn constant_propagation<'a>(input: Vec<InstructionNode<'a>>) -> (Vec<Instruction
         }
 
         let simplified = match &node.instruction {
-            Instruction::Move(dst, src) => {
-                if let Some(val) = resolve_value(src, &registers) {
-                    Some(Instruction::Move(dst.clone(), Operand::Number(val)))
-                } else {
-                    None
-                }
-            }
+            Instruction::Move(dst, src) => resolve_value(src, &registers)
+                .map(|val| Instruction::Move(dst.clone(), Operand::Number(val))),
             Instruction::Add(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| x + y),
             Instruction::Sub(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| x - y),
             Instruction::Mul(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| x * y),
@@ -718,11 +778,11 @@ fn constant_propagation<'a>(input: Vec<InstructionNode<'a>>) -> (Vec<Instruction
         }
 
         // Filter out NOPs (Empty LabelDefs from branch resolution)
-        if let Instruction::LabelDef(l) = &node.instruction {
-            if l.is_empty() {
-                changed = true;
-                continue;
-            }
+        if let Instruction::LabelDef(l) = &node.instruction
+            && l.is_empty()
+        {
+            changed = true;
+            continue;
         }
 
         output.push(node);
@@ -779,11 +839,11 @@ fn remove_redundant_moves<'a>(input: Vec<InstructionNode<'a>>) -> (Vec<Instructi
     let mut output = Vec::with_capacity(input.len());
     let mut changed = false;
     for node in input {
-        if let Instruction::Move(dst, src) = &node.instruction {
-            if dst == src {
-                changed = true;
-                continue;
-            }
+        if let Instruction::Move(dst, src) = &node.instruction
+            && dst == src
+        {
+            changed = true;
+            continue;
         }
         output.push(node);
     }
@@ -804,9 +864,8 @@ fn remove_unreachable_code<'a>(
             changed = true;
             continue;
         }
-        match node.instruction {
-            Instruction::Jump(_) | Instruction::Jump(Operand::ReturnAddress) => dead = true,
-            _ => {}
+        if let Instruction::Jump(_) = node.instruction {
+            dead = true
         }
         output.push(node);
     }

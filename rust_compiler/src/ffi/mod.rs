@@ -1,9 +1,8 @@
 use compiler::{CompilationResult, Compiler};
 use helpers::{Documentation, Span};
-use optimizer::optimize;
 use parser::{sys_call::SysCall, Parser};
 use safer_ffi::prelude::*;
-use std::io::{BufWriter, Write};
+use std::io::BufWriter;
 use tokenizer::{
     token::{Token, TokenType},
     Tokenizer,
@@ -128,33 +127,32 @@ pub fn free_docs_vec(v: safer_ffi::Vec<FfiDocumentedItem>) {
 pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilationResult {
     let res = std::panic::catch_unwind(|| {
         let input = String::from_utf16_lossy(input.as_slice());
-        let mut tmp = BufWriter::new(Vec::new());
 
         let tokenizer = Tokenizer::from(input.as_str());
         let parser = Parser::new(tokenizer);
-        let compiler = Compiler::new(parser, &mut tmp, None);
+        let compiler = Compiler::new(parser, None);
 
         let res = compiler.compile();
 
         if !res.errors.is_empty() {
-            return (safer_ffi::String::EMPTY, res.source_map);
+            return (safer_ffi::String::EMPTY, res.instructions.source_map());
         }
 
         let mut writer = BufWriter::new(Vec::new());
 
-        for instruction in optimize(res.instructions) {
-            _ = writer.write_all(instruction.instruction.to_string().as_bytes());
-            _ = writer.write_all(b"\n");
-        }
+        // writing into a Vec<u8>. This should not fail.
+        let optimized = optimizer::optimize(res.instructions);
+        let map = optimized.source_map();
+        _ = optimized.write(&mut writer);
 
         let Ok(compiled_vec) = writer.into_inner() else {
-            return (safer_ffi::String::EMPTY, res.source_map);
+            return (safer_ffi::String::EMPTY, map);
         };
 
         // Safety: I know the compiler only outputs valid utf8
         (
             safer_ffi::String::from(unsafe { String::from_utf8_unchecked(compiled_vec) }),
-            res.source_map,
+            map,
         )
     });
 
@@ -162,13 +160,9 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilat
         FfiCompilationResult {
             source_map: source_map
                 .into_iter()
-                .flat_map(|(k, v)| {
-                    v.into_iter()
-                        .map(|span| FfiSourceMapEntry {
-                            span: span.into(),
-                            line_number: k as u32,
-                        })
-                        .collect::<Vec<_>>()
+                .map(|(line_num, span)| FfiSourceMapEntry {
+                    span: span.into(),
+                    line_number: line_num as u32,
                 })
                 .collect::<Vec<_>>()
                 .into(),
@@ -244,9 +238,8 @@ pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<
     let res = std::panic::catch_unwind(|| {
         let input = String::from_utf16_lossy(input.as_slice());
 
-        let mut writer = BufWriter::new(Vec::new());
         let tokenizer = Tokenizer::from(input.as_str());
-        let compiler = Compiler::new(Parser::new(tokenizer), &mut writer, None);
+        let compiler = Compiler::new(Parser::new(tokenizer), None);
 
         let CompilationResult {
             errors: diagnosis, ..

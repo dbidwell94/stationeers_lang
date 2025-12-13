@@ -1,11 +1,75 @@
 use helpers::Span;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt;
+use std::io::{BufWriter, Write};
+use std::ops::{Deref, DerefMut};
+
+#[derive(Default)]
+pub struct Instructions<'a>(Vec<InstructionNode<'a>>);
+
+impl<'a> Deref for Instructions<'a> {
+    type Target = Vec<InstructionNode<'a>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> DerefMut for Instructions<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a> Instructions<'a> {
+    pub fn new(instructions: Vec<InstructionNode<'a>>) -> Self {
+        Self(instructions)
+    }
+    pub fn into_inner(self) -> Vec<InstructionNode<'a>> {
+        self.0
+    }
+    pub fn write(self, writer: &mut BufWriter<dyn Write>) -> Result<(), std::io::Error> {
+        for node in self.0 {
+            writer.write_all(node.to_string().as_bytes())?;
+            writer.write_all(b"\n")?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
+    pub fn source_map(&self) -> HashMap<usize, Span> {
+        let mut map = HashMap::new();
+
+        for (line_num, node) in self.0.iter().enumerate() {
+            if let Some(span) = node.span {
+                map.insert(line_num, span);
+            }
+        }
+
+        map
+    }
+}
+
+impl<'a> std::fmt::Display for Instructions<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for node in &self.0 {
+            writeln!(f, "{node}")?;
+        }
+        Ok(())
+    }
+}
 
 pub struct InstructionNode<'a> {
     pub instruction: Instruction<'a>,
     pub span: Option<Span>,
+}
+
+impl<'a> std::fmt::Display for InstructionNode<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.instruction)
+    }
 }
 
 impl<'a> InstructionNode<'a> {

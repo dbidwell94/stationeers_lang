@@ -1,7 +1,7 @@
 #![allow(clippy::result_large_err)]
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
 use helpers::{Span, prelude::*};
-use il::{Instruction, InstructionNode, Operand};
+use il::{Instruction, InstructionNode, Instructions, Operand};
 use parser::{
     Parser as ASTParser,
     sys_call::{Math, SysCall, System},
@@ -13,11 +13,7 @@ use parser::{
     },
 };
 use rust_decimal::Decimal;
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    io::{BufWriter, Write},
-};
+use std::{borrow::Cow, collections::HashMap};
 use thiserror::Error;
 use tokenizer::token::Number;
 
@@ -139,24 +135,22 @@ struct CompileLocation<'a> {
 
 pub struct CompilationResult<'a> {
     pub errors: Vec<Error<'a>>,
-    pub source_map: HashMap<usize, Vec<Span>>,
-    pub instructions: Vec<InstructionNode<'a>>,
+    pub instructions: Instructions<'a>,
 }
 
-pub struct Compiler<'a, 'w, W: std::io::Write> {
+pub struct Compiler<'a> {
     pub parser: ASTParser<'a>,
     function_locations: HashMap<Cow<'a, str>, usize>,
     function_metadata: HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>,
     devices: HashMap<Cow<'a, str>, Cow<'a, str>>,
-    output: &'w mut BufWriter<W>,
 
     // This holds the IL code which will be used in the
     // optimizer
-    pub instructions: Vec<InstructionNode<'a>>,
+    pub instructions: Instructions<'a>,
 
     current_line: usize,
     declared_main: bool,
-    config: CompilerConfig,
+    _config: CompilerConfig,
     temp_counter: usize,
     label_counter: usize,
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>)>, // Stores (start_label, end_label)
@@ -167,22 +161,17 @@ pub struct Compiler<'a, 'w, W: std::io::Write> {
     pub errors: Vec<Error<'a>>,
 }
 
-impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
-    pub fn new(
-        parser: ASTParser<'a>,
-        writer: &'w mut BufWriter<W>,
-        config: Option<CompilerConfig>,
-    ) -> Self {
+impl<'a> Compiler<'a> {
+    pub fn new(parser: ASTParser<'a>, config: Option<CompilerConfig>) -> Self {
         Self {
             parser,
             function_locations: HashMap::new(),
             function_metadata: HashMap::new(),
             devices: HashMap::new(),
-            output: writer,
-            instructions: Vec::new(),
+            instructions: Instructions::default(),
             current_line: 1,
             declared_main: false,
-            config: config.unwrap_or_default(),
+            _config: config.unwrap_or_default(),
             temp_counter: 0,
             label_counter: 0,
             loop_stack: Vec::new(),
@@ -205,7 +194,6 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             Ok(Some(expr)) => expr,
             Ok(None) => {
                 return CompilationResult {
-                    source_map: self.source_map,
                     errors: self.errors,
                     instructions: self.instructions,
                 };
@@ -215,7 +203,6 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 self.errors.push(Error::Parse(e));
                 return CompilationResult {
                     errors: self.errors,
-                    source_map: self.source_map,
                     instructions: self.instructions,
                 };
             }
@@ -241,7 +228,6 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             self.errors.push(e);
             return CompilationResult {
                 errors: self.errors,
-                source_map: self.source_map,
                 instructions: self.instructions,
             };
         }
@@ -255,7 +241,6 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
         CompilationResult {
             errors: self.errors,
-            source_map: self.source_map,
             instructions: self.instructions,
         }
     }
@@ -266,8 +251,6 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         instr: Instruction<'a>,
         span: Option<Span>,
     ) -> Result<(), Error<'a>> {
-        self.output.write_all(format!("{}", instr).as_bytes())?;
-        self.output.write_all(b"\n")?;
         self.current_line += 1;
 
         self.instructions.push(InstructionNode::new(instr, span));
@@ -781,7 +764,6 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Expression::Ternary(ternary) => {
                 let res = self.expression_ternary(ternary.node, scope)?;
-                println!("{res:?}");
                 let var_loc = scope.add_variable(
                     name_str.clone(),
                     LocationRequest::Persist,
