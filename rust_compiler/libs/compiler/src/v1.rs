@@ -140,6 +140,7 @@ struct CompileLocation<'a> {
 pub struct CompilationResult<'a> {
     pub errors: Vec<Error<'a>>,
     pub source_map: HashMap<usize, Vec<Span>>,
+    pub instructions: Vec<InstructionNode<'a>>,
 }
 
 pub struct Compiler<'a, 'w, W: std::io::Write> {
@@ -206,6 +207,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 return CompilationResult {
                     source_map: self.source_map,
                     errors: self.errors,
+                    instructions: self.instructions,
                 };
             }
             Err(e) => {
@@ -214,6 +216,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 return CompilationResult {
                     errors: self.errors,
                     source_map: self.source_map,
+                    instructions: self.instructions,
                 };
             }
         };
@@ -239,6 +242,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             return CompilationResult {
                 errors: self.errors,
                 source_map: self.source_map,
+                instructions: self.instructions,
             };
         }
 
@@ -252,6 +256,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         CompilationResult {
             errors: self.errors,
             source_map: self.source_map,
+            instructions: self.instructions,
         }
     }
 
