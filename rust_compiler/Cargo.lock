@@ -268,6 +268,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "helpers",
+ "il",
  "indoc",
  "lsp-types",
  "parser",
@@ -397,6 +398,15 @@ name = "helpers"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
+ "lsp-types",
+]
+
+[[package]]
+name = "il"
+version = "0.1.0"
+dependencies = [
+ "helpers",
+ "rust_decimal",
 ]
 
 [[package]]
@@ -562,6 +572,16 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "optimizer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "helpers",
+ "il",
+ "rust_decimal",
+]
 
 [[package]]
 name = "parser"
@@ -910,13 +930,14 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "slang"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
  "compiler",
  "helpers",
  "lsp-types",
+ "optimizer",
  "parser",
  "rust_decimal",
  "safer-ffi",

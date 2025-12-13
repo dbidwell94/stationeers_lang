@@ -23,17 +23,17 @@ fn test_comparison_expressions() -> anyhow::Result<()> {
             j main
             main:
             sgt r1 10 5
-            move r8 r1 #isGreater
+            move r8 r1
             slt r2 5 10
-            move r9 r2 #isLess
+            move r9 r2
             seq r3 5 5
-            move r10 r3 #isEqual
+            move r10 r3
             sne r4 5 10
-            move r11 r4 #isNotEqual
+            move r11 r4
             sge r5 10 10
-            move r12 r5 #isGreaterOrEqual
+            move r12 r5
             sle r6 5 5
-            move r13 r6 #isLessOrEqual
+            move r13 r6
             "
         }
     );
@@ -59,11 +59,11 @@ fn test_logical_and_or_not() -> anyhow::Result<()> {
             j main
             main:
             and r1 1 1
-            move r8 r1 #logic1
+            move r8 r1
             or r2 1 0
-            move r9 r2 #logic2
+            move r9 r2
             seq r3 1 0
-            move r10 r3 #logic3
+            move r10 r3
             "
         }
     );
@@ -89,7 +89,7 @@ fn test_complex_logic() -> anyhow::Result<()> {
             sgt r1 10 5
             slt r2 5 10
             and r3 r1 r2
-            move r8 r3 #logic
+            move r8 r3
             "
         }
     );
@@ -113,7 +113,7 @@ fn test_math_with_logic() -> anyhow::Result<()> {
             j main
             main:
             sgt r1 3 1
-            move r8 r1 #logic
+            move r8 r1
             "
         }
     );
@@ -137,7 +137,7 @@ fn test_boolean_in_logic() -> anyhow::Result<()> {
             j main
             main:
             and r1 1 0
-            move r8 r1 #res
+            move r8 r1
             "
         }
     );
@@ -163,11 +163,11 @@ fn test_invert_a_boolean() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 1 #i
+            move r8 1
             seq r1 r8 0
-            move r9 r1 #y
+            move r9 r1
             seq r2 r9 0
-            move r10 r2 #result
+            move r10 r2
             "
         }
     );

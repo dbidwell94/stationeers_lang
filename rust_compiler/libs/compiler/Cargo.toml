@@ -8,6 +8,7 @@ thiserror = { workspace = true }
 parser = { path = "../parser" }
 tokenizer = { path = "../tokenizer" }
 helpers = { path = "../helpers" }
+il = { path = "../il" }
 lsp-types = { workspace = true }
 rust_decimal = { workspace = true }
 

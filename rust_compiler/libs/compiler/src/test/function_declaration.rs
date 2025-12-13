@@ -13,13 +13,13 @@ fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
         indoc! {"
             j main
             doSomething:
-            pop r8 #arg9
-            pop r9 #arg8
-            pop r10 #arg7
-            pop r11 #arg6
-            pop r12 #arg5
-            pop r13 #arg4
-            pop r14 #arg3
+            pop r8
+            pop r9
+            pop r10
+            pop r11
+            pop r12
+            pop r13
+            pop r14
             push ra
             L1:
             sub r0 sp 1
@@ -54,10 +54,10 @@ fn test_early_return() -> anyhow::Result<()> {
             doSomething:
             push ra
             seq r1 1 1
-            beq r1 0 L2
+            beqz r1 L2
             j L1
             L2:
-            move r8 3 #i
+            move r8 3
             j L1
             L1:
             sub r0 sp 1
@@ -66,7 +66,7 @@ fn test_early_return() -> anyhow::Result<()> {
             j ra
             main:
             jal doSomething
-            move r1 r15 #__binary_temp_2
+            move r1 r15
             "
         }
     );
@@ -87,8 +87,8 @@ fn test_function_declaration_with_register_params() -> anyhow::Result<()> {
         indoc! {"
             j main
             doSomething:
-            pop r8 #arg2
-            pop r9 #arg1
+            pop r8
+            pop r9
             push ra
             L1:
             sub r0 sp 1

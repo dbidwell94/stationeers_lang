@@ -1,6 +1,6 @@
 [package]
 name = "slang"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 
 [workspace]
@@ -9,9 +9,10 @@ members = ["libs/*"]
 [workspace.dependencies]
 thiserror = "2"
 rust_decimal = "1"
-safer-ffi = { version = "0.1" }  # Safely share structs in memory between C# and Rust
-lsp-types = { version = "0.97" } # Allows for LSP style reporting to the frontend
-crc32fast = "1.5"                # This is for `HASH(..)` calls to be optimized away
+safer-ffi = { version = "0.1" }                         # Safely share structs in memory between C# and Rust
+lsp-types = { version = "0.97" }                        # Allows for LSP style reporting to the frontend
+crc32fast = "1.5"                                       # This is for `HASH(..)` calls to be optimized away
+anyhow = { version = "^1.0", features = ["backtrace"] }
 
 [features]
 headers = ["safer-ffi/headers"]
@@ -42,7 +43,8 @@ tokenizer = { path = "libs/tokenizer" }
 parser = { path = "libs/parser" }
 compiler = { path = "libs/compiler" }
 helpers = { path = "libs/helpers" }
+optimizer = { path = "libs/optimizer" }
 safer-ffi = { workspace = true }
-anyhow = { version = "^1.0", features = ["backtrace"] }
+anyhow = { workspace = true }
 
 [dev-dependencies]

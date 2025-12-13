@@ -1,6 +1,7 @@
 #![allow(clippy::result_large_err)]
 use crate::variable_manager::{self, LocationRequest, VariableLocation, VariableScope};
-use helpers::prelude::*;
+use helpers::{Span, prelude::*};
+use il::{Instruction, InstructionNode, Instructions, Operand};
 use parser::{
     Parser as ASTParser,
     sys_call::{Math, SysCall, System},
@@ -8,39 +9,18 @@ use parser::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
         InvocationExpression, Literal, LiteralOr, LiteralOrVariable, LogicalExpression,
-        LoopExpression, MemberAccessExpression, Span, Spanned, TernaryExpression, WhileExpression,
+        LoopExpression, MemberAccessExpression, Spanned, TernaryExpression, WhileExpression,
     },
 };
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    io::{BufWriter, Write},
-};
+use rust_decimal::Decimal;
+use std::{borrow::Cow, collections::HashMap};
 use thiserror::Error;
 use tokenizer::token::Number;
-
-macro_rules! debug {
-    ($self: expr, $debug_value: expr) => {
-        if $self.config.debug {
-            format!($debug_value)
-        } else {
-            "".into()
-        }
-    };
-
-    ($self: expr, $debug_value: expr, $args: expr) => {
-        if $self.config.debug {
-            format!($debug_value, $args)
-        } else {
-            "".into()
-        }
-    };
-}
 
 fn extract_literal<'a>(
     literal: Literal<'a>,
     allow_strings: bool,
-) -> Result<Cow<'a, str>, Error<'a>> {
+) -> Result<Operand<'a>, Error<'a>> {
     if !allow_strings && matches!(literal, Literal::String(_)) {
         return Err(Error::Unknown(
             "Literal strings are not allowed in this context".to_string(),
@@ -48,9 +28,9 @@ fn extract_literal<'a>(
         ));
     }
     Ok(match literal {
-        Literal::String(s) => s,
-        Literal::Number(n) => Cow::from(n.to_string()),
-        Literal::Boolean(b) => Cow::from(if b { "1" } else { "0" }),
+        Literal::String(s) => Operand::LogicType(s),
+        Literal::Number(n) => Operand::Number(n.into()),
+        Literal::Boolean(b) => Operand::Number(Number::from(b).into()),
     })
 }
 
@@ -155,18 +135,22 @@ struct CompileLocation<'a> {
 
 pub struct CompilationResult<'a> {
     pub errors: Vec<Error<'a>>,
-    pub source_map: HashMap<usize, Vec<Span>>,
+    pub instructions: Instructions<'a>,
 }
 
-pub struct Compiler<'a, 'w, W: std::io::Write> {
+pub struct Compiler<'a> {
     pub parser: ASTParser<'a>,
     function_locations: HashMap<Cow<'a, str>, usize>,
     function_metadata: HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>,
     devices: HashMap<Cow<'a, str>, Cow<'a, str>>,
-    output: &'w mut BufWriter<W>,
+
+    // This holds the IL code which will be used in the
+    // optimizer
+    pub instructions: Instructions<'a>,
+
     current_line: usize,
     declared_main: bool,
-    config: CompilerConfig,
+    _config: CompilerConfig,
     temp_counter: usize,
     label_counter: usize,
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>)>, // Stores (start_label, end_label)
@@ -177,21 +161,17 @@ pub struct Compiler<'a, 'w, W: std::io::Write> {
     pub errors: Vec<Error<'a>>,
 }
 
-impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
-    pub fn new(
-        parser: ASTParser<'a>,
-        writer: &'w mut BufWriter<W>,
-        config: Option<CompilerConfig>,
-    ) -> Self {
+impl<'a> Compiler<'a> {
+    pub fn new(parser: ASTParser<'a>, config: Option<CompilerConfig>) -> Self {
         Self {
             parser,
             function_locations: HashMap::new(),
             function_metadata: HashMap::new(),
             devices: HashMap::new(),
-            output: writer,
+            instructions: Instructions::default(),
             current_line: 1,
             declared_main: false,
-            config: config.unwrap_or_default(),
+            _config: config.unwrap_or_default(),
             temp_counter: 0,
             label_counter: 0,
             loop_stack: Vec::new(),
@@ -214,8 +194,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             Ok(Some(expr)) => expr,
             Ok(None) => {
                 return CompilationResult {
-                    source_map: self.source_map,
                     errors: self.errors,
+                    instructions: self.instructions,
                 };
             }
             Err(e) => {
@@ -223,7 +203,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 self.errors.push(Error::Parse(e));
                 return CompilationResult {
                     errors: self.errors,
-                    source_map: self.source_map,
+                    instructions: self.instructions,
                 };
             }
         };
@@ -241,12 +221,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         };
 
         let spanned_root = Spanned { node: expr, span };
-
-        if let Err(e) = self.write_output("j main", Some(span)) {
+        if let Err(e) = self.write_instruction(
+            Instruction::Jump(Operand::Label(Cow::from("main"))),
+            Some(span),
+        ) {
             self.errors.push(e);
             return CompilationResult {
                 errors: self.errors,
-                source_map: self.source_map,
+                instructions: self.instructions,
             };
         }
 
@@ -259,27 +241,19 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
         CompilationResult {
             errors: self.errors,
-            source_map: self.source_map,
+            instructions: self.instructions,
         }
     }
 
-    fn write_output(
+    /// Performs a write to the output buffer as well as a push to the IL instructions vec
+    fn write_instruction(
         &mut self,
-        output: impl Into<String>,
+        instr: Instruction<'a>,
         span: Option<Span>,
     ) -> Result<(), Error<'a>> {
-        self.output.write_all(output.into().as_bytes())?;
-        self.output.write_all(b"\n")?;
-
-        if let Some(span) = span {
-            self.source_map
-                .entry(self.current_line)
-                .or_default()
-                .push(span);
-        }
-
         self.current_line += 1;
 
+        self.instructions.push(InstructionNode::new(instr, span));
         Ok(())
     }
 
@@ -360,9 +334,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 let temp_loc =
                     scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
                 self.emit_variable_assignment(
-                    temp_name.clone(),
                     &temp_loc,
-                    Cow::from(format!("r{}", VariableScope::RETURN_REGISTER)),
+                    Operand::Register(VariableScope::RETURN_REGISTER),
                 )?;
                 Ok(Some(CompileLocation {
                     location: temp_loc,
@@ -381,21 +354,16 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 Literal::Number(num) => {
                     let temp_name = self.next_temp_name();
                     let loc = scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
-                    self.emit_variable_assignment(
-                        temp_name.clone(),
-                        &loc,
-                        Cow::from(num.to_string()),
-                    )?;
+                    self.emit_variable_assignment(&loc, Operand::Number(num.into()))?;
                     Ok(Some(CompileLocation {
                         location: loc,
                         temp_name: Some(temp_name),
                     }))
                 }
                 Literal::Boolean(b) => {
-                    let val = if b { "1" } else { "0" };
                     let temp_name = self.next_temp_name();
                     let loc = scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
-                    self.emit_variable_assignment(temp_name.clone(), &loc, Cow::from(val))?;
+                    self.emit_variable_assignment(&loc, Operand::Number(Number::from(b).into()))?;
                     Ok(Some(CompileLocation {
                         location: loc,
                         temp_name: Some(temp_name),
@@ -432,7 +400,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 let MemberAccessExpression { object, member } = access.node;
 
                 // 1. Resolve the object to a device string (e.g., "d0" or "rX")
-                let (device_str, cleanup) = self.resolve_device(*object, scope)?;
+                let (device, cleanup) = self.resolve_device(*object, scope)?;
 
                 // 2. Allocate a temp register for the result
                 let result_name = self.next_temp_name();
@@ -440,8 +408,12 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 let reg = self.resolve_register(&loc)?;
 
                 // 3. Emit load instruction: l rX device member
-                self.write_output(
-                    format!("l {} {} {}", reg, device_str, member.node),
+                self.write_instruction(
+                    Instruction::Load(
+                        Operand::Register(reg),
+                        device,
+                        Operand::LogicType(member.node),
+                    ),
                     Some(expr.span),
                 )?;
 
@@ -475,7 +447,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
                 let result_reg = self.resolve_register(&result_loc)?;
 
-                self.write_output(format!("sub {result_reg} 0 {inner_str}"), Some(expr.span))?;
+                self.write_instruction(
+                    Instruction::Sub(
+                        Operand::Register(result_reg),
+                        Operand::Number(0.into()),
+                        inner_str,
+                    ),
+                    Some(expr.span),
+                )?;
 
                 if let Some(name) = cleanup {
                     scope.free_temp(name, None)?;
@@ -502,12 +481,12 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         &mut self,
         expr: Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<(Cow<'a, str>, Option<Cow<'a, str>>), Error<'a>> {
+    ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
         // If it's a direct variable reference, check if it's a known device alias first
         if let Expression::Variable(ref name) = expr.node
             && let Some(device_id) = self.devices.get(&name.node)
         {
-            return Ok((device_id.clone(), None));
+            return Ok((Operand::Device(device_id.clone()), None));
         }
 
         // Otherwise, compile it as an operand (e.g. it might be a register holding a device hash/id)
@@ -516,22 +495,18 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
     fn emit_variable_assignment(
         &mut self,
-        var_name: Cow<'a, str>,
         location: &VariableLocation<'a>,
-        source_value: Cow<'a, str>,
+        source_value: Operand<'a>,
     ) -> Result<(), Error<'a>> {
-        let debug_tag = if self.config.debug {
-            format!(" #{var_name}")
-        } else {
-            String::new()
-        };
-
         match location {
             VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
-                self.write_output(format!("move r{reg} {}{debug_tag}", source_value), None)?;
+                self.write_instruction(
+                    Instruction::Move(Operand::Register(*reg), source_value),
+                    None,
+                )?;
             }
             VariableLocation::Stack(_) => {
-                self.write_output(format!("push {}{debug_tag}", source_value), None)?;
+                self.write_instruction(Instruction::Push(source_value), None)?;
             }
             VariableLocation::Constant(_) => {
                 return Err(Error::Unknown(
@@ -570,11 +545,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         {
             let loc =
                 scope.add_variable(name_str.clone(), LocationRequest::Persist, Some(name_span))?;
-            self.emit_variable_assignment(
-                name_str.clone(),
-                &loc,
-                Cow::from(format!("-{neg_num}")),
-            )?;
+
+            self.emit_variable_assignment(&loc, Operand::Number((-*neg_num).into()))?;
             return Ok(Some(CompileLocation {
                 location: loc,
                 temp_name: None,
@@ -590,22 +562,20 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                         Some(name_span),
                     )?;
 
-                    self.emit_variable_assignment(
-                        name_str.clone(),
-                        &var_location,
-                        Cow::from(num.to_string()),
-                    )?;
+                    self.emit_variable_assignment(&var_location, Operand::Number(num.into()))?;
                     (var_location, None)
                 }
                 Literal::Boolean(b) => {
-                    let val = if b { "1" } else { "0" };
                     let var_location = scope.add_variable(
                         name_str.clone(),
                         LocationRequest::Persist,
                         Some(name_span),
                     )?;
 
-                    self.emit_variable_assignment(name_str, &var_location, Cow::from(val))?;
+                    self.emit_variable_assignment(
+                        &var_location,
+                        Operand::Number(Number::from(b).into()),
+                    )?;
                     (var_location, None)
                 }
                 _ => return Ok(None),
@@ -619,9 +589,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     Some(name_span),
                 )?;
                 self.emit_variable_assignment(
-                    name_str,
                     &loc,
-                    Cow::from(format!("r{}", VariableScope::RETURN_REGISTER)),
+                    Operand::Register(VariableScope::RETURN_REGISTER),
                 )?;
                 (loc, None)
             }
@@ -649,9 +618,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     Some(name_span),
                 )?;
                 self.emit_variable_assignment(
-                    name_str,
                     &loc,
-                    Cow::from(format!("r{}", VariableScope::RETURN_REGISTER)),
+                    Operand::Register(VariableScope::RETURN_REGISTER),
                 )?;
 
                 (loc, None)
@@ -670,12 +638,12 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     ..
                 } = result
                 {
-                    self.emit_variable_assignment(name_str, &var_loc, Cow::from(num.to_string()))?;
+                    self.emit_variable_assignment(&var_loc, Operand::Number(num.into()))?;
                     (var_loc, None)
                 } else {
                     // Move result from temp to new persistent variable
                     let result_reg = self.resolve_register(&result.location)?;
-                    self.emit_variable_assignment(name_str, &var_loc, result_reg)?;
+                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
 
                     // Free the temp result
                     if let Some(name) = result.temp_name {
@@ -694,7 +662,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
                 // Move result from temp to new persistent variable
                 let result_reg = self.resolve_register(&result.location)?;
-                self.emit_variable_assignment(name_str, &var_loc, result_reg)?;
+                self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
 
                 // Free the temp result
                 if let Some(name) = result.temp_name {
@@ -721,24 +689,34 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 // Handle loading from stack if necessary
-                let src_str = match src_loc {
+                let src = match src_loc {
                     VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
-                        format!("r{r}")
+                        Operand::Register(r)
                     }
                     VariableLocation::Stack(offset) => {
-                        self.write_output(
-                            format!("sub r{0} sp {offset}", VariableScope::TEMP_STACK_REGISTER),
+                        self.write_instruction(
+                            Instruction::Sub(
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                Operand::StackPointer,
+                                Operand::Number(offset.into()),
+                            ),
                             Some(expr.span),
                         )?;
-                        self.write_output(
-                            format!("get r{0} db r{0}", VariableScope::TEMP_STACK_REGISTER),
+
+                        self.write_instruction(
+                            Instruction::Get(
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                Operand::Device(Cow::from("db")),
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                            ),
                             Some(expr.span),
                         )?;
-                        format!("r{}", VariableScope::TEMP_STACK_REGISTER)
+
+                        Operand::Register(VariableScope::TEMP_STACK_REGISTER)
                     }
                     VariableLocation::Constant(_) | VariableLocation::Device(_) => unreachable!(),
                 };
-                self.emit_variable_assignment(name_str, &var_loc, Cow::from(src_str))?;
+                self.emit_variable_assignment(&var_loc, src)?;
                 (var_loc, None)
             }
             Expression::Priority(inner) => {
@@ -776,7 +754,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
                 let result_reg = self.resolve_register(&comp_res.location)?;
 
-                self.emit_variable_assignment(name_str, &var_loc, result_reg)?;
+                self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
 
                 if let Some(temp) = comp_res.temp_name {
                     scope.free_temp(temp, None)?;
@@ -786,7 +764,6 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Expression::Ternary(ternary) => {
                 let res = self.expression_ternary(ternary.node, scope)?;
-                println!("{res:?}");
                 let var_loc = scope.add_variable(
                     name_str.clone(),
                     LocationRequest::Persist,
@@ -794,7 +771,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
 
                 let res_register = self.resolve_register(&res.location)?;
-                self.emit_variable_assignment(name_str, &var_loc, res_register)?;
+                self.emit_variable_assignment(&var_loc, Operand::Register(res_register))?;
 
                 if let Some(name) = res.temp_name {
                     scope.free_temp(name, None)?;
@@ -876,32 +853,32 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     }
                 };
 
-                let (val_str, cleanup) = self.compile_operand(*expression, scope)?;
-
-                let debug_tag = if self.config.debug {
-                    format!(" #{}", identifier.node)
-                } else {
-                    String::new()
-                };
+                let (val, cleanup) = self.compile_operand(*expression, scope)?;
 
                 match location {
                     VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
-                        self.write_output(
-                            format!("move r{reg} {val_str}{debug_tag}"),
+                        self.write_instruction(
+                            Instruction::Move(Operand::Register(reg), val),
                             Some(expr_span),
                         )?;
                     }
                     VariableLocation::Stack(offset) => {
                         // Calculate address: sp - offset
-                        self.write_output(
-                            format!("sub r{0} sp {offset}", VariableScope::TEMP_STACK_REGISTER),
+                        self.write_instruction(
+                            Instruction::Sub(
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                Operand::StackPointer,
+                                Operand::Number(offset.into()),
+                            ),
                             Some(expr_span),
                         )?;
+
                         // Store value to stack/db at address
-                        self.write_output(
-                            format!(
-                                "put db r{0} {val_str}{debug_tag}",
-                                VariableScope::TEMP_STACK_REGISTER
+                        self.write_instruction(
+                            Instruction::Put(
+                                Operand::Device(Cow::from("db")),
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                val,
                             ),
                             Some(expr_span),
                         )?;
@@ -922,11 +899,11 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 // Set instruction: s device member value
                 let MemberAccessExpression { object, member } = access.node;
 
-                let (device_str, dev_cleanup) = self.resolve_device(*object, scope)?;
-                let (val_str, val_cleanup) = self.compile_operand(*expression, scope)?;
+                let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
+                let (val, val_cleanup) = self.compile_operand(*expression, scope)?;
 
-                self.write_output(
-                    format!("s {} {} {}", device_str, member.node, val_str,),
+                self.write_instruction(
+                    Instruction::Store(device, Operand::LogicType(member.node), val),
                     Some(member.span),
                 )?;
 
@@ -989,18 +966,25 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 LocationRequest::Stack,
                 None,
             )?;
-            self.write_output(format!("push r{register}"), Some(name.span))?;
+            self.write_instruction(
+                Instruction::Push(Operand::Register(*register)),
+                Some(name.span),
+            )?;
         }
         for arg in arguments {
             match arg.node {
                 Expression::Literal(spanned_lit) => match spanned_lit.node {
                     Literal::Number(num) => {
-                        let num_str = num.to_string();
-                        self.write_output(format!("push {num_str}"), Some(spanned_lit.span))?;
+                        self.write_instruction(
+                            Instruction::Push(Operand::Number(num.into())),
+                            Some(spanned_lit.span),
+                        )?;
                     }
                     Literal::Boolean(b) => {
-                        let val = if b { "1" } else { "0" };
-                        self.write_output(format!("push {val}"), Some(spanned_lit.span))?;
+                        self.write_instruction(
+                            Instruction::Push(Operand::Number(Number::from(b).into())),
+                            Some(spanned_lit.span),
+                        )?;
                     }
                     _ => {}
                 },
@@ -1016,28 +1000,40 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
                     match loc {
                         VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
-                            self.write_output(format!("push r{reg}"), Some(var_name.span))?;
+                            self.write_instruction(
+                                Instruction::Push(Operand::Register(reg)),
+                                Some(var_name.span),
+                            )?;
                         }
                         VariableLocation::Constant(lit) => {
-                            self.write_output(
-                                format!("push {}", extract_literal(lit, false)?),
+                            self.write_instruction(
+                                Instruction::Push(extract_literal(lit, false)?),
                                 Some(var_name.span),
                             )?;
                         }
                         VariableLocation::Stack(stack_offset) => {
-                            self.write_output(
-                                format!(
-                                    "sub r{0} sp {stack_offset}",
-                                    VariableScope::TEMP_STACK_REGISTER
+                            self.write_instruction(
+                                Instruction::Sub(
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                    Operand::StackPointer,
+                                    Operand::Number(stack_offset.into()),
                                 ),
                                 Some(var_name.span),
                             )?;
-                            self.write_output(
-                                format!("get r{0} db r{0}", VariableScope::TEMP_STACK_REGISTER),
+
+                            self.write_instruction(
+                                Instruction::Get(
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                    Operand::Device(Cow::from("db")),
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                ),
                                 Some(var_name.span),
                             )?;
-                            self.write_output(
-                                format!("push r{0}", VariableScope::TEMP_STACK_REGISTER),
+
+                            self.write_instruction(
+                                Instruction::Push(Operand::Register(
+                                    VariableScope::TEMP_STACK_REGISTER,
+                                )),
                                 Some(var_name.span),
                             )?;
                         }
@@ -1053,8 +1049,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     let span = bin_expr.span;
                     // Compile the binary expression to a temp register
                     let result = self.expression_binary(bin_expr, &mut stack)?;
-                    let reg_str = self.resolve_register(&result.location)?;
-                    self.write_output(format!("push {reg_str}"), Some(span))?;
+                    let reg = self.resolve_register(&result.location)?;
+                    self.write_instruction(Instruction::Push(Operand::Register(reg)), Some(span))?;
                     if let Some(name) = result.temp_name {
                         stack.free_temp(name, None)?;
                     }
@@ -1063,8 +1059,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     let span = log_expr.span;
                     // Compile the logical expression to a temp register
                     let result = self.expression_logical(log_expr, &mut stack)?;
-                    let reg_str = self.resolve_register(&result.location)?;
-                    self.write_output(format!("push {reg_str}"), Some(span))?;
+                    let reg = self.resolve_register(&result.location)?;
+                    self.write_instruction(Instruction::Push(Operand::Register(reg)), Some(span))?;
                     if let Some(name) = result.temp_name {
                         stack.free_temp(name, None)?;
                     }
@@ -1087,12 +1083,18 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
                     if let Some(result) = result_opt {
                         let reg_str = self.resolve_register(&result.location)?;
-                        self.write_output(format!("push {reg_str}"), Some(span))?;
+                        self.write_instruction(
+                            Instruction::Push(Operand::Register(reg_str)),
+                            Some(span),
+                        )?;
                         if let Some(name) = result.temp_name {
                             stack.free_temp(name, None)?;
                         }
                     } else {
-                        self.write_output("push 0", Some(span))?; // Should fail ideally
+                        self.write_instruction(
+                            Instruction::Push(Operand::Number(Decimal::from(0))),
+                            Some(span),
+                        )?;
                     }
                 }
                 _ => {
@@ -1108,7 +1110,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         }
 
         // jump to the function and store current line in ra
-        self.write_output(format!("jal {}", name.node), Some(name.span))?;
+        self.write_instruction(
+            Instruction::JumpAndLink(Operand::Label(name.node)),
+            Some(name.span),
+        )?;
 
         for register in active_registers {
             let VariableLocation::Stack(stack_offset) = stack
@@ -1121,25 +1126,32 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     Some(name.span),
                 ));
             };
-            self.write_output(
-                format!(
-                    "sub r{0} sp {stack_offset}",
-                    VariableScope::TEMP_STACK_REGISTER
+            self.write_instruction(
+                Instruction::Sub(
+                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                    Operand::StackPointer,
+                    Operand::Number(stack_offset.into()),
                 ),
                 Some(name.span),
             )?;
-            self.write_output(
-                format!(
-                    "get r{register} db r{0}",
-                    VariableScope::TEMP_STACK_REGISTER
+
+            self.write_instruction(
+                Instruction::Get(
+                    Operand::Register(register),
+                    Operand::Device(Cow::from("db")),
+                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                 ),
                 Some(name.span),
             )?;
         }
 
         if stack.stack_offset() > 0 {
-            self.write_output(
-                format!("sub sp sp {}", stack.stack_offset()),
+            self.write_instruction(
+                Instruction::Sub(
+                    Operand::StackPointer,
+                    Operand::StackPointer,
+                    Operand::Number(Decimal::from(stack.stack_offset())),
+                ),
                 Some(name.span),
             )?;
         }
@@ -1181,10 +1193,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         let cond_span = expr.condition.span;
 
         // Compile Condition
-        let (cond_str, cleanup) = self.compile_operand(*expr.condition, scope)?;
+        let (cond, cleanup) = self.compile_operand(*expr.condition, scope)?;
 
         // If condition is FALSE (0), jump to else_label
-        self.write_output(format!("beq {cond_str} 0 {else_label}"), Some(cond_span))?;
+        self.write_instruction(
+            Instruction::BranchEqZero(cond, Operand::Label(else_label.clone())),
+            Some(cond_span),
+        )?;
 
         if let Some(name) = cleanup {
             scope.free_temp(name, None)?;
@@ -1196,8 +1211,11 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
         // If we have an else branch, we need to jump over it after the 'if' body
         if let Some(else_branch) = expr.else_branch {
-            self.write_output(format!("j {end_label}"), Some(else_branch.span))?;
-            self.write_output(format!("{else_label}:"), Some(else_branch.span))?;
+            self.write_instruction(
+                Instruction::Jump(Operand::Label(end_label.clone())),
+                Some(else_branch.span),
+            )?;
+            self.write_instruction(Instruction::LabelDef(else_label), Some(else_branch.span))?;
 
             match else_branch.node {
                 Expression::Block(block) => self.expression_block(block.node, scope)?,
@@ -1206,7 +1224,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
         }
 
-        self.write_output(format!("{end_label}:"), Some(expr.body.span))?;
+        self.write_instruction(Instruction::LabelDef(end_label), Some(expr.body.span))?;
 
         Ok(())
     }
@@ -1223,14 +1241,20 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         self.loop_stack
             .push((start_label.clone(), end_label.clone()));
 
-        self.write_output(format!("{start_label}:"), Some(expr.body.span))?;
+        self.write_instruction(
+            Instruction::LabelDef(start_label.clone()),
+            Some(expr.body.span),
+        )?;
 
         // Compile Body
         self.expression_block(expr.body.node, scope)?;
 
         // Jump back to start
-        self.write_output(format!("j {start_label}"), Some(expr.body.span))?;
-        self.write_output(format!("{end_label}:"), Some(expr.body.span))?;
+        self.write_instruction(
+            Instruction::Jump(Operand::Label(start_label)),
+            Some(expr.body.span),
+        )?;
+        self.write_instruction(Instruction::LabelDef(end_label), Some(expr.body.span))?;
 
         self.loop_stack.pop();
 
@@ -1250,13 +1274,16 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             .push((start_label.clone(), end_label.clone()));
 
         let span = expr.condition.span;
-        self.write_output(format!("{start_label}:"), Some(span))?;
+        self.write_instruction(Instruction::LabelDef(start_label.clone()), Some(span))?;
 
         // Compile Condition
-        let (cond_str, cleanup) = self.compile_operand(*expr.condition, scope)?;
+        let (cond, cleanup) = self.compile_operand(*expr.condition, scope)?;
 
         // If condition is FALSE, jump to end
-        self.write_output(format!("beq {cond_str} 0 {end_label}"), Some(span))?;
+        self.write_instruction(
+            Instruction::BranchEqZero(cond, Operand::Label(end_label.clone())),
+            Some(span),
+        )?;
 
         if let Some(name) = cleanup {
             scope.free_temp(name, None)?;
@@ -1266,8 +1293,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         self.expression_block(expr.body, scope)?;
 
         // Jump back to start
-        self.write_output(format!("j {start_label}"), Some(span))?;
-        self.write_output(format!("{end_label}:"), Some(span))?;
+        self.write_instruction(Instruction::Jump(Operand::Label(start_label)), Some(span))?;
+        self.write_instruction(Instruction::LabelDef(end_label), Some(span))?;
 
         self.loop_stack.pop();
 
@@ -1276,7 +1303,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
     fn expression_break(&mut self, span: Span) -> Result<(), Error<'a>> {
         if let Some((_, end_label)) = self.loop_stack.last() {
-            self.write_output(format!("j {end_label}"), Some(span))?;
+            self.write_instruction(
+                Instruction::Jump(Operand::Label(end_label.clone())),
+                Some(span),
+            )?;
             Ok(())
         } else {
             Err(Error::Unknown(
@@ -1288,7 +1318,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
     fn expression_continue(&mut self, span: Span) -> Result<(), Error<'a>> {
         if let Some((start_label, _)) = self.loop_stack.last() {
-            self.write_output(format!("j {start_label}"), Some(span))?;
+            self.write_instruction(
+                Instruction::Jump(Operand::Label(start_label.clone())),
+                Some(span),
+            )?;
             Ok(())
         } else {
             Err(Error::Unknown(
@@ -1324,8 +1357,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         let result_loc = scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
         let result_reg = self.resolve_register(&result_loc)?;
 
-        self.write_output(
-            format!("select {} {} {} {}", result_reg, cond, true_val, false_val),
+        self.write_instruction(
+            Instruction::Select(Operand::Register(result_reg), cond, true_val, false_val),
             Some(span),
         )?;
 
@@ -1347,11 +1380,9 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
     /// Helper to resolve a location to a register string (e.g., "r0").
     /// Note: This does not handle Stack locations automatically, as they require
     /// instruction emission to load. Use `compile_operand` for general handling.
-    fn resolve_register(&self, loc: &VariableLocation) -> Result<Cow<'a, str>, Error<'a>> {
+    fn resolve_register(&self, loc: &VariableLocation) -> Result<u8, Error<'a>> {
         match loc {
-            VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
-                Ok(Cow::from(format!("r{r}")))
-            }
+            VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => Ok(*r),
             VariableLocation::Constant(_) => Err(Error::Unknown(
                 "Cannot resolve a constant value to register".into(),
                 None,
@@ -1375,17 +1406,17 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         &mut self,
         expr: Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<(Cow<'a, str>, Option<Cow<'a, str>>), Error<'a>> {
+    ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
         // Optimization for literals
         if let Expression::Literal(spanned_lit) = &expr.node {
             if let Literal::Number(n) = spanned_lit.node {
-                return Ok((Cow::from(n.to_string()), None));
+                return Ok((Operand::Number(n.into()), None));
             }
             if let Literal::Boolean(b) = spanned_lit.node {
-                return Ok((Cow::from(if b { "1" } else { "0" }), None));
+                return Ok((Operand::Number(Decimal::from(if b { 1 } else { 0 })), None));
             }
             if let Literal::String(ref s) = spanned_lit.node {
-                return Ok((s.clone(), None));
+                return Ok((Operand::LogicType(s.clone()), None));
             }
         }
 
@@ -1395,7 +1426,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             && let Expression::Literal(spanned_lit) = &inner.node
             && let Literal::Number(n) = spanned_lit.node
         {
-            return Ok((Cow::from(format!("-{}", n)), None));
+            return Ok((Operand::Number((-n).into()), None));
         }
 
         let result_opt = self.expression(expr, scope)?;
@@ -1404,18 +1435,18 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             Some(r) => r,
             None => {
                 // Expression failed or returned void. Recover with dummy.
-                return Ok((Cow::from("r0"), None));
+                return Ok((Operand::Register(0), None));
             }
         };
 
         match result.location {
             VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
-                Ok((Cow::from(format!("r{r}")), result.temp_name))
+                Ok((Operand::Register(r), result.temp_name))
             }
             VariableLocation::Constant(lit) => match lit {
-                Literal::Number(n) => Ok((Cow::from(n.to_string()), None)),
-                Literal::Boolean(b) => Ok((Cow::from(if b { "1" } else { "0" }), None)),
-                Literal::String(s) => Ok((s, None)),
+                Literal::Number(n) => Ok((Operand::Number(n.into()), None)),
+                Literal::Boolean(b) => Ok((Operand::Number(Number::from(b).into()), None)),
+                Literal::String(s) => Ok((Operand::LogicType(s), None)),
             },
             VariableLocation::Stack(offset) => {
                 // If it's on the stack, we must load it into a temp to use it as an operand
@@ -1424,21 +1455,29 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
                 let temp_reg = self.resolve_register(&temp_loc)?;
 
-                self.write_output(
-                    format!("sub r{0} sp {offset}", VariableScope::TEMP_STACK_REGISTER),
+                self.write_instruction(
+                    Instruction::Sub(
+                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                        Operand::StackPointer,
+                        Operand::Number(Decimal::from(offset)),
+                    ),
                     None,
                 )?;
-                self.write_output(
-                    format!("get {temp_reg} db r{0}", VariableScope::TEMP_STACK_REGISTER),
+                self.write_instruction(
+                    Instruction::Get(
+                        Operand::Register(temp_reg),
+                        Operand::Device(Cow::from("db")),
+                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                    ),
                     None,
                 )?;
 
                 // If the original result had a temp name (unlikely for Stack, but possible logic),
                 // we technically should free it if it's not needed, but Stack usually implies it's safe there.
                 // We return the NEW temp name to be freed.
-                Ok((temp_reg, Some(temp_name)))
+                Ok((Operand::Register(temp_reg), Some(temp_name)))
             }
-            VariableLocation::Device(d) => Ok((d, None)),
+            VariableLocation::Device(d) => Ok((Operand::Device(d), None)),
         }
     }
 
@@ -1446,7 +1485,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         &mut self,
         val: LiteralOrVariable<'a>,
         scope: &mut VariableScope<'a, '_>,
-    ) -> Result<(Cow<'a, str>, Option<Cow<'a, str>>), Error<'a>> {
+    ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
         let dummy_span = Span {
             start_line: 0,
             start_col: 0,
@@ -1527,13 +1566,30 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             });
         };
 
-        let (op_str, left_expr, right_expr) = match expr.node {
-            BinaryExpression::Add(l, r) => ("add", l, r),
-            BinaryExpression::Multiply(l, r) => ("mul", l, r),
-            BinaryExpression::Divide(l, r) => ("div", l, r),
-            BinaryExpression::Subtract(l, r) => ("sub", l, r),
-            BinaryExpression::Exponent(l, r) => ("pow", l, r),
-            BinaryExpression::Modulo(l, r) => ("mod", l, r),
+        #[allow(clippy::type_complexity)]
+        let (op_instr, left_expr, right_expr): (
+            fn(Operand<'a>, Operand<'a>, Operand<'a>) -> Instruction<'a>,
+            Box<Spanned<Expression<'a>>>,
+            Box<Spanned<Expression<'a>>>,
+        ) = match expr.node {
+            BinaryExpression::Add(l, r) => {
+                (|into, lhs, rhs| Instruction::Add(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::Multiply(l, r) => {
+                (|into, lhs, rhs| Instruction::Mul(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::Divide(l, r) => {
+                (|into, lhs, rhs| Instruction::Div(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::Subtract(l, r) => {
+                (|into, lhs, rhs| Instruction::Sub(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::Exponent(l, r) => {
+                (|into, lhs, rhs| Instruction::Pow(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::Modulo(l, r) => {
+                (|into, lhs, rhs| Instruction::Mod(into, lhs, rhs), l, r)
+            }
         };
 
         let span = Span {
@@ -1544,9 +1600,9 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         };
 
         // Compile LHS
-        let (lhs_str, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
+        let (lhs, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
         // Compile RHS
-        let (rhs_str, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
+        let (rhs, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
 
         // Allocate result register
         let result_name = self.next_temp_name();
@@ -1554,8 +1610,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         let result_reg = self.resolve_register(&result_loc)?;
 
         // Emit instruction: op result lhs rhs
-        self.write_output(
-            format!("{op_str} {result_reg} {lhs_str} {rhs_str}"),
+        self.write_instruction(
+            op_instr(Operand::Register(result_reg), lhs, rhs),
             Some(span),
         )?;
 
@@ -1589,7 +1645,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 let result_reg = self.resolve_register(&result_loc)?;
 
                 // seq rX rY 0  => if rY == 0 set rX = 1 else rX = 0
-                self.write_output(format!("seq {result_reg} {inner_str} 0"), Some(span))?;
+                self.write_instruction(
+                    Instruction::SetEq(
+                        Operand::Register(result_reg),
+                        inner_str,
+                        Operand::Number(0.into()),
+                    ),
+                    Some(span),
+                )?;
 
                 if let Some(name) = cleanup {
                     scope.free_temp(name, None)?;
@@ -1601,15 +1664,36 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 })
             }
             _ => {
-                let (op_str, left_expr, right_expr) = match expr.node {
-                    LogicalExpression::And(l, r) => ("and", l, r),
-                    LogicalExpression::Or(l, r) => ("or", l, r),
-                    LogicalExpression::Equal(l, r) => ("seq", l, r),
-                    LogicalExpression::NotEqual(l, r) => ("sne", l, r),
-                    LogicalExpression::GreaterThan(l, r) => ("sgt", l, r),
-                    LogicalExpression::GreaterThanOrEqual(l, r) => ("sge", l, r),
-                    LogicalExpression::LessThan(l, r) => ("slt", l, r),
-                    LogicalExpression::LessThanOrEqual(l, r) => ("sle", l, r),
+                #[allow(clippy::type_complexity)]
+                let (op_instr, left_expr, right_expr): (
+                    fn(Operand<'a>, Operand<'a>, Operand<'a>) -> Instruction<'a>,
+                    Box<Spanned<Expression<'a>>>,
+                    Box<Spanned<Expression<'a>>>,
+                ) = match expr.node {
+                    LogicalExpression::And(l, r) => {
+                        (|into, lhs, rhs| Instruction::And(into, lhs, rhs), l, r)
+                    }
+                    LogicalExpression::Or(l, r) => {
+                        (|into, lhs, rhs| Instruction::Or(into, lhs, rhs), l, r)
+                    }
+                    LogicalExpression::Equal(l, r) => {
+                        (|into, lhs, rhs| Instruction::SetEq(into, lhs, rhs), l, r)
+                    }
+                    LogicalExpression::NotEqual(l, r) => {
+                        (|into, lhs, rhs| Instruction::SetNe(into, lhs, rhs), l, r)
+                    }
+                    LogicalExpression::GreaterThan(l, r) => {
+                        (|into, lhs, rhs| Instruction::SetGt(into, lhs, rhs), l, r)
+                    }
+                    LogicalExpression::GreaterThanOrEqual(l, r) => {
+                        (|into, lhs, rhs| Instruction::SetGe(into, lhs, rhs), l, r)
+                    }
+                    LogicalExpression::LessThan(l, r) => {
+                        (|into, lhs, rhs| Instruction::SetLt(into, lhs, rhs), l, r)
+                    }
+                    LogicalExpression::LessThanOrEqual(l, r) => {
+                        (|into, lhs, rhs| Instruction::SetLe(into, lhs, rhs), l, r)
+                    }
                     LogicalExpression::Not(_) => unreachable!(),
                 };
 
@@ -1621,9 +1705,9 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 };
 
                 // Compile LHS
-                let (lhs_str, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
+                let (lhs, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
                 // Compile RHS
-                let (rhs_str, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
+                let (rhs, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
 
                 // Allocate result register
                 let result_name = self.next_temp_name();
@@ -1632,8 +1716,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 let result_reg = self.resolve_register(&result_loc)?;
 
                 // Emit instruction: op result lhs rhs
-                self.write_output(
-                    format!("{op_str} {result_reg} {lhs_str} {rhs_str}"),
+                self.write_instruction(
+                    op_instr(Operand::Register(result_reg), lhs, rhs),
                     Some(span),
                 )?;
 
@@ -1687,7 +1771,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )
                 && !parent_scope.has_parent()
             {
-                self.write_output("main:", Some(expr.span))?;
+                self.write_instruction(Instruction::LabelDef(Cow::from("main")), Some(expr.span))?;
                 self.declared_main = true;
             }
 
@@ -1714,7 +1798,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         }
 
         if scope.stack_offset() > 0 {
-            self.write_output(format!("sub sp sp {}", scope.stack_offset()), None)?;
+            self.write_instruction(
+                Instruction::Sub(
+                    Operand::StackPointer,
+                    Operand::StackPointer,
+                    Operand::Number(scope.stack_offset().into()),
+                ),
+                None,
+            )?;
         }
 
         Ok(())
@@ -1733,11 +1824,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 && let Literal::Number(neg_num) = &spanned_lit.node
             {
                 let loc = VariableLocation::Persistant(VariableScope::RETURN_REGISTER);
-                self.emit_variable_assignment(
-                    Cow::from("returnValue"),
-                    &loc,
-                    Cow::from(format!("-{neg_num}")),
-                )?;
+                self.emit_variable_assignment(&loc, Operand::Number((-*neg_num).into()))?;
                 return Ok(loc);
             };
 
@@ -1747,39 +1834,38 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                         Ok(loc) => match loc {
                             VariableLocation::Temporary(reg)
                             | VariableLocation::Persistant(reg) => {
-                                self.write_output(
-                                    format!(
-                                        "move r{} r{reg} {}",
-                                        VariableScope::RETURN_REGISTER,
-                                        debug!(self, "#returnValue")
+                                self.write_instruction(
+                                    Instruction::Move(
+                                        Operand::Register(VariableScope::RETURN_REGISTER),
+                                        Operand::Register(reg),
                                     ),
                                     Some(span),
                                 )?;
                             }
                             VariableLocation::Constant(lit) => {
-                                let str = extract_literal(lit, false)?;
-                                self.write_output(
-                                    format!(
-                                        "move r{} {str} {}",
-                                        VariableScope::RETURN_REGISTER,
-                                        debug!(self, "#returnValue")
-                                    ),
-                                    Some(span),
-                                )?
-                            }
-                            VariableLocation::Stack(offset) => {
-                                self.write_output(
-                                    format!(
-                                        "sub r{} sp {offset}",
-                                        VariableScope::TEMP_STACK_REGISTER
+                                let op = extract_literal(lit, false)?;
+                                self.write_instruction(
+                                    Instruction::Move(
+                                        Operand::Register(VariableScope::RETURN_REGISTER),
+                                        op,
                                     ),
                                     Some(span),
                                 )?;
-                                self.write_output(
-                                    format!(
-                                        "get r{} db r{}",
-                                        VariableScope::RETURN_REGISTER,
-                                        VariableScope::TEMP_STACK_REGISTER
+                            }
+                            VariableLocation::Stack(offset) => {
+                                self.write_instruction(
+                                    Instruction::Sub(
+                                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                        Operand::StackPointer,
+                                        Operand::Number(offset.into()),
+                                    ),
+                                    Some(span),
+                                )?;
+                                self.write_instruction(
+                                    Instruction::Get(
+                                        Operand::Register(VariableScope::RETURN_REGISTER),
+                                        Operand::Device(Cow::from("db")),
+                                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                     ),
                                     Some(span),
                                 )?;
@@ -1803,17 +1889,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 Expression::Literal(spanned_lit) => match spanned_lit.node {
                     Literal::Number(num) => {
                         self.emit_variable_assignment(
-                            Cow::from("returnValue"),
                             &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                            Cow::from(num.to_string()),
+                            Operand::Number(num.into()),
                         )?;
                     }
                     Literal::Boolean(b) => {
-                        let val = if b { "1" } else { "0" };
                         self.emit_variable_assignment(
-                            Cow::from("returnValue"),
                             &VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                            Cow::from(val.to_string()),
+                            Operand::Number(Number::from(b).into()),
                         )?;
                     }
                     _ => {}
@@ -1822,10 +1905,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     let span = bin_expr.span;
                     let result = self.expression_binary(bin_expr, scope)?;
                     let result_reg = self.resolve_register(&result.location)?;
-                    self.write_output(
-                        format!("move r{} {}", VariableScope::RETURN_REGISTER, result_reg),
+                    self.write_instruction(
+                        Instruction::Move(
+                            Operand::Register(VariableScope::RETURN_REGISTER),
+                            Operand::Register(result_reg),
+                        ),
                         Some(span),
                     )?;
+
                     if let Some(name) = result.temp_name {
                         scope.free_temp(name, None)?;
                     }
@@ -1834,10 +1921,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     let span = log_expr.span;
                     let result = self.expression_logical(log_expr, scope)?;
                     let result_reg = self.resolve_register(&result.location)?;
-                    self.write_output(
-                        format!("move r{} {}", VariableScope::RETURN_REGISTER, result_reg),
+                    self.write_instruction(
+                        Instruction::Move(
+                            Operand::Register(VariableScope::RETURN_REGISTER),
+                            Operand::Register(result_reg),
+                        ),
                         Some(span),
                     )?;
+
                     if let Some(name) = result.temp_name {
                         scope.free_temp(name, None)?;
                     }
@@ -1854,10 +1945,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     )?;
                     if let Some(res) = res_opt {
                         let reg = self.resolve_register(&res.location)?;
-                        self.write_output(
-                            format!("move r{} {}", VariableScope::RETURN_REGISTER, reg),
+                        self.write_instruction(
+                            Instruction::Move(
+                                Operand::Register(VariableScope::RETURN_REGISTER),
+                                Operand::Register(reg),
+                            ),
                             Some(span),
                         )?;
+
                         if let Some(temp) = res.temp_name {
                             scope.free_temp(temp, Some(span))?;
                         }
@@ -1873,7 +1968,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         }
 
         if let Some(label) = &self.current_return_label {
-            self.write_output(format!("j {}", label), None)?;
+            self.write_instruction(Instruction::Jump(Operand::Label(label.clone())), None)?;
         } else {
             return Err(Error::Unknown(
                 "Return statement used outside of function context.".into(),
@@ -1903,15 +1998,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         }
         match expr {
             System::Yield => {
-                self.write_output("yield", Some(span))?;
+                self.write_instruction(Instruction::Yield, Some(span))?;
                 Ok(None)
             }
             System::Sleep(amt) => {
-                let (var, var_cleanup) = self.compile_operand(*amt, scope)?;
-                self.write_output(format!("sleep {var}"), Some(span))?;
+                let (op, var_cleanup) = self.compile_operand(*amt, scope)?;
+                self.write_instruction(Instruction::Sleep(op), Some(span))?;
 
                 cleanup!(var_cleanup);
-
                 Ok(None)
             }
             System::Hash(hash_arg) => {
@@ -1975,11 +2069,14 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     ));
                 };
 
-                self.write_output(
-                    format!("s {} {} {}", device_val, logic_type, variable),
+                self.write_instruction(
+                    Instruction::Store(
+                        Operand::Device(device_val),
+                        Operand::LogicType(logic_type),
+                        variable,
+                    ),
                     Some(span),
                 )?;
-
                 cleanup!(var_cleanup);
 
                 Ok(None)
@@ -1999,11 +2096,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     ));
                 };
 
-                self.write_output(
-                    format!("sb {} {} {}", device_hash_val, logic_type, var),
+                self.write_instruction(
+                    Instruction::StoreBatch(device_hash_val, Operand::LogicType(logic_type), var),
                     Some(span),
                 )?;
-
                 cleanup!(var_cleanup, device_hash_cleanup);
 
                 Ok(None)
@@ -2021,11 +2117,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope,
                 )?;
 
-                self.write_output(
-                    format!("sbn {} {} {} {}", device_hash, name_hash, logic_type, value),
+                self.write_instruction(
+                    Instruction::StoreBatchNamed(device_hash, name_hash, logic_type, value),
                     Some(span),
                 )?;
-
                 cleanup!(
                     value_cleanup,
                     device_hash_cleanup,
@@ -2073,12 +2168,11 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     ));
                 };
 
-                self.write_output(
-                    format!(
-                        "l r{} {} {}",
-                        VariableScope::RETURN_REGISTER,
-                        device_val,
-                        logic_type
+                self.write_instruction(
+                    Instruction::Load(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        Operand::Device(device_val),
+                        Operand::LogicType(logic_type),
                     ),
                     Some(span),
                 )?;
@@ -2100,17 +2194,15 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope,
                 )?;
 
-                self.write_output(
-                    format!(
-                        "lb r{} {} {} {}",
-                        VariableScope::RETURN_REGISTER,
+                self.write_instruction(
+                    Instruction::LoadBatch(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
                         device_hash,
                         logic_type,
-                        batch_mode
+                        batch_mode,
                     ),
                     Some(span),
                 )?;
-
                 cleanup!(device_hash_cleanup, logic_type_cleanup, batch_mode_cleanup);
 
                 Ok(Some(CompileLocation {
@@ -2132,18 +2224,16 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope,
                 )?;
 
-                self.write_output(
-                    format!(
-                        "lbn r{} {} {} {} {}",
-                        VariableScope::RETURN_REGISTER,
+                self.write_instruction(
+                    Instruction::LoadBatchNamed(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
                         device_hash,
                         name_hash,
                         logic_type,
-                        batch_mode
+                        batch_mode,
                     ),
                     Some(span),
                 )?;
-
                 cleanup!(
                     device_hash_cleanup,
                     name_hash_cleanup,
@@ -2168,17 +2258,15 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                     scope,
                 )?;
 
-                self.write_output(
-                    format!(
-                        "ls r{} {} {} {}",
-                        VariableScope::RETURN_REGISTER,
+                self.write_instruction(
+                    Instruction::LoadSlot(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
                         dev_hash,
                         slot_index,
-                        logic_type
+                        logic_type,
                     ),
                     Some(span),
                 )?;
-
                 cleanup!(hash_cleanup, slot_cleanup, logic_cleanup);
 
                 Ok(Some(CompileLocation {
@@ -2199,11 +2287,10 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 )?;
                 let (var, var_cleanup) = self.compile_operand(*var, scope)?;
 
-                self.write_output(
-                    format!("ss {} {} {} {}", dev_name, slot_index, logic_type, var),
+                self.write_instruction(
+                    Instruction::StoreSlot(dev_name, slot_index, logic_type, var),
                     Some(span),
                 )?;
-
                 cleanup!(name_cleanup, index_cleanup, type_cleanup, var_cleanup);
 
                 Ok(None)
@@ -2229,12 +2316,12 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         match expr {
             Math::Acos(expr) => {
                 let (var, cleanup) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("acos r{} {}", VariableScope::RETURN_REGISTER, var),
+                self.write_instruction(
+                    Instruction::Acos(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2242,12 +2329,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Asin(expr) => {
                 let (var, cleanup) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("asin r{} {}", VariableScope::RETURN_REGISTER, var),
+
+                self.write_instruction(
+                    Instruction::Asin(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2255,12 +2343,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Atan(expr) => {
                 let (var, cleanup) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("atan r{} {}", VariableScope::RETURN_REGISTER, var),
+
+                self.write_instruction(
+                    Instruction::Atan(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2270,16 +2359,16 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
                 let (var1, var1_cleanup) = self.compile_operand(*expr1, scope)?;
                 let (var2, var2_cleanup) = self.compile_operand(*expr2, scope)?;
 
-                self.write_output(
-                    format!(
-                        "atan2 r{} {} {}",
-                        VariableScope::RETURN_REGISTER,
+                self.write_instruction(
+                    Instruction::Atan2(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
                         var1,
-                        var2
+                        var2,
                     ),
                     Some(span),
                 )?;
                 cleanup!(var1_cleanup, var2_cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2287,12 +2376,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Abs(expr) => {
                 let (var, cleanup) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("abs r{} {}", VariableScope::RETURN_REGISTER, var),
+
+                self.write_instruction(
+                    Instruction::Abs(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2300,12 +2390,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Ceil(expr) => {
                 let (var, cleanup) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("ceil r{} {}", VariableScope::RETURN_REGISTER, var),
+
+                self.write_instruction(
+                    Instruction::Ceil(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2313,12 +2404,12 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Cos(expr) => {
                 let (var, cleanup) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("cos r{} {}", VariableScope::RETURN_REGISTER, var),
+                self.write_instruction(
+                    Instruction::Cos(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2326,12 +2417,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Floor(expr) => {
                 let (var, cleanup) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("floor r{} {}", VariableScope::RETURN_REGISTER, var),
+
+                self.write_instruction(
+                    Instruction::Floor(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2339,12 +2431,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Log(expr) => {
                 let (var, cleanup) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("log r{} {}", VariableScope::RETURN_REGISTER, var),
+
+                self.write_instruction(
+                    Instruction::Log(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(cleanup);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2353,12 +2446,17 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             Math::Max(expr1, expr2) => {
                 let (var1, clean1) = self.compile_operand(*expr1, scope)?;
                 let (var2, clean2) = self.compile_operand(*expr2, scope)?;
-                self.write_output(
-                    format!("max r{} {} {}", VariableScope::RETURN_REGISTER, var1, var2),
+
+                self.write_instruction(
+                    Instruction::Max(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        var1,
+                        var2,
+                    ),
                     Some(span),
                 )?;
-
                 cleanup!(clean1, clean2);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2367,20 +2465,25 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             Math::Min(expr1, expr2) => {
                 let (var1, clean1) = self.compile_operand(*expr1, scope)?;
                 let (var2, clean2) = self.compile_operand(*expr2, scope)?;
-                self.write_output(
-                    format!("min r{} {} {}", VariableScope::RETURN_REGISTER, var1, var2),
+
+                self.write_instruction(
+                    Instruction::Min(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        var1,
+                        var2,
+                    ),
                     Some(span),
                 )?;
-
                 cleanup!(clean1, clean2);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
                 }))
             }
             Math::Rand => {
-                self.write_output(
-                    format!("rand r{}", VariableScope::RETURN_REGISTER),
+                self.write_instruction(
+                    Instruction::Rand(Operand::Register(VariableScope::RETURN_REGISTER)),
                     Some(span),
                 )?;
 
@@ -2391,12 +2494,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Sin(expr) => {
                 let (var, clean) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("sin r{} {}", VariableScope::RETURN_REGISTER, var),
+
+                self.write_instruction(
+                    Instruction::Sin(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(clean);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2404,12 +2508,13 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Sqrt(expr) => {
                 let (var, clean) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("sqrt r{} {}", VariableScope::RETURN_REGISTER, var),
+
+                self.write_instruction(
+                    Instruction::Sqrt(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(clean);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2417,12 +2522,12 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Tan(expr) => {
                 let (var, clean) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("tan r{} {}", VariableScope::RETURN_REGISTER, var),
+                self.write_instruction(
+                    Instruction::Tan(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(clean);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2430,12 +2535,12 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             }
             Math::Trunc(expr) => {
                 let (var, clean) = self.compile_operand(*expr, scope)?;
-                self.write_output(
-                    format!("trunc r{} {}", VariableScope::RETURN_REGISTER, var),
+                self.write_instruction(
+                    Instruction::Trunc(Operand::Register(VariableScope::RETURN_REGISTER), var),
                     Some(span),
                 )?;
-
                 cleanup!(clean);
+
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
                     temp_name: None,
@@ -2472,7 +2577,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
         );
 
         // Declare the function as a line identifier
-        self.write_output(format!("{}:", name.node), Some(name.span))?;
+        self.write_instruction(Instruction::LabelDef(name.node.clone()), Some(span))?;
 
         self.function_locations
             .insert(name.node.clone(), self.current_line);
@@ -2498,8 +2603,8 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
             match loc {
                 VariableLocation::Persistant(loc) => {
-                    self.write_output(
-                        format!("pop r{loc} {}", debug!(self, "#{}", var_name.node)),
+                    self.write_instruction(
+                        Instruction::Pop(Operand::Register(loc)),
                         Some(var_name.span),
                     )?;
                 }
@@ -2532,7 +2637,7 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
             )?;
         }
 
-        self.write_output("push ra", Some(span))?;
+        self.write_instruction(Instruction::Push(Operand::ReturnAddress), Some(span))?;
 
         let return_label = self.next_label_name();
 
@@ -2585,28 +2690,38 @@ impl<'a, 'w, W: std::io::Write> Compiler<'a, 'w, W> {
 
         self.current_return_label = prev_return_label;
 
-        self.write_output(format!("{}:", return_label), Some(span))?;
+        self.write_instruction(Instruction::LabelDef(return_label.clone()), Some(span))?;
 
-        self.write_output(
-            format!(
-                "sub r{0} sp {ra_stack_offset}",
-                VariableScope::TEMP_STACK_REGISTER
+        self.write_instruction(
+            Instruction::Sub(
+                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                Operand::StackPointer,
+                Operand::Number(ra_stack_offset.into()),
             ),
             Some(span),
         )?;
-        self.write_output(
-            format!("get ra db r{0}", VariableScope::TEMP_STACK_REGISTER),
+
+        self.write_instruction(
+            Instruction::Get(
+                Operand::ReturnAddress,
+                Operand::Device(Cow::from("db")),
+                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+            ),
             Some(span),
         )?;
 
         if block_scope.stack_offset() > 0 {
-            self.write_output(
-                format!("sub sp sp {}", block_scope.stack_offset()),
+            self.write_instruction(
+                Instruction::Sub(
+                    Operand::StackPointer,
+                    Operand::StackPointer,
+                    Operand::Number(block_scope.stack_offset().into()),
+                ),
                 Some(span),
             )?;
         }
 
-        self.write_output("j ra", Some(span))?;
+        self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;
         Ok(())
     }
 }

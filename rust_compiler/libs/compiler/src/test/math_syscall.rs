@@ -19,7 +19,7 @@ fn test_acos() -> Result<()> {
             j main
             main:
             acos r15 123
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -43,7 +43,7 @@ fn test_asin() -> Result<()> {
             j main
             main:
             asin r15 123
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -67,7 +67,7 @@ fn test_atan() -> Result<()> {
             j main
             main:
             atan r15 123
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -91,7 +91,7 @@ fn test_atan2() -> Result<()> {
             j main
             main:
             atan2 r15 123 456
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -115,7 +115,7 @@ fn test_abs() -> Result<()> {
             j main
             main:
             abs r15 -123
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -139,7 +139,7 @@ fn test_ceil() -> Result<()> {
             j main
             main:
             ceil r15 123.90
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -163,7 +163,7 @@ fn test_cos() -> Result<()> {
             j main
             main:
             cos r15 123
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -187,7 +187,7 @@ fn test_floor() -> Result<()> {
             j main
             main:
             floor r15 123
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -211,7 +211,7 @@ fn test_log() -> Result<()> {
             j main
             main:
             log r15 123
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -235,7 +235,7 @@ fn test_max() -> Result<()> {
             j main
             main:
             max r15 123 456
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -259,9 +259,9 @@ fn test_max_from_game() -> Result<()> {
             "
             j main
             main:
-            move r8 0 #item
+            move r8 0
             max r15 3 2
-            move r8 r15 #item
+            move r8 r15
             "
         }
     );
@@ -285,7 +285,7 @@ fn test_min() -> Result<()> {
             j main
             main:
             min r15 123 456
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -309,7 +309,7 @@ fn test_rand() -> Result<()> {
             j main
             main:
             rand r15
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -333,7 +333,7 @@ fn test_sin() -> Result<()> {
             j main
             main:
             sin r15 3
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -357,7 +357,7 @@ fn test_sqrt() -> Result<()> {
             j main
             main:
             sqrt r15 3
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -381,7 +381,7 @@ fn test_tan() -> Result<()> {
             j main
             main:
             tan r15 3
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );
@@ -405,7 +405,7 @@ fn test_trunc() -> Result<()> {
             j main
             main:
             trunc r15 3.234
-            move r8 r15 #i
+            move r8 r15
             "
         }
     );

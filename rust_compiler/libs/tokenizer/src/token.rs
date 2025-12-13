@@ -403,6 +403,12 @@ pub enum Number {
     Decimal(Decimal),
 }
 
+impl From<bool> for Number {
+    fn from(value: bool) -> Self {
+        Self::Integer(if value { 1 } else { 0 })
+    }
+}
+
 impl From<Number> for Decimal {
     fn from(value: Number) -> Self {
         match value {

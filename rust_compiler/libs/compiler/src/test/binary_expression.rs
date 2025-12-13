@@ -18,7 +18,7 @@ fn simple_binary_expression() -> Result<()> {
             "
             j main
             main:
-            move r8 3 #i
+            move r8 3
             "
         }
     );
@@ -45,9 +45,9 @@ fn nested_binary_expressions() -> Result<()> {
             "
             j main
             calculateArgs:
-            pop r8 #arg3
-            pop r9 #arg2
-            pop r10 #arg1
+            pop r8
+            pop r9
+            pop r10
             push ra
             add r1 r10 r9
             mul r2 r1 r8
@@ -63,9 +63,9 @@ fn nested_binary_expressions() -> Result<()> {
             push 20
             push 30
             jal calculateArgs
-            move r1 r15 #__binary_temp_3
+            move r1 r15
             add r2 r1 100
-            move r8 r2 #returned
+            move r8 r2
             "
         }
     );
@@ -88,7 +88,7 @@ fn stress_test_constant_folding() -> Result<()> {
             "
             j main
             main:
-            move r8 -123 #negationHell
+            move r8 -123
             "
         }
     );
@@ -116,7 +116,7 @@ fn test_constant_folding_with_variables_mixed_in() -> Result<()> {
             mul r2 373.2 r1
             sub r3 1 r2
             add r4 r3 518.15
-            move r8 r4 #i
+            move r8 r4
             "
         }
     );
@@ -141,7 +141,7 @@ fn test_ternary_expression() -> Result<()> {
             main:
             sgt r1 1 2
             select r2 r1 15 20
-            move r8 r2 #i
+            move r8 r2
             "
         }
     );
@@ -165,10 +165,10 @@ fn test_ternary_expression_assignment() -> Result<()> {
             "
             j main
             main:
-            move r8 0 #i
+            move r8 0
             sgt r1 1 2
             select r2 r1 15 20
-            move r8 r2 #i
+            move r8 r2
             "
         }
     );

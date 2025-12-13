@@ -21,10 +21,10 @@ fn test_infinite_loop() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 0 #a
+            move r8 0
             L1:
             add r1 r8 1
-            move r8 r1 #a
+            move r8 r1
             j L1
             L2:
             "
@@ -56,12 +56,12 @@ fn test_loop_break() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 0 #a
+            move r8 0
             L1:
             add r1 r8 1
-            move r8 r1 #a
+            move r8 r1
             sgt r2 r8 10
-            beq r2 0 L3
+            beqz r2 L3
             j L2
             L3:
             j L1
@@ -92,12 +92,12 @@ fn test_while_loop() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 0 #a
+            move r8 0
             L1:
             slt r1 r8 10
-            beq r1 0 L2
+            beqz r1 L2
             add r2 r8 1
-            move r8 r2 #a
+            move r8 r2
             j L1
             L2:
             "
@@ -130,12 +130,12 @@ fn test_loop_continue() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r8 0 #a
+            move r8 0
             L1:
             add r1 r8 1
-            move r8 r1 #a
+            move r8 r1
             slt r2 r8 5
-            beq r2 0 L3
+            beqz r2 L3
             j L1
             L3:
             j L2

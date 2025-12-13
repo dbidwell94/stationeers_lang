@@ -1,5 +1,11 @@
 # Changelog
 
+[0.3.0]
+
+- Implemented a multi-pass optimizer
+  - This should significantly reduce line count in the final output
+- Fixed source map to line up with newly optimized code
+
 [0.2.4]
 
 - Groundwork laid to collect and track source maps

@@ -88,9 +88,13 @@ fn run_logic<'a>() -> Result<(), Error<'a>> {
         None => BufWriter::new(Box::new(std::io::stdout())),
     };
 
-    let compiler = Compiler::new(parser, &mut writer, None);
+    let compiler = Compiler::new(parser, None);
 
-    let CompilationResult { errors, .. } = compiler.compile();
+    let CompilationResult {
+        errors,
+        instructions,
+        ..
+    } = compiler.compile();
 
     if !errors.is_empty() {
         let mut std_error = stderr();
@@ -102,6 +106,8 @@ fn run_logic<'a>() -> Result<(), Error<'a>> {
             std_error.write_all(format!("{}\n", err).as_bytes())?;
         }
     }
+
+    optimizer::optimize(instructions).write(&mut writer)?;
 
     writer.flush()?;
 
