@@ -1,5 +1,9 @@
 # Changelog
 
+[0.3.2]
+
+- Fixed stack overflow due to incorrect optimization of 'leaf' functions
+
 [0.3.1]
 
 - Fixed possible `KeyNotFoundException` in C# code due to invalid

@@ -174,7 +174,9 @@ fn optimize_leaf_functions<'a>(
             continue; // SKIP (Remove)
         }
 
-        if let Instruction::LabelDef(l) = &node.instruction {
+        if let Instruction::LabelDef(l) = &node.instruction
+            && !l.starts_with("__internal_L")
+        {
             processing_function = Some(l.to_string());
         }
 
