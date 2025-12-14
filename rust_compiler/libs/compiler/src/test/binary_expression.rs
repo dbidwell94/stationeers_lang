@@ -52,8 +52,8 @@ fn nested_binary_expressions() -> Result<()> {
             add r1 r10 r9
             mul r2 r1 r8
             move r15 r2
-            j L1
-            L1:
+            j __internal_L1
+            __internal_L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1

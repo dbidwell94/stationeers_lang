@@ -17,7 +17,7 @@ fn no_arguments() -> anyhow::Result<()> {
         j main
         doSomething:
         push ra
-        L1:
+        __internal_L1:
         sub r0 sp 1
         get ra db r0
         sub sp sp 1
@@ -59,14 +59,14 @@ fn let_var_args() -> anyhow::Result<()> {
             push ra
             mul r1 r8 2
             move r15 r1
-            j L1
-            L1:
+            j __internal_L1
+            __internal_L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
             j ra
             main:
-            L2:
+            __internal_L2:
             move r8 123
             push r8
             push r8
@@ -77,8 +77,8 @@ fn let_var_args() -> anyhow::Result<()> {
             move r9 r15
             pow r1 r9 2
             move r9 r1
-            j L2
-            L3:
+            j __internal_L2
+            __internal_L3:
             "
         }
     );
@@ -127,8 +127,8 @@ fn inline_literal_args() -> anyhow::Result<()> {
             pop r9
             push ra
             move r15 5
-            j L1
-            L1:
+            j __internal_L1
+            __internal_L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
@@ -170,7 +170,7 @@ fn mixed_args() -> anyhow::Result<()> {
             pop r8
             pop r9
             push ra
-            L1:
+            __internal_L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
@@ -214,8 +214,8 @@ fn with_return_statement() -> anyhow::Result<()> {
             pop r8
             push ra
             move r15 456
-            j L1
-            L1:
+            j __internal_L1
+            __internal_L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
@@ -251,7 +251,7 @@ fn with_negative_return_literal() -> anyhow::Result<()> {
             doSomething:
             push ra
             move r15 -1
-            L1:
+            __internal_L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1

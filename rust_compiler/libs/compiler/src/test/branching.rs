@@ -22,9 +22,9 @@ fn test_if_statement() -> anyhow::Result<()> {
             main:
             move r8 10
             sgt r1 r8 5
-            beqz r1 L1
+            beqz r1 __internal_L1
             move r8 20
-            L1:
+            __internal_L1:
             "
         }
     );
@@ -54,12 +54,12 @@ fn test_if_else_statement() -> anyhow::Result<()> {
             main:
             move r8 0
             sgt r1 10 5
-            beqz r1 L2
+            beqz r1 __internal_L2
             move r8 1
-            j L1
-            L2:
+            j __internal_L1
+            __internal_L2:
             move r8 2
-            L1:
+            __internal_L1:
             "
         }
     );
@@ -91,18 +91,18 @@ fn test_if_else_if_statement() -> anyhow::Result<()> {
             main:
             move r8 0
             seq r1 r8 1
-            beqz r1 L2
+            beqz r1 __internal_L2
             move r8 10
-            j L1
-            L2:
+            j __internal_L1
+            __internal_L2:
             seq r2 r8 2
-            beqz r2 L4
+            beqz r2 __internal_L4
             move r8 20
-            j L3
-            L4:
+            j __internal_L3
+            __internal_L4:
             move r8 30
-            L3:
-            L1:
+            __internal_L3:
+            __internal_L1:
             "
         }
     );
@@ -145,10 +145,10 @@ fn test_spilled_variable_update_in_branch() -> anyhow::Result<()> {
             move r14 7
             push 8
             seq r1 r8 1
-            beqz r1 L1
+            beqz r1 __internal_L1
             sub r0 sp 1
             put db r0 99
-            L1:
+            __internal_L1:
             sub sp sp 1
             "
         }
