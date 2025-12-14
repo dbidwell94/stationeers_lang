@@ -14,6 +14,10 @@ pub fn find_leaf_functions(instructions: &[InstructionNode]) -> HashSet<String> 
     for node in instructions {
         match &node.instruction {
             Instruction::LabelDef(label) => {
+                if label.starts_with("__internal_L") {
+                    continue;
+                }
+
                 // If we were tracking a function, and it remained a leaf until now, save it.
                 if let Some(name) = current_label.take()
                     && is_current_leaf

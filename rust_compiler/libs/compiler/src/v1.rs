@@ -264,7 +264,7 @@ impl<'a> Compiler<'a> {
 
     fn next_label_name(&mut self) -> Cow<'a, str> {
         self.label_counter += 1;
-        Cow::from(format!("L{}", self.label_counter))
+        Cow::from(format!("__internal_L{}", self.label_counter))
     }
 
     fn expression(

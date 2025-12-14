@@ -99,7 +99,7 @@ fn optimize_leaf_functions<'a>(
     // First scan: Identify instructions to remove and capture RA offsets
     for (i, node) in input.iter().enumerate() {
         match &node.instruction {
-            Instruction::LabelDef(label) => {
+            Instruction::LabelDef(label) if !label.starts_with("__internal_L") => {
                 current_function = Some(label.to_string());
                 function_start_indices.insert(label.to_string(), i);
             }
