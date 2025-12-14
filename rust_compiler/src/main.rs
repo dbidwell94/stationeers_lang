@@ -53,6 +53,9 @@ struct Args {
     /// The output file for the compiled program. If not set, output will go to stdout.
     #[arg(short, long)]
     output_file: Option<PathBuf>,
+    /// Should Slang attempt to optimize the output?
+    #[arg(short = 'z', long)]
+    optimize: bool,
 }
 
 fn run_logic<'a>() -> Result<(), Error<'a>> {
@@ -107,7 +110,11 @@ fn run_logic<'a>() -> Result<(), Error<'a>> {
         }
     }
 
-    optimizer::optimize(instructions).write(&mut writer)?;
+    if args.optimize {
+        optimizer::optimize(instructions).write(&mut writer)?;
+    } else {
+        instructions.write(&mut writer)?;
+    }
 
     writer.flush()?;
 

@@ -133,8 +133,8 @@ fn test_boolean_return() -> anyhow::Result<()> {
             getTrue:
             push ra
             move r15 1
-            j L1
-            L1:
+            j __internal_L1
+            __internal_L1:
             sub r0 sp 1
             get ra db r0
             sub sp sp 1
