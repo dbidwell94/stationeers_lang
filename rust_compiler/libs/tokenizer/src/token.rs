@@ -102,48 +102,6 @@ impl<'a> Token<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Hash, Eq, Clone)]
-pub enum Temperature {
-    Celsius(Number),
-    Fahrenheit(Number),
-    Kelvin(Number),
-}
-
-impl std::fmt::Display for Temperature {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Temperature::Celsius(n) => write!(f, "{}°C", n),
-            Temperature::Fahrenheit(n) => write!(f, "{}°F", n),
-            Temperature::Kelvin(n) => write!(f, "{}°K", n),
-        }
-    }
-}
-
-impl Temperature {
-    pub fn to_kelvin(self) -> Number {
-        match self {
-            Temperature::Celsius(n) => {
-                let n = match n {
-                    Number::Integer(i) => Decimal::new(i as i64, 0),
-                    Number::Decimal(d) => d,
-                };
-                Number::Decimal(n + Decimal::new(27315, 2))
-            }
-            Temperature::Fahrenheit(n) => {
-                let n = match n {
-                    Number::Integer(i) => Decimal::new(i as i64, 0),
-                    Number::Decimal(d) => d,
-                };
-
-                let a = n - Decimal::new(32, 0);
-                let b = Decimal::new(5, 0) / Decimal::new(9, 0);
-                Number::Decimal(a * b + Decimal::new(27315, 2))
-            }
-            Temperature::Kelvin(n) => n,
-        }
-    }
-}
-
 macro_rules! symbol {
     ($var:ident) => {
         |_| Symbol::$var
@@ -280,30 +238,27 @@ fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexE
     span.end -= lexer.extras.line_start_index;
     span.start -= lexer.extras.line_start_index;
 
-    let num = if clean_str.contains('.') {
-        Number::Decimal(
+    let unit = match suffix {
+        Some('c') => Unit::Celsius,
+        Some('f') => Unit::Fahrenheit,
+        Some('k') => Unit::Kelvin,
+        _ => Unit::None,
+    };
+
+    if clean_str.contains('.') {
+        Ok(Number::Decimal(
             clean_str
                 .parse::<Decimal>()
                 .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
-        )
+            unit,
+        ))
     } else {
-        Number::Integer(
+        Ok(Number::Integer(
             clean_str
                 .parse::<i128>()
                 .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
-        )
-    };
-
-    if let Some(suffix) = suffix {
-        Ok(match suffix {
-            'c' => Temperature::Celsius(num),
-            'f' => Temperature::Fahrenheit(num),
-            'k' => Temperature::Kelvin(num),
-            _ => unreachable!(),
-        }
-        .to_kelvin())
-    } else {
-        Ok(num)
+            unit,
+        ))
     }
 }
 
@@ -396,24 +351,54 @@ impl<'a> std::fmt::Display for TokenType<'a> {
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
+pub enum Unit {
+    None,
+    Celsius,
+    Fahrenheit,
+    Kelvin,
+}
+
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum Number {
     /// Represents an integer number
-    Integer(i128),
+    Integer(i128, Unit),
     /// Represents a decimal type number with a precision of 64 bits
-    Decimal(Decimal),
+    Decimal(Decimal, Unit),
+}
+
+impl Number {
+    pub fn unit(&self) -> Unit {
+        match self {
+            Number::Integer(_, u) => *u,
+            Number::Decimal(_, u) => *u,
+        }
+    }
+
+    pub fn has_unit(&self) -> bool {
+        self.unit() != Unit::None
+    }
 }
 
 impl From<bool> for Number {
     fn from(value: bool) -> Self {
-        Self::Integer(if value { 1 } else { 0 })
+        Self::Integer(if value { 1 } else { 0 }, Unit::None)
     }
 }
 
 impl From<Number> for Decimal {
     fn from(value: Number) -> Self {
-        match value {
-            Number::Decimal(d) => d,
-            Number::Integer(i) => Decimal::from(i),
+        let (val, unit) = match value {
+            Number::Decimal(d, u) => (d, u),
+            Number::Integer(i, u) => (Decimal::from(i), u),
+        };
+
+        match unit {
+            Unit::None | Unit::Kelvin => val,
+            Unit::Celsius => val + Decimal::new(27315, 2),
+            Unit::Fahrenheit => {
+                (val - Decimal::new(32, 0)) * Decimal::new(5, 0) / Decimal::new(9, 0)
+                    + Decimal::new(27315, 2)
+            }
         }
     }
 }
@@ -423,22 +408,48 @@ impl std::ops::Neg for Number {
 
     fn neg(self) -> Self::Output {
         match self {
-            Self::Integer(i) => Self::Integer(-i),
-            Self::Decimal(d) => Self::Decimal(-d),
+            Self::Integer(i, u) => Self::Integer(-i, u),
+            Self::Decimal(d, u) => Self::Decimal(-d, u),
         }
     }
+}
+
+fn determine_target_unit(lhs_unit: Unit, rhs_unit: Unit) -> Option<Unit> {
+    if lhs_unit == rhs_unit {
+        return Some(lhs_unit);
+    }
+    if lhs_unit != Unit::None && rhs_unit == Unit::None {
+        return Some(lhs_unit);
+    }
+    if lhs_unit == Unit::None && rhs_unit != Unit::None {
+        return Some(rhs_unit);
+    }
+    // Mismatched units (C + F) -> Fallback to Kelvin/None
+    None
 }
 
 impl std::ops::Add for Number {
     type Output = Number;
 
     fn add(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Self::Integer(l), Self::Integer(r)) => Number::Integer(l + r),
-            (Self::Decimal(l), Self::Decimal(r)) => Number::Decimal(l + r),
-            (Self::Integer(l), Self::Decimal(r)) => Number::Decimal(Decimal::from(l) + r),
-            (Self::Decimal(l), Self::Integer(r)) => Number::Decimal(l + Decimal::from(r)),
+        // If we can determine a common target unit (e.g. C + C = C, or C + Scalar = C),
+        // we preserve that unit. Otherwise, we convert to Kelvin (Decimal) and return Unit::None.
+        if let Some(target_unit) = determine_target_unit(self.unit(), rhs.unit()) {
+            return match (self, rhs) {
+                (Self::Integer(l, _), Self::Integer(r, _)) => Number::Integer(l + r, target_unit),
+                (Self::Decimal(l, _), Self::Decimal(r, _)) => Number::Decimal(l + r, target_unit),
+                (Self::Integer(l, _), Self::Decimal(r, _)) => {
+                    Number::Decimal(Decimal::from(l) + r, target_unit)
+                }
+                (Self::Decimal(l, _), Self::Integer(r, _)) => {
+                    Number::Decimal(l + Decimal::from(r), target_unit)
+                }
+            };
         }
+
+        let l: Decimal = self.into();
+        let r: Decimal = rhs.into();
+        Number::Decimal(l + r, Unit::None)
     }
 }
 
@@ -446,12 +457,22 @@ impl std::ops::Sub for Number {
     type Output = Number;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Self::Integer(l), Self::Integer(r)) => Self::Integer(l - r),
-            (Self::Decimal(l), Self::Integer(r)) => Self::Decimal(l - Decimal::from(r)),
-            (Self::Integer(l), Self::Decimal(r)) => Self::Decimal(Decimal::from(l) - r),
-            (Self::Decimal(l), Self::Decimal(r)) => Self::Decimal(l - r),
+        if let Some(target_unit) = determine_target_unit(self.unit(), rhs.unit()) {
+            return match (self, rhs) {
+                (Self::Integer(l, _), Self::Integer(r, _)) => Number::Integer(l - r, target_unit),
+                (Self::Decimal(l, _), Self::Decimal(r, _)) => Number::Decimal(l - r, target_unit),
+                (Self::Integer(l, _), Self::Decimal(r, _)) => {
+                    Number::Decimal(Decimal::from(l) - r, target_unit)
+                }
+                (Self::Decimal(l, _), Self::Integer(r, _)) => {
+                    Number::Decimal(l - Decimal::from(r), target_unit)
+                }
+            };
         }
+
+        let l: Decimal = self.into();
+        let r: Decimal = rhs.into();
+        Number::Decimal(l - r, Unit::None)
     }
 }
 
@@ -459,12 +480,26 @@ impl std::ops::Mul for Number {
     type Output = Number;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Number::Integer(l), Number::Integer(r)) => Number::Integer(l * r),
-            (Number::Integer(l), Number::Decimal(r)) => Number::Decimal(Decimal::from(l) * r),
-            (Number::Decimal(l), Number::Integer(r)) => Number::Decimal(l * Decimal::from(r)),
-            (Number::Decimal(l), Number::Decimal(r)) => Number::Decimal(l * r),
+        if let Some(target_unit) = determine_target_unit(self.unit(), rhs.unit()) {
+            return match (self, rhs) {
+                (Number::Integer(l, _), Number::Integer(r, _)) => {
+                    Number::Integer(l * r, target_unit)
+                }
+                (Number::Integer(l, _), Number::Decimal(r, _)) => {
+                    Number::Decimal(Decimal::from(l) * r, target_unit)
+                }
+                (Number::Decimal(l, _), Number::Integer(r, _)) => {
+                    Number::Decimal(l * Decimal::from(r), target_unit)
+                }
+                (Number::Decimal(l, _), Number::Decimal(r, _)) => {
+                    Number::Decimal(l * r, target_unit)
+                }
+            };
         }
+
+        let l: Decimal = self.into();
+        let r: Decimal = rhs.into();
+        Number::Decimal(l * r, Unit::None)
     }
 }
 
@@ -472,7 +507,22 @@ impl std::ops::Div for Number {
     type Output = Number;
 
     fn div(self, rhs: Self) -> Self::Output {
-        Number::Decimal(Decimal::from(self) / Decimal::from(rhs))
+        if let Some(target_unit) = determine_target_unit(self.unit(), rhs.unit()) {
+            // Division always promotes to Decimal
+            let l_val = match self {
+                Self::Integer(i, _) => Decimal::from(i),
+                Self::Decimal(d, _) => d,
+            };
+            let r_val = match rhs {
+                Self::Integer(i, _) => Decimal::from(i),
+                Self::Decimal(d, _) => d,
+            };
+            return Number::Decimal(l_val / r_val, target_unit);
+        }
+
+        let l: Decimal = self.into();
+        let r: Decimal = rhs.into();
+        Number::Decimal(l / r, Unit::None)
     }
 }
 
@@ -480,15 +530,36 @@ impl std::ops::Rem for Number {
     type Output = Number;
 
     fn rem(self, rhs: Self) -> Self::Output {
-        Number::Decimal(Decimal::from(self) % Decimal::from(rhs))
+        if let Some(target_unit) = determine_target_unit(self.unit(), rhs.unit()) {
+            let l_val = match self {
+                Self::Integer(i, _) => Decimal::from(i),
+                Self::Decimal(d, _) => d,
+            };
+            let r_val = match rhs {
+                Self::Integer(i, _) => Decimal::from(i),
+                Self::Decimal(d, _) => d,
+            };
+            return Number::Decimal(l_val % r_val, target_unit);
+        }
+
+        let l: Decimal = self.into();
+        let r: Decimal = rhs.into();
+        Number::Decimal(l % r, Unit::None)
     }
 }
 
 impl std::fmt::Display for Number {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Number::Integer(i) => write!(f, "{}", i),
-            Number::Decimal(d) => write!(f, "{}", d),
+        let (val, unit) = match self {
+            Number::Integer(i, u) => (i.to_string(), u),
+            Number::Decimal(d, u) => (d.to_string(), u),
+        };
+
+        match unit {
+            Unit::None => write!(f, "{}", val),
+            Unit::Celsius => write!(f, "{}c", val),
+            Unit::Fahrenheit => write!(f, "{}f", val),
+            Unit::Kelvin => write!(f, "{}k", val),
         }
     }
 }
@@ -771,3 +842,4 @@ documented! {
         While,
     }
 }
+

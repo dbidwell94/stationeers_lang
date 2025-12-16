@@ -54,10 +54,7 @@ fn test_const_declaration() -> Result<()> {
     let tokenizer = Tokenizer::from(input);
     let mut parser = Parser::new(tokenizer);
 
-    assert_eq!(
-        "(const item = 293.15)",
-        parser.parse()?.unwrap().to_string()
-    );
+    assert_eq!("(const item = 20c)", parser.parse()?.unwrap().to_string());
 
     assert_eq!(
         "(const decimal = 200.15)",

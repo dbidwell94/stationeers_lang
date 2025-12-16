@@ -15,7 +15,7 @@ use parser::{
 use rust_decimal::Decimal;
 use std::{borrow::Cow, collections::HashMap};
 use thiserror::Error;
-use tokenizer::token::Number;
+use tokenizer::token::{Number, Unit};
 
 fn extract_literal<'a>(
     literal: Literal<'a>,
@@ -811,7 +811,7 @@ impl<'a> Compiler<'a> {
                         ..
                     })),
                 ..
-            }) => Literal::Number(Number::Integer(crc_hash_signed(&str_to_hash))),
+            }) => Literal::Number(Number::Integer(crc_hash_signed(&str_to_hash), Unit::None)),
             LiteralOr::Or(Spanned { span, .. }) => {
                 return Err(Error::Unknown(
                     "hash only supports string literals in this context.".into(),
@@ -2022,6 +2022,7 @@ impl<'a> Compiler<'a> {
 
                 let loc = VariableLocation::Constant(Literal::Number(Number::Integer(
                     crc_hash_signed(&str_lit),
+                    Unit::None,
                 )));
 
                 Ok(Some(CompileLocation {

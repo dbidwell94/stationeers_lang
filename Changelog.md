@@ -1,5 +1,10 @@
 # Changelog
 
+[0.3.3]
+
+- Fixed bug where negative temperature literals were converted to Kelvin
+  first before applying the negative
+
 [0.3.2]
 
 - Fixed stack overflow due to incorrect optimization of 'leaf' functions

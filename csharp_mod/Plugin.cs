@@ -41,7 +41,7 @@ namespace Slang
     {
         public const string PluginGuid = "com.biddydev.slang";
         public const string PluginName = "Slang";
-        public const string PluginVersion = "0.3.2";
+        public const string PluginVersion = "0.3.3";
 
         public static Mod MOD = new Mod(PluginName, PluginVersion);
 
