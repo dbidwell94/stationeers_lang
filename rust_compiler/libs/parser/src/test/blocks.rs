@@ -1,6 +1,6 @@
-use tokenizer::Tokenizer;
-
 use crate::Parser;
+use pretty_assertions::assert_eq;
+use tokenizer::Tokenizer;
 
 #[test]
 fn test_block() -> anyhow::Result<()> {

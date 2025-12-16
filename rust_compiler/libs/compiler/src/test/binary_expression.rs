@@ -175,3 +175,52 @@ fn test_ternary_expression_assignment() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_negative_literals() -> Result<()> {
+    let compiled = compile!(
+    debug
+    r#"
+        let item = -10c - 20c;
+    "#
+    );
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 243.15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_mismatched_temperature_literals() -> Result<()> {
+    let compiled = compile!(
+    debug
+    r#"
+        let item = -10c - 100k;
+        let item2 = item + 500c;
+    "#
+    );
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 163.15
+            add r1 r8 773.15
+            move r9 r1
+            "
+        }
+    );
+
+    Ok(())
+}
