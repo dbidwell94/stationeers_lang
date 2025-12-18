@@ -191,6 +191,9 @@ pub enum Instruction<'a> {
     /// `sbn deviceHash nameHash type value` - Set Batch Named
     StoreBatchNamed(Operand<'a>, Operand<'a>, Operand<'a>, Operand<'a>),
 
+    /// `lr register device reagentMode int`
+    LoadReagent(Operand<'a>, Operand<'a>, Operand<'a>, Operand<'a>),
+
     /// `j label` - Unconditional Jump
     Jump(Operand<'a>),
     /// `jal label` - Jump and Link (Function Call)
@@ -310,6 +313,9 @@ impl<'a> fmt::Display for Instruction<'a> {
             }
             Instruction::StoreBatchNamed(d_hash, n_hash, typ, val) => {
                 write!(f, "sbn {} {} {} {}", d_hash, n_hash, typ, val)
+            }
+            Instruction::LoadReagent(reg, device, reagent_mode, reagent_hash) => {
+                write!(f, "lr {} {} {} {}", reg, device, reagent_mode, reagent_hash)
             }
             Instruction::Jump(lbl) => write!(f, "j {}", lbl),
             Instruction::JumpAndLink(lbl) => write!(f, "jal {}", lbl),

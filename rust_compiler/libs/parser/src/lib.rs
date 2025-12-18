@@ -1909,6 +1909,20 @@ impl<'a> Parser<'a> {
                     Box::new(expr),
                 )))
             }
+            "loadReagent" | "lr" => {
+                let mut args = args!(3);
+                let next = args.next();
+                let device = literal_or_variable!(next);
+                let next = args.next();
+                let reagent_mode = get_arg!(Literal, literal_or_variable!(next));
+                let reagent_hash = args.next().ok_or(Error::UnexpectedEOF)?;
+
+                Ok(SysCall::System(System::LoadReagent(
+                    device,
+                    reagent_mode,
+                    Box::new(reagent_hash),
+                )))
+            }
 
             // Math SysCalls
             "acos" => {

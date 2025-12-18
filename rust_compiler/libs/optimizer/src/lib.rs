@@ -565,6 +565,7 @@ fn get_destination_reg(instr: &Instruction) -> Option<u8> {
         | Instruction::Sqrt(Operand::Register(r), _)
         | Instruction::Tan(Operand::Register(r), _)
         | Instruction::Trunc(Operand::Register(r), _)
+        | Instruction::LoadReagent(Operand::Register(r), _, _, _)
         | Instruction::Pop(Operand::Register(r)) => Some(*r),
         _ => None,
     }
@@ -595,6 +596,9 @@ fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<Instr
             c.clone(),
             d.clone(),
         )),
+        Instruction::LoadReagent(_, b, c, d) => {
+            Some(Instruction::LoadReagent(r, b.clone(), c.clone(), d.clone()))
+        }
         Instruction::SetEq(_, a, b) => Some(Instruction::SetEq(r, a.clone(), b.clone())),
         Instruction::SetNe(_, a, b) => Some(Instruction::SetNe(r, a.clone(), b.clone())),
         Instruction::SetGt(_, a, b) => Some(Instruction::SetGt(r, a.clone(), b.clone())),

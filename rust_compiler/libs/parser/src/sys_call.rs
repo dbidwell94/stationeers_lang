@@ -237,6 +237,18 @@ documented! {
             Spanned<Literal<'a>>,
             Spanned<Literal<'a>>,
             Box<Spanned<Expression<'a>>>
+        ),
+        /// Loads reagent of device's ReagentMode where a hash of the reagent type to check for
+        ///
+        /// ## IC10
+        /// `lr r? device(d?|r?|id) reagentMode int`
+        /// ## Slang
+        /// `let result = loadReagent(deviceHash, "ReagentMode", reagentHash);`
+        /// `let result = lr(deviceHash, "ReagentMode", reagentHash);`
+        LoadReagent(
+            Spanned<LiteralOrVariable<'a>>,
+            Spanned<Literal<'a>>,
+            Box<Spanned<Expression<'a>>>
         )
     }
 }
@@ -261,6 +273,7 @@ impl<'a> std::fmt::Display for System<'a> {
             }
             System::LoadSlot(a, b, c) => write!(f, "loadSlot({}, {}, {})", a, b, c),
             System::SetSlot(a, b, c, d) => write!(f, "setSlot({}, {}, {}, {})", a, b, c, d),
+            System::LoadReagent(a, b, c) => write!(f, "loadReagent({}, {}, {})", a, b, c),
         }
     }
 }

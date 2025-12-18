@@ -2296,6 +2296,48 @@ impl<'a> Compiler<'a> {
 
                 Ok(None)
             }
+            System::LoadReagent(device, reagent_mode, reagent_hash) => {
+                let Spanned {
+                    node: LiteralOrVariable::Variable(device_spanned),
+                    ..
+                } = device
+                else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a variable".into(),
+                        span,
+                    ));
+                };
+
+                let (device, device_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Variable(device_spanned),
+                    scope,
+                )?;
+
+                let (reagent_mode, reagent_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(reagent_mode.node),
+                    scope,
+                )?;
+
+                let (reagent_hash, reagent_hash_cleanup) =
+                    self.compile_operand(*reagent_hash, scope)?;
+
+                self.write_instruction(
+                    Instruction::LoadReagent(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        device,
+                        reagent_mode,
+                        reagent_hash,
+                    ),
+                    Some(span),
+                )?;
+
+                cleanup!(reagent_cleanup, reagent_hash_cleanup, device_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
         }
     }
 

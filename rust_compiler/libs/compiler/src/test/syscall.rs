@@ -208,3 +208,29 @@ fn test_set_slot() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_load_reagent() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+        device thingy = "d0";
+
+        let something = lr(thingy, "Contents", hash("Iron"));
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            lr r15 d0 Contents -666742878
+            move r8 r15
+            "
+        }
+    );
+
+    Ok(())
+}
