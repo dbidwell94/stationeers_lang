@@ -661,6 +661,14 @@ fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
 
         Instruction::BranchEqZero(a, _) | Instruction::BranchNeZero(a, _) => check(a),
 
+        Instruction::LoadReagent(_, device, _, item_hash) => check(device) || check(item_hash),
+
+        Instruction::LoadSlot(_, dev, slot, _) => check(dev) || check(slot),
+        Instruction::LoadBatch(_, dev, _, mode) => check(dev) || check(mode),
+        Instruction::LoadBatchNamed(_, d_hash, n_hash, _, mode) => {
+            check(d_hash) || check(n_hash) || check(mode)
+        }
+
         Instruction::SetEq(_, a, b)
         | Instruction::SetNe(_, a, b)
         | Instruction::SetGt(_, a, b)
