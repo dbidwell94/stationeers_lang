@@ -1,5 +1,11 @@
 # Changelog
 
+[0.3.4]
+
+- Added support for `loadReagent`, which maps to the `lr` IC10 instruction
+  - Shorthand is `lr`
+  - Longform is `loadReagent`
+
 [0.3.3]
 
 - Fixed bug where negative temperature literals were converted to Kelvin
