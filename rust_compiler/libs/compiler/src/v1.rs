@@ -1115,43 +1115,26 @@ impl<'a> Compiler<'a> {
             Some(name.span),
         )?;
 
-        for register in active_registers {
-            let VariableLocation::Stack(stack_offset) = stack
-                .get_location_of(&Cow::from(format!("temp_{register}")), None)
-                .map_err(Error::Scope)?
-            else {
-                // This shouldn't happen if we just added it
-                return Err(Error::Unknown(
-                    format!("Failed to recover temp_{register}"),
-                    Some(name.span),
-                ));
-            };
+        // cleanup spilled temporary variables
+        let total_stack_usage = stack.stack_offset();
+        let saved_regs_count = active_registers.len() as u16;
+
+        if total_stack_usage > saved_regs_count {
+            let spill_amount = total_stack_usage - saved_regs_count;
             self.write_instruction(
                 Instruction::Sub(
-                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                     Operand::StackPointer,
-                    Operand::Number(stack_offset.into()),
-                ),
-                Some(name.span),
-            )?;
-
-            self.write_instruction(
-                Instruction::Get(
-                    Operand::Register(register),
-                    Operand::Device(Cow::from("db")),
-                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                    Operand::StackPointer,
+                    Operand::Number(spill_amount.into()),
                 ),
                 Some(name.span),
             )?;
         }
 
-        if stack.stack_offset() > 0 {
+        // restore the registers in reverse order from the stack, now using `pop`
+        for register in active_registers.iter().rev() {
             self.write_instruction(
-                Instruction::Sub(
-                    Operand::StackPointer,
-                    Operand::StackPointer,
-                    Operand::Number(Decimal::from(stack.stack_offset())),
-                ),
+                Instruction::Pop(Operand::Register(*register)),
                 Some(name.span),
             )?;
         }
@@ -2296,6 +2279,48 @@ impl<'a> Compiler<'a> {
 
                 Ok(None)
             }
+            System::LoadReagent(device, reagent_mode, reagent_hash) => {
+                let Spanned {
+                    node: LiteralOrVariable::Variable(device_spanned),
+                    ..
+                } = device
+                else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a variable".into(),
+                        span,
+                    ));
+                };
+
+                let (device, device_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Variable(device_spanned),
+                    scope,
+                )?;
+
+                let (reagent_mode, reagent_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Literal(reagent_mode.node),
+                    scope,
+                )?;
+
+                let (reagent_hash, reagent_hash_cleanup) =
+                    self.compile_operand(*reagent_hash, scope)?;
+
+                self.write_instruction(
+                    Instruction::LoadReagent(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        device,
+                        reagent_mode,
+                        reagent_hash,
+                    ),
+                    Some(span),
+                )?;
+
+                cleanup!(reagent_cleanup, reagent_hash_cleanup, device_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
         }
     }
 
@@ -2693,33 +2718,49 @@ impl<'a> Compiler<'a> {
 
         self.write_instruction(Instruction::LabelDef(return_label.clone()), Some(span))?;
 
-        self.write_instruction(
-            Instruction::Sub(
-                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                Operand::StackPointer,
-                Operand::Number(ra_stack_offset.into()),
-            ),
-            Some(span),
-        )?;
+        if ra_stack_offset == 1 {
+            self.write_instruction(Instruction::Pop(Operand::ReturnAddress), Some(span))?;
 
-        self.write_instruction(
-            Instruction::Get(
-                Operand::ReturnAddress,
-                Operand::Device(Cow::from("db")),
-                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-            ),
-            Some(span),
-        )?;
-
-        if block_scope.stack_offset() > 0 {
+            let remaining_cleanup = block_scope.stack_offset() - 1;
+            if remaining_cleanup > 0 {
+                self.write_instruction(
+                    Instruction::Sub(
+                        Operand::StackPointer,
+                        Operand::StackPointer,
+                        Operand::Number(remaining_cleanup.into()),
+                    ),
+                    Some(span),
+                )?;
+            }
+        } else {
             self.write_instruction(
                 Instruction::Sub(
+                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                     Operand::StackPointer,
-                    Operand::StackPointer,
-                    Operand::Number(block_scope.stack_offset().into()),
+                    Operand::Number(ra_stack_offset.into()),
                 ),
                 Some(span),
             )?;
+
+            self.write_instruction(
+                Instruction::Get(
+                    Operand::ReturnAddress,
+                    Operand::Device(Cow::from("db")),
+                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                ),
+                Some(span),
+            )?;
+
+            if block_scope.stack_offset() > 0 {
+                self.write_instruction(
+                    Instruction::Sub(
+                        Operand::StackPointer,
+                        Operand::StackPointer,
+                        Operand::Number(block_scope.stack_offset().into()),
+                    ),
+                    Some(span),
+                )?;
+            }
         }
 
         self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;

@@ -1,5 +1,15 @@
 # Changelog
 
+[0.3.4]
+
+- Added support for `loadReagent`, which maps to the `lr` IC10 instruction
+  - Shorthand is `lr`
+  - Longform is `loadReagent`
+- Update various Rust dependencies
+- Added more optimizations, prioritizing `pop` instead of `get` when available
+  when backing up / restoring registers for function invocations. This should
+  save approximately 2 lines per backed up register
+
 [0.3.3]
 
 - Fixed bug where negative temperature literals were converted to Kelvin
