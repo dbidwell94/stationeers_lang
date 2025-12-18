@@ -5,6 +5,7 @@
 - Added support for `loadReagent`, which maps to the `lr` IC10 instruction
   - Shorthand is `lr`
   - Longform is `loadReagent`
+- Update various Rust dependencies
 
 [0.3.3]
 
