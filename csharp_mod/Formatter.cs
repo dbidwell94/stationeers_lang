@@ -187,9 +187,12 @@ public class SlangFormatter : ICodeFormatter
         var caretPos = Editor.CaretPos.Line;
 
         // get the slang sourceMap at the current editor line
-        var lines = ic10SourceMap.FindAll(entry =>
-            entry.SlangSource.StartLine == caretPos || entry.SlangSource.EndLine == caretPos
-        );
+        var lines = ic10SourceMap
+            .FindAll(entry =>
+                entry.SlangSource.StartLine == caretPos || entry.SlangSource.EndLine == caretPos
+            )
+            .ConvertAll(el => el.Ic10Line)
+            .ToHashSet();
 
         // extract the current "context" of the ic10 compilation. The current Slang source line
         // should be directly next to the compiled IC10 source line, and we should highlight the
@@ -197,21 +200,19 @@ public class SlangFormatter : ICodeFormatter
 
         iC10CodeFormatter.ResetCode(ic10CompilationResult);
 
-        if (lines.Count < 1)
+        uint index = 0;
+        foreach (var line in iC10CodeFormatter.Lines)
         {
-            return;
-        }
-
-        iC10CodeFormatter.Lines = new StyledText();
-
-        var minLine = lines.Min(map => map.Ic10Line);
-        var maxLine = lines.Max(map => map.Ic10Line);
-
-        foreach (var line in lines)
-        {
-            iC10CodeFormatter
-                .Lines[(int)line.Ic10Line]
-                .ForEach(token => token.Style.Color = ColorIdentifier);
+            if (lines.Contains(index))
+            {
+                index += 1;
+                continue;
+            }
+            line.ForEach(token =>
+            {
+                token.Style.Color = ColorDefault;
+            });
+            index += 1;
         }
     }
 
