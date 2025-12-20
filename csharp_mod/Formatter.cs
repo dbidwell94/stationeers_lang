@@ -5,12 +5,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using ImGuiNET;
 using StationeersIC10Editor;
+using StationeersIC10Editor.IC10;
+using UnityEngine;
 
 public class SlangFormatter : ICodeFormatter
 {
     private CancellationTokenSource? _lspCancellationToken;
     private object _tokenLock = new();
+
+    private IC10CodeFormatter iC10CodeFormatter = new IC10CodeFormatter();
+    private string ic10CompilationResult = "";
+    private List<SourceMapEntry> ic10SourceMap = new();
 
     // VS Code Dark Theme Palette
     public static readonly uint ColorControl = ColorFromHTML("#C586C0"); // Pink (if, return, loop)
@@ -33,6 +40,7 @@ public class SlangFormatter : ICodeFormatter
         : base()
     {
         OnCodeChanged += HandleCodeChanged;
+        OnCaretMoved += UpdateIc10Formatter;
     }
 
     public static double MatchingScore(string input)
@@ -68,6 +76,34 @@ public class SlangFormatter : ICodeFormatter
     public override string Compile()
     {
         return this.Lines.RawText;
+    }
+
+    public override void DrawLine(int lineIndex, TextRange selection, bool drawLineNumber = true)
+    {
+        Vector2 cursorPos = ImGui.GetCursorScreenPos();
+        Vector2 space = ImGui.GetContentRegionAvail();
+        base.DrawLine(lineIndex, selection, drawLineNumber);
+
+        var charWidth = Settings.CharWidth;
+
+        var width = Mathf.Max(Lines.Width + 10.0f + LineNumberOffset * charWidth, space.x / 2);
+
+        ImGui
+            .GetWindowDrawList()
+            .AddLine(
+                new Vector2(cursorPos.x + width + 4.5f * charWidth, cursorPos.y),
+                new Vector2(
+                    cursorPos.x + width + 4.5f * charWidth,
+                    cursorPos.y + space.y + Settings.LineHeight
+                ),
+                ColorLineNumber,
+                1.0f
+            );
+
+        cursorPos.x += width;
+        ImGui.SetCursorScreenPos(cursorPos);
+        if (lineIndex < iC10CodeFormatter.Lines.Count)
+            iC10CodeFormatter.DrawLine(lineIndex, new TextRange(), true);
     }
 
     public override StyledLine ParseLine(string line)
@@ -126,11 +162,56 @@ public class SlangFormatter : ICodeFormatter
             );
 
             ApplyDiagnostics(dict);
+
+            // If we have valid code, update the IC10 output
+            if (
+                dict.Count < 1
+                && Marshal.CompileFromString(inputSrc, out var compiled, out var sourceMap)
+            )
+            {
+                ic10CompilationResult = compiled;
+                ic10SourceMap = sourceMap;
+                UpdateIc10Formatter();
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             L.Error(ex.Message);
+        }
+    }
+
+    private void UpdateIc10Formatter()
+    {
+        iC10CodeFormatter.Editor = Editor;
+        var caretPos = Editor.CaretPos.Line;
+
+        // get the slang sourceMap at the current editor line
+        var lines = ic10SourceMap.FindAll(entry =>
+            entry.SlangSource.StartLine == caretPos || entry.SlangSource.EndLine == caretPos
+        );
+
+        // extract the current "context" of the ic10 compilation. The current Slang source line
+        // should be directly next to the compiled IC10 source line, and we should highlight the
+        // IC10 code that directly represents the Slang source
+
+        iC10CodeFormatter.ResetCode(ic10CompilationResult);
+
+        if (lines.Count < 1)
+        {
+            return;
+        }
+
+        iC10CodeFormatter.Lines = new StyledText();
+
+        var minLine = lines.Min(map => map.Ic10Line);
+        var maxLine = lines.Max(map => map.Ic10Line);
+
+        foreach (var line in lines)
+        {
+            iC10CodeFormatter
+                .Lines[(int)line.Ic10Line]
+                .ForEach(token => token.Style.Color = ColorIdentifier);
         }
     }
 

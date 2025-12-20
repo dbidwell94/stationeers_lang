@@ -39,6 +39,10 @@
         <HintPath>./ref/Assembly-CSharp.dll</HintPath>
         <Private>False</Private>
       </Reference>
+      <Reference Include="RG.ImGui">
+        <HintPath>./ref/RG.ImGui.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
 
       <Reference Include="IC10Editor.dll">
         <HintPath>./ref/IC10Editor.dll</HintPath>
