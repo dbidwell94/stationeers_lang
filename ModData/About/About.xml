@@ -2,7 +2,7 @@
 <ModMetadata xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Name>Slang</Name>
   <Author>JoeDiertay</Author>
-  <Version>0.3.4</Version>
+  <Version>0.4.0</Version>
   <Description>
 [h1]Slang: High-Level Programming for Stationeers[/h1]
 
@@ -23,6 +23,8 @@ Slang (Stationeers Language) brings modern programming to Stationeers. It allows
 [*] [b]Optimizations:[/b] Features like Constant Folding calculate math at compile time to save instructions.
 [*] [b]Device Aliasing:[/b] Simple mapping: device sensor = "d0".
 [*] [b]Temperature Literals:[/b] Don't worry about converting Celsius to Kelvin anymore. Define your temperatures as whatever you want and append the proper suffix at the end (ex. 20c, 68f, 293.15k)
+[*] [b]Side-by-side IC10 output:[/b] Preview the compiled IC10 alongside the Slang source code. What you see is what you get.
+[*] [b]Compiler Optimizations:[/b] Slang now does its best to safely optimize the output IC10, removing labels, unnecessary moves, etc.
 [/list]
 
 [h2]Installation[/h2]
@@ -50,16 +52,12 @@ loop {
 
 [h2]Known Issues (Beta)[/h2]
 [list]
-[*] [b]Code Size:[/b] Compiled output is currently more verbose than hand-optimized assembly. Optimization passes are planned.
-[*] [b]Stack Access:[/b] Direct stack memory access is disabled to prevent conflicts with the compiler's internal memory management.
+[*] [b]Stack Access:[/b] Direct stack memory access is disabled to prevent conflicts with the compiler's internal memory management. A workaround is being planned.
 [*] [b]Documentation:[/b] In-game tooltips for syscalls (like load, set) are WIP. Check the "Slang" entry in the Stationpedia (F1) for help.
-[*] [b]Debugging:[/b] Runtime errors currently point to the compiled IC10 line number, not your Slang source line. Source mapping is coming soon.
 [/list]
 
 [h2]Planned Features[/h2]
 [list]
-[*] Side-by-side view: Slang vs. Compiled IC10.
-[*] Compiler optimizations (dead code elimination, smarter register allocation).
 [*] Enhanced LSP features (Autocomplete, Go to Definition).
 [*] Full feature parity with all IC10 instructions.
 [*] Tutorials and beginner script examples.
