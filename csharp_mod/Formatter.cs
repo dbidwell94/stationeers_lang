@@ -218,12 +218,11 @@ public class SlangFormatter : ICodeFormatter
         {
             return;
         }
-        // get the "middle" IC10 line
+        // get the total range of the IC10 source for the selected Slang line
         var max = lines.Max(line => line.Ic10Line);
         var min = lines.Min(line => line.Ic10Line);
-        var middle = (max + min) / 2;
 
-        // first, update the line styles that are between min and max inclusive
+        // highlight all the IC10 lines that are within the specified range
         foreach (var index in Enumerable.Range((int)min, (int)(max - min) + 1))
         {
             var lineText = iC10CodeFormatter.Lines[index].Text;
