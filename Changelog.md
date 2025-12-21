@@ -1,5 +1,16 @@
 # Changelog
 
+[0.4.1]
+
+- Update syscalls for `loadSlot` and `setSlot` to support expressions instead of
+  just variables for the slot index
+- Moved the main repository from GitHub to a self-hosted Gitea
+  - Restructured workflow files to support this change
+  - GitHub will still remain as a mirrored repository of the new
+    Gitea instance.
+  - This is in response to the new upcoming changes to the pricing model
+    for self-hosted GitHub action runners.
+
 [0.4.0]
 
 - First pass getting compiled IC10 to output along side the Slang source code
