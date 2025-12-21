@@ -164,10 +164,25 @@ public class SlangFormatter : ICodeFormatter
             ApplyDiagnostics(dict);
 
             // If we have valid code, update the IC10 output
-            if (
-                dict.Count < 1
-                && Marshal.CompileFromString(inputSrc, out var compiled, out var sourceMap)
-            )
+            if (dict.Count > 0)
+            {
+                return;
+            }
+
+            var (compilationSuccess, compiled, sourceMap) = await Task.Run(
+                () =>
+                {
+                    var successful = Marshal.CompileFromString(
+                        inputSrc,
+                        out var compiled,
+                        out var sourceMap
+                    );
+                    return (successful, compiled, sourceMap);
+                },
+                cancellationToken
+            );
+
+            if (compilationSuccess)
             {
                 ic10CompilationResult = compiled;
                 ic10SourceMap = sourceMap;
@@ -187,12 +202,11 @@ public class SlangFormatter : ICodeFormatter
         var caretPos = Editor.CaretPos.Line;
 
         // get the slang sourceMap at the current editor line
-        var lines = ic10SourceMap
-            .FindAll(entry =>
-                entry.SlangSource.StartLine == caretPos || entry.SlangSource.EndLine == caretPos
-            )
-            .ConvertAll(el => el.Ic10Line)
-            .ToHashSet();
+        var lines = ic10SourceMap.FindAll(entry =>
+            entry.SlangSource.StartLine == caretPos || entry.SlangSource.EndLine == caretPos
+        );
+
+        lines.Sort((itemA, itemB) => itemA.Ic10Line.CompareTo(itemB.Ic10Line));
 
         // extract the current "context" of the ic10 compilation. The current Slang source line
         // should be directly next to the compiled IC10 source line, and we should highlight the
@@ -200,19 +214,35 @@ public class SlangFormatter : ICodeFormatter
 
         iC10CodeFormatter.ResetCode(ic10CompilationResult);
 
-        uint index = 0;
-        foreach (var line in iC10CodeFormatter.Lines)
+        if (lines.Count() < 1)
         {
-            if (lines.Contains(index))
-            {
-                index += 1;
-                continue;
-            }
-            line.ForEach(token =>
-            {
-                token.Style.Color = ColorDefault;
-            });
-            index += 1;
+            return;
+        }
+        // get the "middle" IC10 line
+        var max = lines.Max(line => line.Ic10Line);
+        var min = lines.Min(line => line.Ic10Line);
+        var middle = (max + min) / 2;
+
+        // first, update the line styles that are between min and max inclusive
+        foreach (var index in Enumerable.Range((int)min, (int)(max - min) + 1))
+        {
+            var lineText = iC10CodeFormatter.Lines[index].Text;
+
+            var newLine = new StyledLine(
+                lineText,
+                [
+                    new SemanticToken
+                    {
+                        Column = 0,
+                        Length = lineText.Length,
+                        Line = index,
+                        Background = ColorIdentifier,
+                        Color = ColorFromHTML("black"),
+                    },
+                ]
+            );
+
+            iC10CodeFormatter.Lines[index] = newLine;
         }
     }
 
