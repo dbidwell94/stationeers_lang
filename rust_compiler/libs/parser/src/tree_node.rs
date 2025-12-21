@@ -175,6 +175,18 @@ impl<'a> std::fmt::Display for MemberAccessExpression<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct MemberIndexingExpression<'a> {
+    pub object: LiteralOrVariable<'a>,
+    pub index_of: Box<Spanned<Expression<'a>>>,
+}
+
+impl<'a> std::fmt::Display for MemberIndexingExpression<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}[{}]", self.object, self.index_of)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct MethodCallExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
     pub method: Spanned<Cow<'a, str>>,

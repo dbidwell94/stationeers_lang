@@ -308,7 +308,7 @@ impl<'a> Parser<'a> {
         Ok(Some(lhs))
     }
 
-    /// Handles dot notation chains: x.y.z()
+    /// Handles dot notation chains (x.y.z()) and array indexing (x[0])
     fn parse_postfix(
         &mut self,
         mut lhs: Spanned<Expression<'a>>,
@@ -411,6 +411,9 @@ impl<'a> Parser<'a> {
                         }),
                     };
                 }
+            } else if self_matches_peek!(self, TokenType::Symbol(Symbol::LBracket)) {
+                // consume the `[` token
+                self.assign_next()?;
             } else {
                 break;
             }
