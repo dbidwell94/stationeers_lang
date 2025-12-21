@@ -206,8 +206,6 @@ public class SlangFormatter : ICodeFormatter
             entry.SlangSource.StartLine == caretPos || entry.SlangSource.EndLine == caretPos
         );
 
-        lines.Sort((itemA, itemB) => itemA.Ic10Line.CompareTo(itemB.Ic10Line));
-
         // extract the current "context" of the ic10 compilation. The current Slang source line
         // should be directly next to the compiled IC10 source line, and we should highlight the
         // IC10 code that directly represents the Slang source
