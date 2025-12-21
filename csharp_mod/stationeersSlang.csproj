@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>StationeersSlang</AssemblyName>
     <Description>Slang Compiler Bridge</Description>
-    <Version>0.3.2</Version>
+    <Version>0.4.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
@@ -37,6 +37,10 @@
       </Reference>
       <Reference Include="Assembly-CSharp">
         <HintPath>./ref/Assembly-CSharp.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="RG.ImGui">
+        <HintPath>./ref/RG.ImGui.dll</HintPath>
         <Private>False</Private>
       </Reference>
 

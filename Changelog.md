@@ -1,5 +1,11 @@
 # Changelog
 
+[0.4.0]
+
+- First pass getting compiled IC10 to output along side the Slang source code
+  - IC10 side is currently not scrollable, and text might be cut off from the bottom,
+    requiring newlines to be added to the bottom of the Slang source if needed
+
 [0.3.4]
 
 - Added support for `loadReagent`, which maps to the `lr` IC10 instruction
