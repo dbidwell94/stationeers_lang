@@ -2233,10 +2233,7 @@ impl<'a> Compiler<'a> {
             System::LoadSlot(dev_name, slot_index, logic_type) => {
                 let (dev_hash, hash_cleanup) =
                     self.compile_literal_or_variable(dev_name.node, scope)?;
-                let (slot_index, slot_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(slot_index.node),
-                    scope,
-                )?;
+                let (slot_index, slot_cleanup) = self.compile_operand(*slot_index, scope)?;
                 let (logic_type, logic_cleanup) = self.compile_literal_or_variable(
                     LiteralOrVariable::Literal(logic_type.node),
                     scope,
@@ -2261,10 +2258,7 @@ impl<'a> Compiler<'a> {
             System::SetSlot(dev_name, slot_index, logic_type, var) => {
                 let (dev_name, name_cleanup) =
                     self.compile_literal_or_variable(dev_name.node, scope)?;
-                let (slot_index, index_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(slot_index.node),
-                    scope,
-                )?;
+                let (slot_index, index_cleanup) = self.compile_operand(*slot_index, scope)?;
                 let (logic_type, type_cleanup) = self.compile_literal_or_variable(
                     LiteralOrVariable::Literal(logic_type.node),
                     scope,

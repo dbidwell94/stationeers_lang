@@ -4,6 +4,7 @@ name: CI/CD Pipeline
 on:
   push:
     branches: ["master"]
+    tags: ["*.*.*"]
   pull_request:
     branches: ["master"]
 
@@ -57,6 +58,10 @@ jobs:
             slang-builder \
             ./build.sh
 
+      - name: Zip Workshop Folder
+        run: |
+          zip -r release/workshop.zip release/workshop/
+
       # 3. Fix Permissions
       # Docker writes files as root. We need to own them to upload them.
       - name: Fix Permissions
@@ -69,3 +74,32 @@ jobs:
         with:
           name: StationeersSlang-Release
           path: release/
+
+  release:
+    needs: build
+    runs-on: self-hosted
+    # ONLY run this job if we pushed a tag (e.g., v1.0.1)
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      # We download the artifact from the previous 'build' job
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: StationeersSlang-Release
+          path: ./release-files
+
+      - name: Create Gitea Release
+        uses: https://gitea.com/actions/gitea-release-action@v1
+        with:
+          files: |
+            ./release-files/workshop.zip
+            ./release-files/slang
+            ./release-files/slang.exe
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

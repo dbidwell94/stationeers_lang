@@ -1834,20 +1834,8 @@ impl<'a> Parser<'a> {
                 let mut args = args!(3);
                 let next = args.next();
                 let dev_name = literal_or_variable!(next);
-                let next = args.next();
-                let slot_index = get_arg!(Literal, literal_or_variable!(next));
-                if !matches!(
-                    slot_index,
-                    Spanned {
-                        node: Literal::Number(_),
-                        ..
-                    },
-                ) {
-                    return Err(Error::InvalidSyntax(
-                        slot_index.span,
-                        "Expected a number".to_string(),
-                    ));
-                }
+                let slot_index = args.next().ok_or(Error::UnexpectedEOF)?;
+
                 let next = args.next();
                 let slot_logic = get_arg!(Literal, literal_or_variable!(next));
                 if !matches!(
@@ -1864,27 +1852,17 @@ impl<'a> Parser<'a> {
                 }
 
                 Ok(SysCall::System(System::LoadSlot(
-                    dev_name, slot_index, slot_logic,
+                    dev_name,
+                    boxed!(slot_index),
+                    slot_logic,
                 )))
             }
             "setSlot" | "ss" => {
                 let mut args = args!(4);
                 let next = args.next();
                 let dev_name = literal_or_variable!(next);
-                let next = args.next();
-                let slot_index = get_arg!(Literal, literal_or_variable!(next));
-                if !matches!(
-                    slot_index,
-                    Spanned {
-                        node: Literal::Number(_),
-                        ..
-                    }
-                ) {
-                    return Err(Error::InvalidSyntax(
-                        slot_index.span,
-                        "Expected a number".into(),
-                    ));
-                }
+                let slot_index = args.next().ok_or(Error::UnexpectedEOF)?;
+
                 let next = args.next();
                 let slot_logic = get_arg!(Literal, literal_or_variable!(next));
                 if !matches!(
@@ -1904,9 +1882,9 @@ impl<'a> Parser<'a> {
 
                 Ok(SysCall::System(System::SetSlot(
                     dev_name,
-                    slot_index,
+                    boxed!(slot_index),
                     slot_logic,
-                    Box::new(expr),
+                    boxed!(expr),
                 )))
             }
             "loadReagent" | "lr" => {

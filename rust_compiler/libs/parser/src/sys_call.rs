@@ -223,7 +223,7 @@ documented! {
         /// `let isOccupied = ls(deviceHash, 2, "Occupied");`
         LoadSlot(
             Spanned<LiteralOrVariable<'a>>,
-            Spanned<Literal<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Spanned<Literal<'a>>
         ),
         /// Stores a value of LogicType on a device by the index value
@@ -234,7 +234,7 @@ documented! {
         /// `ss(deviceHash, 0, "Open", true);`
         SetSlot(
             Spanned<LiteralOrVariable<'a>>,
-            Spanned<Literal<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Spanned<Literal<'a>>,
             Box<Spanned<Expression<'a>>>
         ),
