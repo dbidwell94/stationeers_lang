@@ -12,6 +12,8 @@ using UnityEngine;
 
 public class SlangFormatter : ICodeFormatter
 {
+    protected static Editor? Ic10Editor = null;
+
     private CancellationTokenSource? _lspCancellationToken;
     private object _tokenLock = new();
 
@@ -76,34 +78,6 @@ public class SlangFormatter : ICodeFormatter
     public override string Compile()
     {
         return this.Lines.RawText;
-    }
-
-    public override void DrawLine(int lineIndex, TextRange selection, bool drawLineNumber = true)
-    {
-        Vector2 cursorPos = ImGui.GetCursorScreenPos();
-        Vector2 space = ImGui.GetContentRegionAvail();
-        base.DrawLine(lineIndex, selection, drawLineNumber);
-
-        var charWidth = Settings.CharWidth;
-
-        var width = Mathf.Max(Lines.Width + 10.0f + LineNumberOffset * charWidth, space.x / 2);
-
-        ImGui
-            .GetWindowDrawList()
-            .AddLine(
-                new Vector2(cursorPos.x + width + 4.5f * charWidth, cursorPos.y),
-                new Vector2(
-                    cursorPos.x + width + 4.5f * charWidth,
-                    cursorPos.y + space.y + Settings.LineHeight
-                ),
-                ColorLineNumber,
-                1.0f
-            );
-
-        cursorPos.x += width;
-        ImGui.SetCursorScreenPos(cursorPos);
-        if (lineIndex < iC10CodeFormatter.Lines.Count)
-            iC10CodeFormatter.DrawLine(lineIndex, new TextRange(), true);
     }
 
     public override StyledLine ParseLine(string line)
@@ -186,7 +160,15 @@ public class SlangFormatter : ICodeFormatter
             {
                 ic10CompilationResult = compiled;
                 ic10SourceMap = sourceMap;
-                UpdateIc10Formatter();
+                try
+                {
+                    UpdateIc10Formatter();
+                }
+                catch (Exception ex)
+                {
+                    L.Error(ex.Message);
+                    L.Error(ex.StackTrace);
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -198,7 +180,16 @@ public class SlangFormatter : ICodeFormatter
 
     private void UpdateIc10Formatter()
     {
-        iC10CodeFormatter.Editor = Editor;
+        if (Ic10Editor is null)
+        {
+            var tab = Editor.ParentTab;
+            iC10CodeFormatter = new IC10CodeFormatter();
+            Ic10Editor = new Editor(Editor.KeyHandler);
+            Ic10Editor.IsReadOnly = true;
+            iC10CodeFormatter.Editor = Ic10Editor;
+            tab.AddEditor(Ic10Editor);
+        }
+
         var caretPos = Editor.CaretPos.Line;
 
         // get the slang sourceMap at the current editor line
@@ -210,7 +201,7 @@ public class SlangFormatter : ICodeFormatter
         // should be directly next to the compiled IC10 source line, and we should highlight the
         // IC10 code that directly represents the Slang source
 
-        iC10CodeFormatter.ResetCode(ic10CompilationResult);
+        Ic10Editor.ResetCode(ic10CompilationResult);
 
         if (lines.Count() < 1)
         {
@@ -223,7 +214,7 @@ public class SlangFormatter : ICodeFormatter
         // highlight all the IC10 lines that are within the specified range
         foreach (var index in Enumerable.Range((int)min, (int)(max - min) + 1))
         {
-            var lineText = iC10CodeFormatter.Lines[index].Text;
+            var lineText = Ic10Editor.Lines[index].Text;
 
             var newLine = new StyledLine(
                 lineText,
@@ -239,7 +230,7 @@ public class SlangFormatter : ICodeFormatter
                 ]
             );
 
-            iC10CodeFormatter.Lines[index] = newLine;
+            Ic10Editor.Lines[index] = newLine;
         }
     }
 
