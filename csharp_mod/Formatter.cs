@@ -203,7 +203,6 @@ public class SlangFormatter : ICodeFormatter
             Ic10Editor = new Editor(Editor.KeyHandler);
             Ic10Editor.IsReadOnly = true;
             iC10CodeFormatter.Editor = Ic10Editor;
-            tab.ClearExtraEditors();
         }
 
         if (tab.Editors.Count < 2)
@@ -233,27 +232,15 @@ public class SlangFormatter : ICodeFormatter
         var max = lines.Max(line => line.Ic10Line);
         var min = lines.Min(line => line.Ic10Line);
 
+        Ic10Editor.CaretPos = new TextPosition { Col = 0, Line = (int)max };
+
         // highlight all the IC10 lines that are within the specified range
-        foreach (var index in Enumerable.Range((int)min, (int)(max - min) + 1))
+        Ic10Editor.Selection.Start = new TextPosition { Col = 0, Line = (int)min };
+        Ic10Editor.Selection.End = new TextPosition
         {
-            var lineText = Ic10Editor.Lines[index].Text;
-
-            var newLine = new StyledLine(
-                lineText,
-                [
-                    new SemanticToken
-                    {
-                        Column = 0,
-                        Length = lineText.Length,
-                        Line = index,
-                        Background = ColorIdentifier,
-                        Color = ColorFromHTML("black"),
-                    },
-                ]
-            );
-
-            Ic10Editor.Lines[index] = newLine;
-        }
+            Col = Ic10Editor.Lines[(int)max].Text.Length,
+            Line = (int)max,
+        };
     }
 
     // This runs on the Main Thread
