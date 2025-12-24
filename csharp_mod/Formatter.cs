@@ -88,13 +88,6 @@ public class SlangFormatter : ICodeFormatter
 
     public override void ResetCode(string code)
     {
-        // for compatibility, we need to check for GlobalCode.SLANG_SRC
-        // `#SLANG_SRC:<code>`
-        // and replace with `# SLANG_SRC: <code>`
-        if (code.Contains(GlobalCode.SLANG_SRC))
-        {
-            code = code.Replace(GlobalCode.SLANG_SRC, $"# {SLANG_SRC}: ");
-        }
         if (code.Contains(SLANG_SRC))
         {
             code = ExtractEncodedSource(code, SLANG_SRC);
