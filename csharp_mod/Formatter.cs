@@ -12,16 +12,15 @@ using UnityEngine;
 
 public class SlangFormatter : ICodeFormatter
 {
-    protected static Editor? Ic10Editor = null;
-
     private CancellationTokenSource? _lspCancellationToken;
     private object _tokenLock = new();
 
+    protected static Editor? Ic10Editor = null;
     private IC10CodeFormatter iC10CodeFormatter = new IC10CodeFormatter();
     private string ic10CompilationResult = "";
     private List<SourceMapEntry> ic10SourceMap = new();
 
-    // VS Code Dark Theme Palette
+    #region Colors
     public static readonly uint ColorControl = ColorFromHTML("#C586C0"); // Pink (if, return, loop)
     public static readonly uint ColorDeclaration = ColorFromHTML("#569CD6"); // Blue (let, device, fn)
     public static readonly uint ColorFunction = ColorFromHTML("#DCDCAA"); // Yellow (syscalls)
@@ -30,10 +29,8 @@ public class SlangFormatter : ICodeFormatter
     public static readonly uint ColorBoolean = ColorFromHTML("#569CD6"); // Blue (true/false)
     public static readonly uint ColorIdentifier = ColorFromHTML("#9CDCFE"); // Light Blue (variables)
     public static new readonly uint ColorDefault = ColorFromHTML("#D4D4D4"); // White (punctuation ; { } )
-
-    // Operators are often the same color as default text in VS Code Dark,
-    // but having a separate definition lets you tweak it (e.g. make them slightly darker or distinct)
     public static readonly uint ColorOperator = ColorFromHTML("#D4D4D4");
+    #endregion
 
     private HashSet<uint> _linesWithErrors = new();
     private int _lastLineCount = -1;
@@ -160,15 +157,7 @@ public class SlangFormatter : ICodeFormatter
             {
                 ic10CompilationResult = compiled;
                 ic10SourceMap = sourceMap;
-                try
-                {
-                    UpdateIc10Formatter();
-                }
-                catch (Exception ex)
-                {
-                    L.Error(ex.Message);
-                    L.Error(ex.StackTrace);
-                }
+                UpdateIc10Formatter();
             }
         }
         catch (OperationCanceledException) { }
