@@ -1,4 +1,3 @@
-use crate::compile;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
