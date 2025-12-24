@@ -5,21 +5,21 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ImGuiNET;
 using StationeersIC10Editor;
 using StationeersIC10Editor.IC10;
-using UnityEngine;
 
 public class SlangFormatter : ICodeFormatter
 {
+    public const string SLANG_SRC = "SLANG_SRC";
     private CancellationTokenSource? _lspCancellationToken;
     private object _tokenLock = new();
 
+    protected Editor? Ic10Editor = null;
     private IC10CodeFormatter iC10CodeFormatter = new IC10CodeFormatter();
     private string ic10CompilationResult = "";
     private List<SourceMapEntry> ic10SourceMap = new();
 
-    // VS Code Dark Theme Palette
+    #region Colors
     public static readonly uint ColorControl = ColorFromHTML("#C586C0"); // Pink (if, return, loop)
     public static readonly uint ColorDeclaration = ColorFromHTML("#569CD6"); // Blue (let, device, fn)
     public static readonly uint ColorFunction = ColorFromHTML("#DCDCAA"); // Yellow (syscalls)
@@ -28,10 +28,8 @@ public class SlangFormatter : ICodeFormatter
     public static readonly uint ColorBoolean = ColorFromHTML("#569CD6"); // Blue (true/false)
     public static readonly uint ColorIdentifier = ColorFromHTML("#9CDCFE"); // Light Blue (variables)
     public static new readonly uint ColorDefault = ColorFromHTML("#D4D4D4"); // White (punctuation ; { } )
-
-    // Operators are often the same color as default text in VS Code Dark,
-    // but having a separate definition lets you tweak it (e.g. make them slightly darker or distinct)
     public static readonly uint ColorOperator = ColorFromHTML("#D4D4D4");
+    #endregion
 
     private HashSet<uint> _linesWithErrors = new();
     private int _lastLineCount = -1;
@@ -48,6 +46,11 @@ public class SlangFormatter : ICodeFormatter
         // Empty input is not valid Slang
         if (string.IsNullOrWhiteSpace(input))
             return 0d;
+
+        if (input.Contains(SLANG_SRC))
+        {
+            return 1.0;
+        }
 
         // Run the compiler to get diagnostics
         var diagnostics = Marshal.DiagnoseSource(input);
@@ -75,35 +78,28 @@ public class SlangFormatter : ICodeFormatter
 
     public override string Compile()
     {
-        return this.Lines.RawText;
+        if (!Marshal.CompileFromString(RawText, out var compilationResult, out var sourceMap))
+        {
+            return "Compilation Error";
+        }
+
+        return compilationResult + $"\n{EncodeSource(RawText, SLANG_SRC)}";
     }
 
-    public override void DrawLine(int lineIndex, TextRange selection, bool drawLineNumber = true)
+    public override void ResetCode(string code)
     {
-        Vector2 cursorPos = ImGui.GetCursorScreenPos();
-        Vector2 space = ImGui.GetContentRegionAvail();
-        base.DrawLine(lineIndex, selection, drawLineNumber);
-
-        var charWidth = Settings.CharWidth;
-
-        var width = Mathf.Max(Lines.Width + 10.0f + LineNumberOffset * charWidth, space.x / 2);
-
-        ImGui
-            .GetWindowDrawList()
-            .AddLine(
-                new Vector2(cursorPos.x + width + 4.5f * charWidth, cursorPos.y),
-                new Vector2(
-                    cursorPos.x + width + 4.5f * charWidth,
-                    cursorPos.y + space.y + Settings.LineHeight
-                ),
-                ColorLineNumber,
-                1.0f
-            );
-
-        cursorPos.x += width;
-        ImGui.SetCursorScreenPos(cursorPos);
-        if (lineIndex < iC10CodeFormatter.Lines.Count)
-            iC10CodeFormatter.DrawLine(lineIndex, new TextRange(), true);
+        // for compatibility, we need to check for GlobalCode.SLANG_SRC
+        // `#SLANG_SRC:<code>`
+        // and replace with `# SLANG_SRC: <code>`
+        if (code.Contains(GlobalCode.SLANG_SRC))
+        {
+            code = code.Replace(GlobalCode.SLANG_SRC, $"# {SLANG_SRC}: ");
+        }
+        if (code.Contains(SLANG_SRC))
+        {
+            code = ExtractEncodedSource(code, SLANG_SRC);
+        }
+        base.ResetCode(code);
     }
 
     public override StyledLine ParseLine(string line)
@@ -198,7 +194,20 @@ public class SlangFormatter : ICodeFormatter
 
     private void UpdateIc10Formatter()
     {
-        iC10CodeFormatter.Editor = Editor;
+        var tab = Editor.ParentTab;
+        if (Ic10Editor == null)
+        {
+            iC10CodeFormatter = new IC10CodeFormatter();
+            Ic10Editor = new Editor(Editor.KeyHandler);
+            Ic10Editor.IsReadOnly = true;
+            iC10CodeFormatter.Editor = Ic10Editor;
+        }
+
+        if (tab.Editors.Count < 2)
+        {
+            tab.AddEditor(Ic10Editor);
+        }
+
         var caretPos = Editor.CaretPos.Line;
 
         // get the slang sourceMap at the current editor line
@@ -210,37 +219,30 @@ public class SlangFormatter : ICodeFormatter
         // should be directly next to the compiled IC10 source line, and we should highlight the
         // IC10 code that directly represents the Slang source
 
-        iC10CodeFormatter.ResetCode(ic10CompilationResult);
+        Ic10Editor.ResetCode(ic10CompilationResult);
 
         if (lines.Count() < 1)
         {
+            Ic10Editor.Selection = new TextRange
+            {
+                End = new TextPosition { Col = 0, Line = 0 },
+                Start = new TextPosition { Col = 0, Line = 0 },
+            };
             return;
         }
         // get the total range of the IC10 source for the selected Slang line
         var max = lines.Max(line => line.Ic10Line);
         var min = lines.Min(line => line.Ic10Line);
 
+        Ic10Editor.CaretPos = new TextPosition { Col = 0, Line = (int)max };
+
         // highlight all the IC10 lines that are within the specified range
-        foreach (var index in Enumerable.Range((int)min, (int)(max - min) + 1))
+        Ic10Editor.Selection.Start = new TextPosition { Col = 0, Line = (int)min };
+        Ic10Editor.Selection.End = new TextPosition
         {
-            var lineText = iC10CodeFormatter.Lines[index].Text;
-
-            var newLine = new StyledLine(
-                lineText,
-                [
-                    new SemanticToken
-                    {
-                        Column = 0,
-                        Length = lineText.Length,
-                        Line = index,
-                        Background = ColorIdentifier,
-                        Color = ColorFromHTML("black"),
-                    },
-                ]
-            );
-
-            iC10CodeFormatter.Lines[index] = newLine;
-        }
+            Col = Ic10Editor.Lines[(int)max].Text.Length,
+            Line = (int)max,
+        };
     }
 
     // This runs on the Main Thread
