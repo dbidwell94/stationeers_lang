@@ -14,7 +14,7 @@ public class SlangFormatter : ICodeFormatter
     private CancellationTokenSource? _lspCancellationToken;
     private object _tokenLock = new();
 
-    protected static Editor? Ic10Editor = null;
+    protected Editor? Ic10Editor = null;
     private IC10CodeFormatter iC10CodeFormatter = new IC10CodeFormatter();
     private string ic10CompilationResult = "";
     private List<SourceMapEntry> ic10SourceMap = new();
@@ -37,6 +37,7 @@ public class SlangFormatter : ICodeFormatter
     public SlangFormatter()
         : base()
     {
+        L.Info("Slang Constructor");
         OnCodeChanged += HandleCodeChanged;
         OnCaretMoved += UpdateIc10Formatter;
     }
@@ -194,13 +195,20 @@ public class SlangFormatter : ICodeFormatter
 
     private void UpdateIc10Formatter()
     {
-        if (Ic10Editor is null)
+        var tab = Editor.ParentTab;
+        if (Ic10Editor == null)
         {
-            var tab = Editor.ParentTab;
+            L.Info("Ic10Editor was null");
             iC10CodeFormatter = new IC10CodeFormatter();
             Ic10Editor = new Editor(Editor.KeyHandler);
             Ic10Editor.IsReadOnly = true;
             iC10CodeFormatter.Editor = Ic10Editor;
+            tab.ClearExtraEditors();
+        }
+
+        if (tab.Editors.Count < 2)
+        {
+            L.Info("Adding new editor tab");
             tab.AddEditor(Ic10Editor);
         }
 
