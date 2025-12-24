@@ -223,6 +223,11 @@ public class SlangFormatter : ICodeFormatter
 
         if (lines.Count() < 1)
         {
+            Ic10Editor.Selection = new TextRange
+            {
+                End = new TextPosition { Col = 0, Line = 0 },
+                Start = new TextPosition { Col = 0, Line = 0 },
+            };
             return;
         }
         // get the total range of the IC10 source for the selected Slang line
