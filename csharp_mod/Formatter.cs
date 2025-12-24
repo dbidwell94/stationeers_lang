@@ -5,13 +5,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ImGuiNET;
 using StationeersIC10Editor;
 using StationeersIC10Editor.IC10;
-using UnityEngine;
 
 public class SlangFormatter : ICodeFormatter
 {
+    public const string SLANG_SRC = "SLANG_SRC";
     private CancellationTokenSource? _lspCancellationToken;
     private object _tokenLock = new();
 
@@ -48,6 +47,11 @@ public class SlangFormatter : ICodeFormatter
         if (string.IsNullOrWhiteSpace(input))
             return 0d;
 
+        if (input.Contains(SLANG_SRC))
+        {
+            return 1.0;
+        }
+
         // Run the compiler to get diagnostics
         var diagnostics = Marshal.DiagnoseSource(input);
 
@@ -74,7 +78,28 @@ public class SlangFormatter : ICodeFormatter
 
     public override string Compile()
     {
-        return this.Lines.RawText;
+        if (!Marshal.CompileFromString(RawText, out var compilationResult, out var sourceMap))
+        {
+            return "Compilation Error";
+        }
+
+        return compilationResult + $"\n{EncodeSource(RawText, SLANG_SRC)}";
+    }
+
+    public override void ResetCode(string code)
+    {
+        // for compatibility, we need to check for GlobalCode.SLANG_SRC
+        // `#SLANG_SRC:<code>`
+        // and replace with `# SLANG_SRC: <code>`
+        if (code.Contains(GlobalCode.SLANG_SRC))
+        {
+            code = code.Replace(GlobalCode.SLANG_SRC, $"# {SLANG_SRC}: ");
+        }
+        if (code.Contains(SLANG_SRC))
+        {
+            code = ExtractEncodedSource(code, SLANG_SRC);
+        }
+        base.ResetCode(code);
     }
 
     public override StyledLine ParseLine(string line)

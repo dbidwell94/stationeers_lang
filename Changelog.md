@@ -1,5 +1,14 @@
 # Changelog
 
+[0.4.2]
+
+- Removed all harmony patches as most functionality as been added into the
+  `IC10 Editor` mod
+- IC10 runtime errors will have been reverted back to showing as IC10 line
+  numbers instead of Slang line numbers.
+  - The IC10 line should be easily mapped to a Slang line via the side-by-side
+    IC10 compilation view.
+
 [0.4.1]
 
 - Update syscalls for `loadSlot` and `setSlot` to support expressions instead of
