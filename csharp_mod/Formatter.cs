@@ -37,7 +37,6 @@ public class SlangFormatter : ICodeFormatter
     public SlangFormatter()
         : base()
     {
-        L.Info("Slang Constructor");
         OnCodeChanged += HandleCodeChanged;
         OnCaretMoved += UpdateIc10Formatter;
     }
@@ -198,7 +197,6 @@ public class SlangFormatter : ICodeFormatter
         var tab = Editor.ParentTab;
         if (Ic10Editor == null)
         {
-            L.Info("Ic10Editor was null");
             iC10CodeFormatter = new IC10CodeFormatter();
             Ic10Editor = new Editor(Editor.KeyHandler);
             Ic10Editor.IsReadOnly = true;
@@ -207,7 +205,6 @@ public class SlangFormatter : ICodeFormatter
 
         if (tab.Editors.Count < 2)
         {
-            L.Info("Adding new editor tab");
             tab.AddEditor(Ic10Editor);
         }
 
