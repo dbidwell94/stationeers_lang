@@ -187,15 +187,17 @@ public class SlangFormatter : ICodeFormatter
 
     private void UpdateIc10Formatter()
     {
-        if (Ic10Editor is null)
+        var tab = Editor.ParentTab;
+        if (Ic10Editor == null)
         {
-            var tab = Editor.ParentTab;
             iC10CodeFormatter = new IC10CodeFormatter();
             Ic10Editor = new Editor(Editor.KeyHandler);
             Ic10Editor.IsReadOnly = true;
             iC10CodeFormatter.Editor = Ic10Editor;
-            tab.AddEditor(Ic10Editor);
+            tab.ClearExtraEditors();
         }
+        if(tab.Editors.Count < 2)
+            tab.AddEditor(Ic10Editor);
 
         var caretPos = Editor.CaretPos.Line;
 
