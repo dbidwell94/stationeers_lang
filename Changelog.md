@@ -1,5 +1,10 @@
 # Changelog
 
+[0.4.3]
+
+- Removed references to the `Mod` class from SLP. This was the root of the multiplayer
+  connectivity issues. Multiplayer should now work with Slang installed.
+
 [0.4.2]
 
 - Removed all harmony patches as most functionality as been added into the
