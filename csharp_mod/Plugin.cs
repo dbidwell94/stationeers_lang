@@ -40,7 +40,7 @@ namespace Slang
     {
         public const string PluginGuid = "com.biddydev.slang";
         public const string PluginName = "Slang";
-        public const string PluginVersion = "0.4.3";
+        public const string PluginVersion = "0.4.4";
 
         private Harmony? _harmony;
 

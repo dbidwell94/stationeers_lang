@@ -1,5 +1,9 @@
 # Changelog
 
+[0.4.4]
+
+- Added Stationpedia docs back after removing all harmony patches from the mod
+
 [0.4.3]
 
 - Removed references to the `Mod` class from SLP. This was the root of the multiplayer
