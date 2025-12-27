@@ -23,7 +23,7 @@ Slang aims to reduce the time spent writing IC10 assembly by providing:
 
 ## Example
 
-```mips
+```rust
 device gasSensor = "d0";
 device airCon = "d1";
 
