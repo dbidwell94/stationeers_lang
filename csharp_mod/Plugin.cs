@@ -40,9 +40,9 @@ namespace Slang
     {
         public const string PluginGuid = "com.biddydev.slang";
         public const string PluginName = "Slang";
-        public const string PluginVersion = "0.4.4";
+        public const string PluginVersion = "0.4.5";
 
-        private Harmony? _harmony;
+        private static Harmony? _harmony;
 
         private static Regex? _slangSourceCheck = null;
 
@@ -64,19 +64,28 @@ namespace Slang
             return SlangSourceCheck.IsMatch(input);
         }
 
-        private void Awake()
+        public void Awake()
         {
             L.SetLogger(Logger);
-            this._harmony = new Harmony(PluginGuid);
+            _harmony = new Harmony(PluginGuid);
 
             // If we failed to load the compiler, bail from the rest of the patches. It won't matter,
             // as the compiler itself has failed to load.
             if (!Marshal.Init())
             {
+                L.Error("Marshal failed to init");
                 return;
             }
 
-            this._harmony.PatchAll();
+            _harmony.PatchAll();
+            L.Debug("Ran Harmony patches");
+        }
+
+        public void OnDestroy()
+        {
+            Marshal.Destroy();
+            _harmony?.UnpatchSelf();
+            L.Debug("Cleaned up Harmony patches");
         }
     }
 }

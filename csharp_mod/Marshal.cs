@@ -67,7 +67,9 @@ public static class Marshal
         try
         {
             _libraryHandle = LoadLibrary(ExtractNativeLibrary(Ffi.RustLib));
+            L.Debug("Rust DLL loaded successfully. Enjoy native speed compilations!");
             CodeFormatters.RegisterFormatter("Slang", typeof(SlangFormatter), true);
+
             return true;
         }
         catch (Exception ex)
@@ -91,8 +93,13 @@ public static class Marshal
 
         try
         {
-            FreeLibrary(_libraryHandle);
+            CodeFormatters.RegisterFormatter("Slang", typeof(PlainTextFormatter), true);
+            if (!FreeLibrary(_libraryHandle))
+            {
+                L.Warning("Unable to free Rust library");
+            }
             _libraryHandle = IntPtr.Zero;
+            L.Debug("Rust DLL library freed");
             return true;
         }
         catch (Exception ex)

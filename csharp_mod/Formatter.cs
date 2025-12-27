@@ -165,18 +165,15 @@ public class SlangFormatter : ICodeFormatter
                 return;
             }
 
-            var (compilationSuccess, compiled, sourceMap) = await Task.Run(
-                () =>
-                {
-                    var successful = Marshal.CompileFromString(
-                        inputSrc,
-                        out var compiled,
-                        out var sourceMap
-                    );
-                    return (successful, compiled, sourceMap);
-                },
-                cancellationToken
-            );
+            var (compilationSuccess, compiled, sourceMap) = await Task.Run(() =>
+            {
+                var successful = Marshal.CompileFromString(
+                    inputSrc,
+                    out var compiled,
+                    out var sourceMap
+                );
+                return (successful, compiled, sourceMap);
+            });
 
             if (compilationSuccess)
             {
@@ -192,6 +189,7 @@ public class SlangFormatter : ICodeFormatter
         }
     }
 
+    // This runs on the main thread
     private void UpdateIc10Formatter()
     {
         var tab = Editor.ParentTab;
@@ -215,14 +213,11 @@ public class SlangFormatter : ICodeFormatter
             entry.SlangSource.StartLine == caretPos || entry.SlangSource.EndLine == caretPos
         );
 
-        // extract the current "context" of the ic10 compilation. The current Slang source line
-        // should be directly next to the compiled IC10 source line, and we should highlight the
-        // IC10 code that directly represents the Slang source
-
         Ic10Editor.ResetCode(ic10CompilationResult);
 
         if (lines.Count() < 1)
         {
+            L.Debug($"SourceMap count: {ic10SourceMap.Count}");
             Ic10Editor.Selection = new TextRange
             {
                 End = new TextPosition { Col = 0, Line = 0 },
