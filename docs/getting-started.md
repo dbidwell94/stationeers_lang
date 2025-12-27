@@ -17,7 +17,7 @@ This guide covers the basics of writing your first Slang program.
 
 A Slang program consists of top-level declarations and a main loop:
 
-```slang
+```rust
 // Device declarations
 device self = "db";
 device sensor = "d0";
@@ -43,7 +43,7 @@ game tick, preventing the script from consuming excessive resources.
 **Important:** You should always include `yield()` in your main loop unless you
 know what you're doing.
 
-```slang
+```rust
 loop {
     yield(); // Recommended!
     // ...
@@ -55,7 +55,7 @@ loop {
 Here's a simple program that turns on a light when a gas sensor detects low
 pressure:
 
-```slang
+```rust
 device gasSensor = "d0";
 device light = "d1";
 
@@ -82,7 +82,7 @@ loop {
 
 Slang supports single-line comments and documentation comments:
 
-```slang
+```rust
 // This is a regular comment
 
 /// This is a documentation comment
