@@ -6,7 +6,7 @@
   <Description>
 [h1]Slang: High-Level Programming for Stationeers[/h1]
 
-Stop writing assembly. Start writing code.
+Iterate faster. Stop writing assembly. Start writing code.
 
 Slang (Stationeers Language) brings modern programming to Stationeers. It allows you to write scripts using a familiar C-style syntax (variables, functions, if/else, loops) directly in the in-game editor. When you hit confirm, Slang compiles your code into IC10 instantly.
 
@@ -15,7 +15,7 @@ Slang (Stationeers Language) brings modern programming to Stationeers. It allows
 [h2]Features[/h2]
 [list]
 [*] [b]In-Game Compilation:[/b] No external tools needed. Write Slang directly in the IC editor.
-[*] [b]No More Register Juggling:[/b] Define variables with let (e.g., let temp = 300). The compiler manages r0-r15 for you.
+[*] [b]No More Register Juggling:[/b] Define variables with let (e.g., let temp = 200c). The compiler manages r0-r15 for you.
 [*] [b]Control Flow:[/b] Write readable logic with if, else, while, loop, break, and continue.
 [*] [b]Functions:[/b] Create reusable code blocks with arguments.
 [*] [b]Smart Editor:[/b] Get real-time syntax highlighting and error checking (red text) as you type.
@@ -53,14 +53,13 @@ loop {
 [h2]Known Issues (Beta)[/h2]
 [list]
 [*] [b]Stack Access:[/b] Direct stack memory access is disabled to prevent conflicts with the compiler's internal memory management. A workaround is being planned.
-[*] [b]Documentation:[/b] In-game tooltips for syscalls (like load, set) are WIP. Check the "Slang" entry in the Stationpedia (F1) for help.
+[*] [b]Documentation:[/b] In-game tooltips for syscalls (like load, set) are WIP. Check the "Slang" entry in the Stationpedia (F1) for help, or checkout [url=https://github.com/dbidwell94/stationeers_lang/blob/master/docs/getting-started.md]The Docs[/url] for guides on how to get started.
 [/list]
 
 [h2]Planned Features[/h2]
 [list]
 [*] Enhanced LSP features (Autocomplete, Go to Definition).
 [*] Full feature parity with all IC10 instructions.
-[*] Tutorials and beginner script examples.
 [/list]
 
 [h2]FAQ[/h2]
@@ -70,10 +69,18 @@ A: The Slang compiler is built in Rust for performance and reliability. It is co
 [b]Q: Is this compatible with my current save?[/b]
 A: Yes! Slang does not modify any existing IC10 code, it is only a compiler. As a matter of fact: if you wish to stop using Slang at any time, your compiled IC10 will still exist on the chip. However: Slang adds a comment at the bottom of your compiled IC10 which is a GZIP and base64 encoded version of your Slang source code. This might break line limits with Slang not installed. If you wish to no longer use Slang, I recommend you remove this comment from the source code after uninstalling Slang.
 
+[b]Q: Does this modify the in-game scripting language[/b]
+A: No! Slang compiles directly to IC10. Any valid Slang file will produce valid IC10. The goal of this mod is twofold:
+[list]
+[*] Allow experienced users to quickly iterate on their scripts to get back into base upgrades faster
+[*] Allow newcomers who already know C-style languages (JS/C#/Java/Rust/C/etc) to see how it maps to IC10 so they can get to understand IC10 better
+[/list]
+
 [h2]Useful Links[/h2]
 [url=https://github.com/dbidwell94/stationeers_lang]Source Code on GitHub[/url]
 [url=https://discord.gg/stationeers]Stationeers Official Discord[/url]
 [url=https://discord.gg/M4sCfYMacs]Stationeers Modding Discord[/url]
+[url=https://github.com/dbidwell94/stationeers_lang/blob/master/docs/getting-started.md]Getting Started Guide[/url]
   </Description>
   <ChangeLog xsi:nil="true" />
   <WorkshopHandle>3619985558</WorkshopHandle>
@@ -116,5 +123,7 @@ A: Yes! Slang does not modify any existing IC10 code, it is only a compiler. As 
         See: https://github.com/StationeersLaunchPad/StationeersLaunchPad
 
         Source Code: https://github.com/dbidwell94/stationeers_lang
+
+        Documentation: https://github.com/dbidwell94/stationeers_lang/blob/master/docs/getting-started.md
         ]]></InGameDescription>
 </ModMetadata>
