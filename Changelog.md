@@ -1,5 +1,16 @@
 # Changelog
 
+[0.4.5]
+
+- Fixed issue where after clicking "Cancel" on the IC10 Editor, the side-by-side
+  IC10 output would no longer update with highlighting or code updates.
+- Added ability to live-reload the mod while developing using the `ScriptEngine`
+  mod from BepInEx
+  - This required adding in cleanup code to cleanup references to the Rust DLL
+    before destroying the mod instance.
+- Added BepInEx debug logging. This will ONLY show if you have debug logs
+  enabled in the BepInEx configuration file.
+
 [0.4.4]
 
 - Added Stationpedia docs back after removing all harmony patches from the mod

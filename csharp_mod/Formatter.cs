@@ -6,7 +6,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using StationeersIC10Editor;
-using StationeersIC10Editor.IC10;
 
 public class SlangFormatter : ICodeFormatter
 {
@@ -14,8 +13,25 @@ public class SlangFormatter : ICodeFormatter
     private CancellationTokenSource? _lspCancellationToken;
     private object _tokenLock = new();
 
-    protected Editor? Ic10Editor = null;
-    private IC10CodeFormatter iC10CodeFormatter = new IC10CodeFormatter();
+    protected Editor? __Ic10Editor = null;
+
+    protected Editor Ic10Editor
+    {
+        get
+        {
+            if (__Ic10Editor == null)
+            {
+                var tab = Editor.ParentTab;
+                tab.ClearExtraEditors();
+                __Ic10Editor = new Editor(Editor.KeyHandler);
+                Ic10Editor.IsReadOnly = true;
+                tab.AddEditor(__Ic10Editor);
+            }
+
+            return __Ic10Editor;
+        }
+    }
+
     private string ic10CompilationResult = "";
     private List<SourceMapEntry> ic10SourceMap = new();
 
@@ -80,7 +96,7 @@ public class SlangFormatter : ICodeFormatter
     {
         if (!Marshal.CompileFromString(RawText, out var compilationResult, out var sourceMap))
         {
-            return "Compilation Error";
+            return "# Compilation Error";
         }
 
         return compilationResult + $"\n{EncodeSource(RawText, SLANG_SRC)}";
@@ -118,6 +134,10 @@ public class SlangFormatter : ICodeFormatter
         return styledLine;
     }
 
+    /// <summary>
+    /// This handles calling the `HandleLsp` function by creating a new `CancellationToken` and
+    /// cancelling the current call if applicable.
+    /// </summary>
     private void HandleCodeChanged()
     {
         CancellationToken token;
@@ -133,6 +153,11 @@ public class SlangFormatter : ICodeFormatter
         _ = HandleLsp(inputSrc, token);
     }
 
+    /// <summary>
+    /// Takes a copy of the current source code and sends it to the Rust compiler in a background thread
+    /// to get diagnostic data. This also handles getting a compilation response of optimized IC10 for the
+    /// side-by-side IC10Editor to show with sourcemap highlighting.
+    /// </summary>
     private async Task HandleLsp(string inputSrc, CancellationToken cancellationToken)
     {
         try
@@ -165,24 +190,21 @@ public class SlangFormatter : ICodeFormatter
                 return;
             }
 
-            var (compilationSuccess, compiled, sourceMap) = await Task.Run(
-                () =>
-                {
-                    var successful = Marshal.CompileFromString(
-                        inputSrc,
-                        out var compiled,
-                        out var sourceMap
-                    );
-                    return (successful, compiled, sourceMap);
-                },
-                cancellationToken
-            );
+            var (compilationSuccess, compiled, sourceMap) = await Task.Run(() =>
+            {
+                var successful = Marshal.CompileFromString(
+                    inputSrc,
+                    out var compiled,
+                    out var sourceMap
+                );
+                return (successful, compiled, sourceMap);
+            });
 
             if (compilationSuccess)
             {
                 ic10CompilationResult = compiled;
                 ic10SourceMap = sourceMap;
-                UpdateIc10Formatter();
+                UpdateIc10Content(Ic10Editor);
             }
         }
         catch (OperationCanceledException) { }
@@ -192,32 +214,30 @@ public class SlangFormatter : ICodeFormatter
         }
     }
 
+    /// <summary>
+    /// Updates the underlying code in the IC10 Editor, after which will call `UpdateIc10Formatter` to
+    /// update highlighting of relavent fields.
+    /// </summary>
+    private void UpdateIc10Content(Editor editor)
+    {
+        editor.ResetCode(ic10CompilationResult);
+        UpdateIc10Formatter();
+    }
+
+    // This runs on the main thread. This function ONLY updates the highlighting of the IC10 code.
+    // If you need to update the code in the editor itself, you should use `UpdateIc10Content`.
     private void UpdateIc10Formatter()
     {
-        var tab = Editor.ParentTab;
-        if (Ic10Editor == null)
-        {
-            iC10CodeFormatter = new IC10CodeFormatter();
-            Ic10Editor = new Editor(Editor.KeyHandler);
-            Ic10Editor.IsReadOnly = true;
-            iC10CodeFormatter.Editor = Ic10Editor;
-        }
-
-        if (tab.Editors.Count < 2)
-        {
-            tab.AddEditor(Ic10Editor);
-        }
-
+        // Bail if our backing field is null. We don't want to set the field in this function. It
+        // runs way too much and we might not even have source code to use.
+        if (__Ic10Editor == null)
+            return;
         var caretPos = Editor.CaretPos.Line;
 
         // get the slang sourceMap at the current editor line
         var lines = ic10SourceMap.FindAll(entry =>
             entry.SlangSource.StartLine == caretPos || entry.SlangSource.EndLine == caretPos
         );
-
-        // extract the current "context" of the ic10 compilation. The current Slang source line
-        // should be directly next to the compiled IC10 source line, and we should highlight the
-        // IC10 code that directly represents the Slang source
 
         Ic10Editor.ResetCode(ic10CompilationResult);
 
@@ -245,7 +265,11 @@ public class SlangFormatter : ICodeFormatter
         };
     }
 
-    // This runs on the Main Thread
+    /// <summary>
+    /// Takes diagnostics from the Rust FFI compiler and applies it as semantic tokens to the
+    /// source in this editor.
+    /// This runs on the Main Thread
+    /// </summary>
     private void ApplyDiagnostics(Dictionary<uint, IGrouping<uint, Diagnostic>> dict)
     {
         HashSet<uint> linesToRefresh;
