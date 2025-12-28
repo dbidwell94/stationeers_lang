@@ -198,9 +198,9 @@ public static class Marshal
 
         Assembly assembly = Assembly.GetExecutingAssembly();
 
-        using (Stream stream = assembly.GetManifestResourceStream(libName))
+        using (Stream resourceStream = assembly.GetManifestResourceStream(libName))
         {
-            if (stream == null)
+            if (resourceStream == null)
             {
                 L.Error(
                     $"{libName} not found. This means it was not embedded in the mod. Please contact the mod author!"
@@ -208,18 +208,85 @@ public static class Marshal
                 return "";
             }
 
+            // Check if file exists and contents are identical to avoid overwriting locked files
+            if (File.Exists(destinationPath))
+            {
+                try
+                {
+                    using (
+                        FileStream fileStream = new FileStream(
+                            destinationPath,
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.ReadWrite
+                        )
+                    )
+                    {
+                        if (resourceStream.Length == fileStream.Length)
+                        {
+                            if (StreamsContentsAreEqual(resourceStream, fileStream))
+                            {
+                                L.Debug(
+                                    $"DLL {libName} already exists and matches. Skipping extraction."
+                                );
+                                return destinationPath;
+                            }
+                        }
+                    }
+                }
+                catch (IOException ex)
+                {
+                    L.Warning(
+                        $"Could not verify existing {libName}, attempting overwrite. {ex.Message}"
+                    );
+                }
+            }
+
+            resourceStream.Position = 0;
+
+            // Attempt to overwrite if missing or different
             try
             {
                 using (FileStream fileStream = new FileStream(destinationPath, FileMode.Create))
                 {
-                    stream.CopyTo(fileStream);
+                    resourceStream.CopyTo(fileStream);
                 }
                 return destinationPath;
             }
             catch (IOException e)
             {
-                L.Warning($"Could not overwrite {libName} (it might be in use): {e.Message}");
-                return "";
+                // If we fail here, the file is likely locked.
+                // However, if we are here, it means the file is DIFFERENT or we couldn't read it.
+                // As a fallback for live-reload, we can try returning the path anyway
+                // assuming the existing locked file might still work.
+                L.Warning(
+                    $"Could not overwrite {libName} (it might be in use): {e.Message}. Attempting to use existing file."
+                );
+                return destinationPath;
+            }
+        }
+    }
+
+    private static bool StreamsContentsAreEqual(Stream stream1, Stream stream2)
+    {
+        const int bufferSize = 4096;
+        byte[] buffer1 = new byte[bufferSize];
+        byte[] buffer2 = new byte[bufferSize];
+
+        while (true)
+        {
+            int count1 = stream1.Read(buffer1, 0, bufferSize);
+            int count2 = stream2.Read(buffer2, 0, bufferSize);
+
+            if (count1 != count2)
+                return false;
+            if (count1 == 0)
+                return true;
+
+            for (int i = 0; i < count1; i++)
+            {
+                if (buffer1[i] != buffer2[i])
+                    return false;
             }
         }
     }

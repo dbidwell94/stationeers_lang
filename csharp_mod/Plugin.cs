@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using BepInEx;
 using HarmonyLib;
 
@@ -43,26 +42,6 @@ namespace Slang
         public const string PluginVersion = "0.4.5";
 
         private static Harmony? _harmony;
-
-        private static Regex? _slangSourceCheck = null;
-
-        private static Regex SlangSourceCheck
-        {
-            get
-            {
-                if (_slangSourceCheck is null)
-                {
-                    _slangSourceCheck = new Regex(@"[;{}()]|\b(let|fn|device)\b|\/\/");
-                }
-
-                return _slangSourceCheck;
-            }
-        }
-
-        public static bool IsSlangSource(ref string input)
-        {
-            return SlangSourceCheck.IsMatch(input);
-        }
 
         public void Awake()
         {
