@@ -115,7 +115,7 @@ macro_rules! keyword {
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Logos)]
-#[logos(skip r"[ \t\f]+")]
+#[logos(skip r"[ \r\t\f]+")]
 #[logos(extras = Extras)]
 #[logos(error(LexError, LexError::from_lexer))]
 pub enum TokenType<'a> {
@@ -843,3 +843,20 @@ documented! {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::TokenType;
+    use logos::Logos;
+
+    #[test]
+    fn test_windows_crlf_endings() -> anyhow::Result<()> {
+        let src = "let i = 0;\r\n";
+
+        let lexer = TokenType::lexer(src);
+
+        let tokens = lexer.collect::<Vec<_>>();
+
+        assert!(!tokens.iter().any(|res| res.is_err()));
+        Ok(())
+    }
+}
