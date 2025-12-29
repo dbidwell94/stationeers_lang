@@ -168,3 +168,28 @@ fn test_const_hash_expr() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn test_declaration_is_const() -> anyhow::Result<()> {
+    let compiled = compile! {
+        debug
+        r#"
+            const MAX = 100;
+
+            let max = MAX;
+        "#
+    };
+
+    assert_eq!(
+        compiled,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 100
+            "
+        }
+    );
+
+    Ok(())
+}

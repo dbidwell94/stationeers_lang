@@ -1,5 +1,10 @@
 # Changelog
 
+[0.4.6]
+
+- Fixed bug in compiler where you were unable to assign a `const` value to
+  a `let` variable
+
 [0.4.5]
 
 - Fixed issue where after clicking "Cancel" on the IC10 Editor, the side-by-side
