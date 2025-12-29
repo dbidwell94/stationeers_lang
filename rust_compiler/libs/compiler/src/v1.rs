@@ -714,7 +714,12 @@ impl<'a> Compiler<'a> {
 
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER)
                     }
-                    VariableLocation::Constant(_) | VariableLocation::Device(_) => unreachable!(),
+                    VariableLocation::Constant(Literal::Number(num)) => Operand::Number(num.into()),
+                    VariableLocation::Constant(Literal::Boolean(b)) => {
+                        Operand::Number(Number::from(b).into())
+                    }
+                    VariableLocation::Device(_)
+                    | VariableLocation::Constant(Literal::String(_)) => unreachable!(),
                 };
                 self.emit_variable_assignment(&var_loc, src)?;
                 (var_loc, None)
