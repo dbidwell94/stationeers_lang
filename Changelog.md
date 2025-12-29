@@ -1,5 +1,9 @@
 # Changelog
 
+[0.4.7]
+
+- Added support for Windows CRLF endings
+
 [0.4.6]
 
 - Fixed bug in compiler where you were unable to assign a `const` value to
