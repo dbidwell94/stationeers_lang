@@ -156,8 +156,8 @@ struct FunctionMetadata<'a> {
     current_name: Option<Cow<'a, str>>,
     /// Return label for the current function
     return_label: Option<Cow<'a, str>>,
-    /// Whether the current function returns a tuple
-    returns_tuple: bool,
+    /// Size of tuple return for the current function (0 if not returning tuple)
+    tuple_return_size: u16,
     /// Whether the SP (stack pointer) has been saved for the current function
     sp_saved: bool,
 }
@@ -170,7 +170,7 @@ impl<'a> Default for FunctionMetadata<'a> {
             tuple_return_sizes: HashMap::new(),
             current_name: None,
             return_label: None,
-            returns_tuple: false,
+            tuple_return_size: 0,
             sp_saved: false,
         }
     }
@@ -1301,15 +1301,6 @@ impl<'a> Compiler<'a> {
 
                 // Pop tuple values from stack into variables
                 self.pop_tuple_values(var_locations)?;
-
-                // Restore stack pointer to value saved at function entry
-                self.write_instruction(
-                    Instruction::Move(
-                        Operand::StackPointer,
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                    ),
-                    Some(value.span),
-                )?;
             }
             Expression::Tuple(tuple_expr) => {
                 // Direct tuple literal: (value1, value2, ...)
@@ -1402,15 +1393,6 @@ impl<'a> Compiler<'a> {
 
                 // Pop tuple values from stack into variables
                 self.pop_tuple_values(var_locations)?;
-
-                // Restore stack pointer to value saved at function entry
-                self.write_instruction(
-                    Instruction::Move(
-                        Operand::StackPointer,
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                    ),
-                    Some(value.span),
-                )?;
             }
             Expression::Tuple(tuple_expr) => {
                 // Direct tuple literal: (value1, value2, ...)
@@ -2524,32 +2506,13 @@ impl<'a> Compiler<'a> {
                     let span = expr.span;
                     let tuple_elements = &tuple_expr.node;
 
-                    // Record the stack offset where the tuple will start
-                    let tuple_start_offset = scope.stack_offset();
+                    // Track the last value for r15
+                    let mut last_value_operand: Option<Operand> = None;
 
-                    // First pass: Add temporary variables to scope for each tuple element
-                    // This updates the scope's stack_offset so we can calculate ra position later
-                    let mut temp_names = Vec::new();
-                    for (i, _element) in tuple_elements.iter().enumerate() {
-                        let temp_name = format!("__tuple_ret_{}", i);
-                        scope.add_variable(
-                            temp_name.clone().into(),
-                            LocationRequest::Stack,
-                            Some(span),
-                        )?;
-                        temp_names.push(temp_name);
-                    }
-
-                    // Second pass: Push the actual values onto the stack
+                    // Push each tuple element onto the stack
                     for element in tuple_elements.iter() {
-                        match &element.node {
-                            Expression::Literal(lit) => {
-                                let value_operand = extract_literal(lit.node.clone(), false)?;
-                                self.write_instruction(
-                                    Instruction::Push(value_operand),
-                                    Some(span),
-                                )?;
-                            }
+                        let push_operand = match &element.node {
+                            Expression::Literal(lit) => extract_literal(lit.node.clone(), false)?,
                             Expression::Variable(var) => {
                                 let var_loc = match scope.get_location_of(&var.node, Some(var.span))
                                 {
@@ -2565,20 +2528,12 @@ impl<'a> Compiler<'a> {
 
                                 match &var_loc {
                                     VariableLocation::Temporary(reg)
-                                    | VariableLocation::Persistant(reg) => {
-                                        self.write_instruction(
-                                            Instruction::Push(Operand::Register(*reg)),
-                                            Some(span),
-                                        )?;
-                                    }
+                                    | VariableLocation::Persistant(reg) => Operand::Register(*reg),
                                     VariableLocation::Constant(lit) => {
-                                        let value_operand = extract_literal(lit.clone(), false)?;
-                                        self.write_instruction(
-                                            Instruction::Push(value_operand),
-                                            Some(span),
-                                        )?;
+                                        extract_literal(lit.clone(), false)?
                                     }
                                     VariableLocation::Stack(offset) => {
+                                        // Load from stack into temp register
                                         self.write_instruction(
                                             Instruction::Sub(
                                                 Operand::Register(
@@ -2601,12 +2556,7 @@ impl<'a> Compiler<'a> {
                                             ),
                                             Some(span),
                                         )?;
-                                        self.write_instruction(
-                                            Instruction::Push(Operand::Register(
-                                                VariableScope::TEMP_STACK_REGISTER,
-                                            )),
-                                            Some(span),
-                                        )?;
+                                        Operand::Register(VariableScope::TEMP_STACK_REGISTER)
                                     }
                                     VariableLocation::Device(_) => {
                                         return Err(Error::Unknown(
@@ -2616,63 +2566,64 @@ impl<'a> Compiler<'a> {
                                     }
                                 }
                             }
-                            _ => {
-                                // For complex expressions, just push 0 for now
+                            Expression::MemberAccess(member_access) => {
+                                // Compile member access (e.g., device.Property)
+                                let member_span = element.span;
+
+                                // Get the device name from the object (should be a Variable expression)
+                                let device_name = if let Expression::Variable(var) =
+                                    &member_access.node.object.node
+                                {
+                                    &var.node
+                                } else {
+                                    return Err(Error::Unknown(
+                                        "Member access must be on a device variable".into(),
+                                        Some(member_span),
+                                    ));
+                                };
+
+                                let property_name = &member_access.node.member.node;
+
+                                // Get device
+                                let device = self.devices.get(device_name).ok_or_else(|| {
+                                    Error::UnknownIdentifier(device_name.clone(), member_span)
+                                })?;
+
+                                // Load property into temp register
                                 self.write_instruction(
-                                    Instruction::Push(Operand::Number(
-                                        Number::Integer(0, Unit::None).into(),
-                                    )),
-                                    Some(span),
+                                    Instruction::Load(
+                                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                        Operand::Device(device.clone()),
+                                        Operand::LogicType(property_name.clone()),
+                                    ),
+                                    Some(member_span),
                                 )?;
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER)
                             }
-                        }
-                    }
+                            _ => {
+                                // For other expression types, push 0 for now
+                                // TODO: Support more expression types
+                                Operand::Number(Number::Integer(0, Unit::None).into())
+                            }
+                        };
 
-                    // Store the pointer to the tuple (stack offset) in r15
-                    self.write_instruction(
-                        Instruction::Move(
-                            Operand::Register(VariableScope::RETURN_REGISTER),
-                            Operand::Number(tuple_start_offset.into()),
-                        ),
-                        Some(span),
-                    )?;
-
-                    // For tuple returns, ra is buried under the tuple values on the stack.
-                    // Stack layout: [ra, val0, val1, val2, ...]
-                    // Instead of popping and pushing, use Get to read ra from its stack position
-                    // while leaving the tuple values in place.
-
-                    // Calculate offset to ra from current stack position
-                    // ra is at tuple_start_offset - 1, so offset = (current - tuple_start) + 1
-                    let current_offset = scope.stack_offset();
-                    let ra_offset_from_current = (current_offset - tuple_start_offset + 1) as i32;
-
-                    // Use a temp register to read ra from the stack
-                    if ra_offset_from_current > 0 {
                         self.write_instruction(
-                            Instruction::Sub(
-                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                Operand::StackPointer,
-                                Operand::Number(ra_offset_from_current.into()),
-                            ),
+                            Instruction::Push(push_operand.clone()),
                             Some(span),
                         )?;
+                        last_value_operand = Some(push_operand);
+                    }
 
+                    // Set r15 to the last pushed value (convention for tuple returns)
+                    if let Some(last_op) = last_value_operand {
                         self.write_instruction(
-                            Instruction::Get(
-                                Operand::ReturnAddress,
-                                Operand::Device(Cow::from("db")),
-                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                            Instruction::Move(
+                                Operand::Register(VariableScope::RETURN_REGISTER),
+                                last_op,
                             ),
                             Some(span),
                         )?;
                     }
-
-                    // Jump back to caller
-                    self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;
-
-                    // Mark that we had a tuple return so the function declaration can skip return label cleanup
-                    self.function_meta.returns_tuple = true;
 
                     // Record the tuple return size for validation at call sites
                     if let Some(func_name) = &self.function_meta.current_name {
@@ -2681,8 +2632,8 @@ impl<'a> Compiler<'a> {
                             .insert(func_name.clone(), tuple_elements.len());
                     }
 
-                    // Early return to skip the normal return label processing
-                    return Ok(VariableLocation::Persistant(VariableScope::RETURN_REGISTER));
+                    // Track tuple size for epilogue cleanup
+                    self.function_meta.tuple_return_size = tuple_elements.len() as u16;
                 }
                 _ => {
                     return Err(Error::Unknown(
@@ -3312,78 +3263,6 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// Check if a function body contains any tuple returns
-    fn has_tuple_return(body: &BlockExpression) -> bool {
-        for expr in &body.0 {
-            match &expr.node {
-                Expression::Return(Some(ret_expr)) => {
-                    if let Expression::Tuple(_) = &ret_expr.node {
-                        return true;
-                    }
-                }
-                Expression::If(if_expr) => {
-                    // Check the then block
-                    if Self::has_tuple_return(&if_expr.node.body.node) {
-                        return true;
-                    }
-                    // Check the else branch if it exists
-                    if let Some(else_branch) = &if_expr.node.else_branch {
-                        match &else_branch.node {
-                            Expression::Block(block) => {
-                                if Self::has_tuple_return(block) {
-                                    return true;
-                                }
-                            }
-                            Expression::If(_) => {
-                                // Handle else-if chains
-                                if Self::has_tuple_return_in_expr(else_branch) {
-                                    return true;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Expression::While(while_expr) => {
-                    if Self::has_tuple_return(&while_expr.node.body) {
-                        return true;
-                    }
-                }
-                Expression::Loop(loop_expr) => {
-                    if Self::has_tuple_return(&loop_expr.node.body.node) {
-                        return true;
-                    }
-                }
-                Expression::Block(block) => {
-                    if Self::has_tuple_return(block) {
-                        return true;
-                    }
-                }
-                _ => {}
-            }
-        }
-        false
-    }
-
-    /// Helper to check for tuple returns in any expression
-    fn has_tuple_return_in_expr(expr: &Spanned<Expression>) -> bool {
-        match &expr.node {
-            Expression::Block(block) => Self::has_tuple_return(block),
-            Expression::If(if_expr) => {
-                if Self::has_tuple_return(&if_expr.node.body.node) {
-                    return true;
-                }
-                if let Some(else_branch) = &if_expr.node.else_branch {
-                    return Self::has_tuple_return_in_expr(else_branch);
-                }
-                false
-            }
-            Expression::While(while_expr) => Self::has_tuple_return(&while_expr.node.body),
-            Expression::Loop(loop_expr) => Self::has_tuple_return(&loop_expr.node.body.node),
-            _ => false,
-        }
-    }
-
     /// Compile a function declaration.
     /// Calees are responsible for backing up any registers they wish to use.
     fn expression_function(
@@ -3476,18 +3355,6 @@ impl<'a> Compiler<'a> {
             )?;
         }
 
-        // If this function has tuple returns, save the SP to r15 before pushing ra
-        if Self::has_tuple_return(&body) {
-            self.write_instruction(
-                Instruction::Move(
-                    Operand::Register(VariableScope::RETURN_REGISTER),
-                    Operand::StackPointer,
-                ),
-                Some(span),
-            )?;
-            self.function_meta.sp_saved = true;
-        }
-
         self.write_instruction(Instruction::Push(Operand::ReturnAddress), Some(span))?;
 
         let return_label = self.next_label_name();
@@ -3544,61 +3411,62 @@ impl<'a> Compiler<'a> {
 
         self.function_meta.return_label = prev_return_label;
 
-        // Only write the return label if this function doesn't have a tuple return
-        // (tuple returns handle their own pop ra and return)
-        if !self.function_meta.returns_tuple {
-            self.write_instruction(Instruction::LabelDef(return_label.clone()), Some(span))?;
+        // Write the return label and epilogue
+        self.write_instruction(Instruction::LabelDef(return_label.clone()), Some(span))?;
 
-            if ra_stack_offset == 1 {
-                self.write_instruction(Instruction::Pop(Operand::ReturnAddress), Some(span))?;
+        if ra_stack_offset == 1 {
+            self.write_instruction(Instruction::Pop(Operand::ReturnAddress), Some(span))?;
 
-                let remaining_cleanup = block_scope.stack_offset() - 1;
-                if remaining_cleanup > 0 {
-                    self.write_instruction(
-                        Instruction::Sub(
-                            Operand::StackPointer,
-                            Operand::StackPointer,
-                            Operand::Number(remaining_cleanup.into()),
-                        ),
-                        Some(span),
-                    )?;
-                }
-            } else {
+            // Calculate cleanup: scope variables + tuple return values
+            let remaining_cleanup =
+                (block_scope.stack_offset() - 1) + self.function_meta.tuple_return_size;
+            if remaining_cleanup > 0 {
                 self.write_instruction(
                     Instruction::Sub(
-                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                         Operand::StackPointer,
-                        Operand::Number(ra_stack_offset.into()),
+                        Operand::StackPointer,
+                        Operand::Number(remaining_cleanup.into()),
                     ),
                     Some(span),
                 )?;
-
-                self.write_instruction(
-                    Instruction::Get(
-                        Operand::ReturnAddress,
-                        Operand::Device(Cow::from("db")),
-                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                    ),
-                    Some(span),
-                )?;
-
-                if block_scope.stack_offset() > 0 {
-                    self.write_instruction(
-                        Instruction::Sub(
-                            Operand::StackPointer,
-                            Operand::StackPointer,
-                            Operand::Number(block_scope.stack_offset().into()),
-                        ),
-                        Some(span),
-                    )?;
-                }
             }
+        } else {
+            self.write_instruction(
+                Instruction::Sub(
+                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                    Operand::StackPointer,
+                    Operand::Number(ra_stack_offset.into()),
+                ),
+                Some(span),
+            )?;
 
-            self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;
+            self.write_instruction(
+                Instruction::Get(
+                    Operand::ReturnAddress,
+                    Operand::Device(Cow::from("db")),
+                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                ),
+                Some(span),
+            )?;
+
+            // Clean up scope variables + tuple return values
+            let total_cleanup = block_scope.stack_offset() + self.function_meta.tuple_return_size;
+            if total_cleanup > 0 {
+                self.write_instruction(
+                    Instruction::Sub(
+                        Operand::StackPointer,
+                        Operand::StackPointer,
+                        Operand::Number(total_cleanup.into()),
+                    ),
+                    Some(span),
+                )?;
+            }
         }
 
-        // Reset the flag for the next function
-        self.function_meta.returns_tuple = false;
+        self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;
+
+        // Reset the flags for the next function
+        self.function_meta.tuple_return_size = 0;
         self.function_meta.sp_saved = false;
         self.function_meta.current_name = None;
         Ok(())

@@ -390,19 +390,19 @@ fn tuple_unpacking_scope() -> anyhow::Result<()> {
             "
             j main
             pair:
-            move r15 sp
             push ra
             push 1
             push 2
-            move r15 1
-            sub r0 sp 3
-            get ra db r0
+            move r15 2
+            j __internal_L1
+            __internal_L1:
+            pop ra
+            sub sp sp 2
             j ra
             main:
             jal pair
             pop r9
             pop r8
-            move sp r15
             add r1 r8 r9
             move r10 r1
             "

@@ -609,3 +609,118 @@ fn function_with_many_parameters() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn tuple_declaration_with_functions() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+            device self = "db";
+            fn doSomething() {
+                return (self.Setting, self.Temperature);
+            }
+
+            let (setting, temperature) = doSomething();
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {"
+            j main
+            doSomething:
+            push ra
+            l r0 db Setting
+            push r0
+            l r0 db Temperature
+            push r0
+            move r15 r0
+            j __internal_L1
+            __internal_L1:
+            pop ra
+            sub sp sp 2
+            j ra
+            main:
+            jal doSomething
+            pop r9
+            pop r8
+        "}
+    );
+
+    Ok(())
+}
+
+#[test]
+fn tuple_from_simple_function() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            fn get_pair() {
+                return (1, 2);
+            }
+
+            let (a, b) = get_pair();
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {"
+            j main
+            get_pair:
+            push ra
+            push 1
+            push 2
+            move r15 2
+            j __internal_L1
+            __internal_L1:
+            pop ra
+            sub sp sp 2
+            j ra
+            main:
+            jal get_pair
+            pop r9
+            pop r8
+        "}
+    );
+
+    Ok(())
+}
+
+#[test]
+fn tuple_from_expression_not_function() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            let (a, b) = (5 + 3, 10 * 2);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {"
+            j main
+            main:
+            move r8 8
+            move r9 20
+        "}
+    );
+
+    Ok(())
+}
