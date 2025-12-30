@@ -4,14 +4,20 @@ use pretty_assertions::assert_eq;
 #[test]
 fn test_yield() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         yield();
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -27,7 +33,7 @@ fn test_yield() -> anyhow::Result<()> {
 #[test]
 fn test_sleep() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         sleep(3);
         let sleepAmount = 15;
@@ -36,8 +42,14 @@ fn test_sleep() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -57,7 +69,7 @@ fn test_sleep() -> anyhow::Result<()> {
 #[test]
 fn test_set_on_device() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
             device airConditioner = "d0";
             let internalTemp = 20c;
@@ -66,8 +78,14 @@ fn test_set_on_device() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -85,15 +103,21 @@ fn test_set_on_device() -> anyhow::Result<()> {
 #[test]
 fn test_set_on_device_batched() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         const doorHash = hash("Door");
         setBatched(doorHash, "Lock", true);
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             r#"
             j main
@@ -108,7 +132,7 @@ fn test_set_on_device_batched() -> anyhow::Result<()> {
 #[test]
 fn test_set_on_device_batched_named() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         device dev = "d0";
         const devName = hash("test");
@@ -117,8 +141,14 @@ fn test_set_on_device_batched_named() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -134,7 +164,7 @@ fn test_set_on_device_batched_named() -> anyhow::Result<()> {
 #[test]
 fn test_load_from_device() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         device airCon = "d0";
 
@@ -142,8 +172,14 @@ fn test_load_from_device() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -160,7 +196,7 @@ fn test_load_from_device() -> anyhow::Result<()> {
 #[test]
 fn test_load_from_slot() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         device airCon = "d0";
 
@@ -168,8 +204,14 @@ fn test_load_from_slot() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -186,7 +228,7 @@ fn test_load_from_slot() -> anyhow::Result<()> {
 #[test]
 fn test_set_slot() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         device airCon = "d0";
 
@@ -194,8 +236,14 @@ fn test_set_slot() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -211,7 +259,7 @@ fn test_set_slot() -> anyhow::Result<()> {
 #[test]
 fn test_load_reagent() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         device thingy = "d0";
 
@@ -219,8 +267,14 @@ fn test_load_reagent() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main

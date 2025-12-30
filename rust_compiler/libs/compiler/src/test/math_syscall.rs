@@ -5,14 +5,20 @@ use pretty_assertions::assert_eq;
 #[test]
 fn test_acos() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = acos(123);
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -29,7 +35,7 @@ fn test_acos() -> Result<()> {
 #[test]
 fn test_asin() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = asin(123);
         "
@@ -53,7 +59,7 @@ fn test_asin() -> Result<()> {
 #[test]
 fn test_atan() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = atan(123);
         "
@@ -77,7 +83,7 @@ fn test_atan() -> Result<()> {
 #[test]
 fn test_atan2() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = atan2(123, 456);
         "
@@ -101,7 +107,7 @@ fn test_atan2() -> Result<()> {
 #[test]
 fn test_abs() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = abs(-123);
         "
@@ -125,7 +131,7 @@ fn test_abs() -> Result<()> {
 #[test]
 fn test_ceil() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = ceil(123.90);
         "
@@ -149,7 +155,7 @@ fn test_ceil() -> Result<()> {
 #[test]
 fn test_cos() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = cos(123);
         "
@@ -173,7 +179,7 @@ fn test_cos() -> Result<()> {
 #[test]
 fn test_floor() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = floor(123);
         "
@@ -197,7 +203,7 @@ fn test_floor() -> Result<()> {
 #[test]
 fn test_log() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = log(123);
         "
@@ -221,7 +227,7 @@ fn test_log() -> Result<()> {
 #[test]
 fn test_max() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = max(123, 456);
         "
@@ -245,7 +251,7 @@ fn test_max() -> Result<()> {
 #[test]
 fn test_max_from_game() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         let item = 0;
         item = max(1 + 2, 2);
@@ -271,7 +277,7 @@ fn test_max_from_game() -> Result<()> {
 #[test]
 fn test_min() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = min(123, 456);
         "
@@ -295,7 +301,7 @@ fn test_min() -> Result<()> {
 #[test]
 fn test_rand() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = rand();
         "
@@ -319,7 +325,7 @@ fn test_rand() -> Result<()> {
 #[test]
 fn test_sin() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = sin(3);
         "
@@ -343,7 +349,7 @@ fn test_sin() -> Result<()> {
 #[test]
 fn test_sqrt() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = sqrt(3);
         "
@@ -367,7 +373,7 @@ fn test_sqrt() -> Result<()> {
 #[test]
 fn test_tan() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = tan(3);
         "
@@ -391,7 +397,7 @@ fn test_tan() -> Result<()> {
 #[test]
 fn test_trunc() -> Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = trunc(3.234);
         "

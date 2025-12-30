@@ -4,13 +4,19 @@ use pretty_assertions::assert_eq;
 #[test]
 fn simple_negation() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = -5;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -26,14 +32,20 @@ fn simple_negation() -> anyhow::Result<()> {
 #[test]
 fn negation_of_variable() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 10;
             let y = -x;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -51,13 +63,19 @@ fn negation_of_variable() -> anyhow::Result<()> {
 #[test]
 fn double_negation() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = -(-5);
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -73,13 +91,19 @@ fn double_negation() -> anyhow::Result<()> {
 #[test]
 fn negation_in_expression() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 10 + (-5);
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -95,13 +119,19 @@ fn negation_in_expression() -> anyhow::Result<()> {
 #[test]
 fn negation_with_multiplication() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = -3 * 4;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -117,13 +147,19 @@ fn negation_with_multiplication() -> anyhow::Result<()> {
 #[test]
 fn parentheses_priority() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = (2 + 3) * 4;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -139,13 +175,19 @@ fn parentheses_priority() -> anyhow::Result<()> {
 #[test]
 fn nested_parentheses() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = ((2 + 3) * (4 - 1));
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -161,16 +203,22 @@ fn nested_parentheses() -> anyhow::Result<()> {
 #[test]
 fn parentheses_with_variables() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let a = 5;
             let b = 10;
             let c = (a + b) * 2;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     // Should calculate (5 + 10) * 2 = 30
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -190,15 +238,21 @@ fn parentheses_with_variables() -> anyhow::Result<()> {
 #[test]
 fn priority_affects_result() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let with_priority = (2 + 3) * 4;
             let without_priority = 2 + 3 * 4;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     // with_priority should be 20, without_priority should be 14
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -215,14 +269,20 @@ fn priority_affects_result() -> anyhow::Result<()> {
 #[test]
 fn negation_of_expression() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = -(2 + 3);
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     // Should be -5 (constant folded)
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -239,14 +299,20 @@ fn negation_of_expression() -> anyhow::Result<()> {
 #[test]
 fn complex_negation_and_priority() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = -((10 - 5) * 2);
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     // Should be -(5 * 2) = -10 (folded to constant)
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -263,14 +329,20 @@ fn complex_negation_and_priority() -> anyhow::Result<()> {
 #[test]
 fn negation_in_logical_expression() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = !(-5);
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     // -5 is truthy, so !(-5) should be 0
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -288,14 +360,20 @@ fn negation_in_logical_expression() -> anyhow::Result<()> {
 #[test]
 fn parentheses_in_comparison() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = (10 + 5) > (3 * 4);
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     // (10 + 5) = 15 > (3 * 4) = 12, so true (1)
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main

@@ -167,15 +167,21 @@ fn temperature_unit_conversion() -> anyhow::Result<()> {
 #[test]
 fn mixed_temperature_units() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let c = 0c;
             let f = 32f;
             let k = 273.15k;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -193,15 +199,21 @@ fn mixed_temperature_units() -> anyhow::Result<()> {
 #[test]
 fn boolean_constant_folding() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = true;
             let y = false;
             let z = true && true;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -220,7 +232,7 @@ fn boolean_constant_folding() -> anyhow::Result<()> {
 #[test]
 fn empty_block() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 5;
             {
             }
@@ -228,8 +240,14 @@ fn empty_block() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -246,13 +264,19 @@ fn empty_block() -> anyhow::Result<()> {
 #[test]
 fn multiple_statements_same_line() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 1; let y = 2; let z = 3;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -270,7 +294,7 @@ fn multiple_statements_same_line() -> anyhow::Result<()> {
 #[test]
 fn function_with_no_return() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             fn no_return() {
                 let x = 5;
             };
@@ -279,8 +303,14 @@ fn function_with_no_return() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -303,13 +333,19 @@ fn function_with_no_return() -> anyhow::Result<()> {
 #[test]
 fn deeply_nested_expressions() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = ((((((((1 + 2) + 3) + 4) + 5) + 6) + 7) + 8) + 9);
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -325,13 +361,19 @@ fn deeply_nested_expressions() -> anyhow::Result<()> {
 #[test]
 fn constant_folding_with_operations() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 10 * 5 + 3 - 2;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -347,13 +389,19 @@ fn constant_folding_with_operations() -> anyhow::Result<()> {
 #[test]
 fn constant_folding_with_division() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 100 / 2 / 5;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -369,14 +417,19 @@ fn constant_folding_with_division() -> anyhow::Result<()> {
 #[test]
 fn modulo_operation() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 17 % 5;
             let y = 10 % 3;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -393,14 +446,20 @@ fn modulo_operation() -> anyhow::Result<()> {
 #[test]
 fn exponentiation() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 2 ^ 8;
             let y = 3 ^ 3;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -417,15 +476,21 @@ fn exponentiation() -> anyhow::Result<()> {
 #[test]
 fn comparison_with_zero() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 0 == 0;
             let y = 0 < 1;
             let z = 0 > -1;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -446,15 +511,21 @@ fn comparison_with_zero() -> anyhow::Result<()> {
 #[test]
 fn boolean_negation_edge_cases() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = !0;
             let y = !1;
             let z = !100;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -475,7 +546,7 @@ fn boolean_negation_edge_cases() -> anyhow::Result<()> {
 #[test]
 fn function_with_many_parameters() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             fn many_params(a, b, c, d, e, f, g, h) {
                 return a + b + c + d + e + f + g + h;
             };
@@ -484,8 +555,14 @@ fn function_with_many_parameters() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main

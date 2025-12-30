@@ -4,13 +4,13 @@ use pretty_assertions::assert_eq;
 #[test]
 fn device_declaration() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device d0 = \"d0\";
         "
     };
 
     // Declaration only emits the jump label header
-    assert_eq!(compiled, "j main\n");
+    assert_eq!(compiled.output, "j main\n");
 
     Ok(())
 }
@@ -18,7 +18,7 @@ fn device_declaration() -> anyhow::Result<()> {
 #[test]
 fn device_property_read() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device ac = \"d0\";
             let temp = ac.Temperature;
         "
@@ -42,7 +42,7 @@ fn device_property_read() -> anyhow::Result<()> {
 #[test]
 fn device_property_write() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device ac = \"d0\";
             ac.On = 1;
         "
@@ -65,7 +65,7 @@ fn device_property_write() -> anyhow::Result<()> {
 #[test]
 fn multiple_device_declarations() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device d0 = \"d0\";
             device d1 = \"d1\";
             device d2 = \"d2\";
@@ -73,7 +73,7 @@ fn multiple_device_declarations() -> anyhow::Result<()> {
     };
 
     // Declarations only emit the header when unused
-    assert_eq!(compiled, "j main\n");
+    assert_eq!(compiled.output, "j main\n");
 
     Ok(())
 }
@@ -81,7 +81,7 @@ fn multiple_device_declarations() -> anyhow::Result<()> {
 #[test]
 fn device_with_variable_interaction() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device sensor = \"d0\";
             let reading = sensor.Temperature;
             let threshold = 373.15;
@@ -110,7 +110,7 @@ fn device_with_variable_interaction() -> anyhow::Result<()> {
 #[test]
 fn device_property_in_arithmetic() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device d0 = \"d0\";
             let result = d0.Temperature + 100;
         "
@@ -136,7 +136,7 @@ fn device_property_in_arithmetic() -> anyhow::Result<()> {
 #[test]
 fn device_used_in_function() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device d0 = \"d0\";
             
             fn check_power() {
@@ -173,7 +173,7 @@ fn device_used_in_function() -> anyhow::Result<()> {
 #[test]
 fn device_in_conditional() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device d0 = \"d0\";
             
             if (d0.On) {
@@ -202,7 +202,7 @@ fn device_in_conditional() -> anyhow::Result<()> {
 #[test]
 fn device_property_with_underscore_name() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device cool_device = \"d0\";
             let value = cool_device.SomeProperty;
         "

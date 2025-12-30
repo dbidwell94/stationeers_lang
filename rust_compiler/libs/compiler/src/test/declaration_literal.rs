@@ -4,7 +4,7 @@ use pretty_assertions::assert_eq;
 #[test]
 fn variable_declaration_numeric_literal() -> anyhow::Result<()> {
     let compiled = crate::compile! {
-        debug r#"
+        check r#"
             let i = 20c;
         "#
     };
@@ -26,7 +26,7 @@ fn variable_declaration_numeric_literal() -> anyhow::Result<()> {
 #[test]
 fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         let a = 0;
         let b = 1;
@@ -67,7 +67,7 @@ fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> 
 #[test]
 fn variable_declaration_negative() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = -1;
         "
@@ -90,7 +90,7 @@ fn variable_declaration_negative() -> anyhow::Result<()> {
 #[test]
 fn test_boolean_declaration() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let t = true;
         let f = false;
@@ -115,7 +115,7 @@ fn test_boolean_declaration() -> anyhow::Result<()> {
 #[test]
 fn test_boolean_return() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         fn getTrue() {
             return true;
@@ -172,7 +172,7 @@ fn test_const_hash_expr() -> anyhow::Result<()> {
 #[test]
 fn test_declaration_is_const() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
             const MAX = 100;
 
