@@ -47,3 +47,4 @@ mod logic_expression;
 mod loops;
 mod math_syscall;
 mod syscall;
+mod tuple_literals;

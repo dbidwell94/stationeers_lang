@@ -9,7 +9,8 @@ use parser::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
         InvocationExpression, Literal, LiteralOr, LiteralOrVariable, LogicalExpression,
-        LoopExpression, MemberAccessExpression, Spanned, TernaryExpression, WhileExpression,
+        LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
+        TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
     },
 };
 use rust_decimal::Decimal;
@@ -464,6 +465,14 @@ impl<'a> Compiler<'a> {
                     location: result_loc,
                     temp_name: Some(result_name),
                 }))
+            }
+            Expression::TupleDeclaration(tuple_decl) => {
+                self.expression_tuple_declaration(tuple_decl.node, scope)?;
+                Ok(None)
+            }
+            Expression::TupleAssignment(tuple_assign) => {
+                self.expression_tuple_assignment(tuple_assign.node, scope)?;
+                Ok(None)
             }
             _ => Err(Error::Unknown(
                 format!(
@@ -925,6 +934,614 @@ impl<'a> Compiler<'a> {
                     "Invalid assignment target. Only variables and member access are supported."
                         .into(),
                     Some(assignee.span),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn expression_function_invocation_with_invocation(
+        &mut self,
+        invoke_expr: &InvocationExpression<'a>,
+        parent_scope: &mut VariableScope<'a, '_>,
+    ) -> Result<(), Error<'a>> {
+        let InvocationExpression { name, arguments } = invoke_expr;
+
+        if !self.function_locations.contains_key(name.node.as_ref()) {
+            self.errors
+                .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+            return Ok(());
+        }
+
+        let Some(args) = self.function_metadata.get(name.node.as_ref()) else {
+            return Err(Error::UnknownIdentifier(name.node.clone(), name.span));
+        };
+
+        if args.len() != arguments.len() {
+            self.errors
+                .push(Error::AgrumentMismatch(name.node.clone(), name.span));
+            return Ok(());
+        }
+        let mut stack = VariableScope::scoped(parent_scope);
+
+        // backup all used registers to the stack
+        let active_registers = stack.registers();
+        for register in &active_registers {
+            stack.add_variable(
+                Cow::from(format!("temp_{register}")),
+                LocationRequest::Stack,
+                None,
+            )?;
+            self.write_instruction(
+                Instruction::Push(Operand::Register(*register)),
+                Some(name.span),
+            )?;
+        }
+        for arg in arguments {
+            match &arg.node {
+                Expression::Literal(spanned_lit) => match &spanned_lit.node {
+                    Literal::Number(num) => {
+                        self.write_instruction(
+                            Instruction::Push(Operand::Number((*num).into())),
+                            Some(spanned_lit.span),
+                        )?;
+                    }
+                    Literal::Boolean(b) => {
+                        self.write_instruction(
+                            Instruction::Push(Operand::Number(Number::from(*b).into())),
+                            Some(spanned_lit.span),
+                        )?;
+                    }
+                    _ => {}
+                },
+                Expression::Variable(var_name) => {
+                    let loc = match stack.get_location_of(&var_name.node, Some(var_name.span)) {
+                        Ok(l) => l,
+                        Err(_) => {
+                            self.errors.push(Error::UnknownIdentifier(
+                                var_name.node.clone(),
+                                var_name.span,
+                            ));
+                            VariableLocation::Temporary(0)
+                        }
+                    };
+
+                    match loc {
+                        VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
+                            self.write_instruction(
+                                Instruction::Push(Operand::Register(reg)),
+                                Some(var_name.span),
+                            )?;
+                        }
+                        VariableLocation::Constant(lit) => {
+                            self.write_instruction(
+                                Instruction::Push(extract_literal(lit, false)?),
+                                Some(var_name.span),
+                            )?;
+                        }
+                        VariableLocation::Stack(stack_offset) => {
+                            self.write_instruction(
+                                Instruction::Sub(
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                    Operand::StackPointer,
+                                    Operand::Number(stack_offset.into()),
+                                ),
+                                Some(var_name.span),
+                            )?;
+
+                            self.write_instruction(
+                                Instruction::Get(
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                    Operand::Device(Cow::from("db")),
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                ),
+                                Some(var_name.span),
+                            )?;
+
+                            self.write_instruction(
+                                Instruction::Push(Operand::Register(
+                                    VariableScope::TEMP_STACK_REGISTER,
+                                )),
+                                Some(var_name.span),
+                            )?;
+                        }
+                        VariableLocation::Device(_) => {
+                            self.errors.push(Error::Unknown(
+                                "Device references not supported in function arguments".into(),
+                                Some(var_name.span),
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    self.errors.push(Error::Unknown(
+                        "Only literals and variables supported in function arguments".into(),
+                        Some(arg.span),
+                    ));
+                }
+            }
+        }
+
+        let Some(_location) = self.function_locations.get(&name.node) else {
+            self.errors
+                .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+            return Ok(());
+        };
+
+        self.write_instruction(
+            Instruction::JumpAndLink(Operand::Label(name.node.clone())),
+            Some(name.span),
+        )?;
+
+        // pop all registers back
+        for register in active_registers.iter().rev() {
+            self.write_instruction(
+                Instruction::Pop(Operand::Register(*register)),
+                Some(name.span),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn expression_tuple_declaration(
+        &mut self,
+        tuple_decl: TupleDeclarationExpression<'a>,
+        scope: &mut VariableScope<'a, '_>,
+    ) -> Result<(), Error<'a>> {
+        let TupleDeclarationExpression { names, value } = tuple_decl;
+
+        // Compile the right-hand side expression
+        // For function calls returning tuples:
+        // r15 = pointer to beginning of tuple on stack
+        // r14, r13, ... contain the tuple elements, or they're on the stack
+        match &value.node {
+            Expression::Invocation(invoke_expr) => {
+                // Execute the function call
+                // Tuple result: r15 points to tuple on stack, individual elements in r14, r13, etc.
+                self.expression_function_invocation_with_invocation(invoke_expr, scope)?;
+
+                // For each variable in names, assign from the return registers/stack
+                // Start from r15-1 (r14) for the first element
+                let mut current_register = VariableScope::PERSIST_REGISTER_COUNT; // r14 = register 14
+
+                for (_index, name_spanned) in names.iter().enumerate() {
+                    // Skip underscores
+                    if name_spanned.node.as_ref() == "_" {
+                        current_register = current_register.saturating_sub(1);
+                        continue;
+                    }
+
+                    // Add variable to scope
+                    let var_location = scope.add_variable(
+                        name_spanned.node.clone(),
+                        LocationRequest::Persist,
+                        Some(name_spanned.span),
+                    )?;
+
+                    // Move from return register to variable location
+                    let var_reg = self.resolve_register(&var_location)?;
+
+                    // If we still have return registers available, use them
+                    if current_register >= 8 {
+                        self.write_instruction(
+                            Instruction::Move(
+                                Operand::Register(var_reg),
+                                Operand::Register(current_register),
+                            ),
+                            Some(name_spanned.span),
+                        )?;
+                        current_register -= 1;
+                    } else {
+                        // If we run out of registers, we'd need to load from stack
+                        // For now, this is a limitation
+                        return Err(Error::Unknown(
+                            "Tuple unpacking with more than 7 elements not yet supported".into(),
+                            Some(name_spanned.span),
+                        ));
+                    }
+                }
+            }
+            Expression::Tuple(tuple_expr) => {
+                // Direct tuple literal: (value1, value2, ...)
+                let tuple_elements = &tuple_expr.node;
+
+                // Validate tuple size matches names
+                if tuple_elements.len() != names.len() {
+                    return Err(Error::Unknown(
+                        format!(
+                            "Tuple size mismatch: expected {} elements, got {}",
+                            names.len(),
+                            tuple_elements.len()
+                        ),
+                        Some(value.span),
+                    ));
+                }
+
+                // Compile each element and assign to corresponding variable
+                for (_index, (name_spanned, element)) in
+                    names.iter().zip(tuple_elements.iter()).enumerate()
+                {
+                    // Skip underscores
+                    if name_spanned.node.as_ref() == "_" {
+                        continue;
+                    }
+
+                    // Add variable to scope
+                    let var_location = scope.add_variable(
+                        name_spanned.node.clone(),
+                        LocationRequest::Persist,
+                        Some(name_spanned.span),
+                    )?;
+
+                    // Compile the element expression - handle common cases directly
+                    match &element.node {
+                        Expression::Literal(lit) => {
+                            let value_operand = extract_literal(lit.node.clone(), false)?;
+                            self.emit_variable_assignment(&var_location, value_operand)?;
+                        }
+                        Expression::Variable(var) => {
+                            let var_loc = match scope.get_location_of(&var.node, Some(var.span)) {
+                                Ok(l) => l,
+                                Err(_) => {
+                                    self.errors
+                                        .push(Error::UnknownIdentifier(var.node.clone(), var.span));
+                                    VariableLocation::Temporary(0)
+                                }
+                            };
+
+                            let value_operand = match &var_loc {
+                                VariableLocation::Temporary(reg)
+                                | VariableLocation::Persistant(reg) => Operand::Register(*reg),
+                                VariableLocation::Constant(lit) => {
+                                    extract_literal(lit.clone(), false)?
+                                }
+                                VariableLocation::Stack(offset) => {
+                                    self.write_instruction(
+                                        Instruction::Sub(
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                            Operand::StackPointer,
+                                            Operand::Number((*offset).into()),
+                                        ),
+                                        Some(var.span),
+                                    )?;
+
+                                    self.write_instruction(
+                                        Instruction::Get(
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                            Operand::Device(Cow::from("db")),
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                        ),
+                                        Some(var.span),
+                                    )?;
+
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER)
+                                }
+                                VariableLocation::Device(_) => {
+                                    return Err(Error::Unknown(
+                                        "Device values not supported in tuple literals".into(),
+                                        Some(var.span),
+                                    ));
+                                }
+                            };
+
+                            self.emit_variable_assignment(&var_location, value_operand)?;
+                        }
+                        _ => {
+                            return Err(Error::Unknown(
+                                "Complex expressions in tuple literals not yet supported".into(),
+                                Some(element.span),
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => {
+                return Err(Error::Unknown(
+                    "Tuple declaration only supports function invocations or tuple literals as RHS"
+                        .into(),
+                    Some(value.span),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn expression_tuple_assignment(
+        &mut self,
+        tuple_assign: TupleAssignmentExpression<'a>,
+        scope: &mut VariableScope<'a, '_>,
+    ) -> Result<(), Error<'a>> {
+        let TupleAssignmentExpression { names, value } = tuple_assign;
+
+        // Similar to tuple declaration, but variables must already exist
+        match &value.node {
+            Expression::Invocation(invoke_expr) => {
+                // Execute the function call
+                // Tuple result: r15 points to tuple on stack, individual elements in r14, r13, etc.
+                self.expression_function_invocation_with_invocation(invoke_expr, scope)?;
+
+                // For each variable in names, assign from the return registers
+                let mut current_register = VariableScope::PERSIST_REGISTER_COUNT; // r14 = register 14
+
+                for (_index, name_spanned) in names.iter().enumerate() {
+                    // Skip underscores
+                    if name_spanned.node.as_ref() == "_" {
+                        current_register = current_register.saturating_sub(1);
+                        continue;
+                    }
+
+                    // Get the existing variable location
+                    let var_location =
+                        match scope.get_location_of(&name_spanned.node, Some(name_spanned.span)) {
+                            Ok(l) => l,
+                            Err(_) => {
+                                self.errors.push(Error::UnknownIdentifier(
+                                    name_spanned.node.clone(),
+                                    name_spanned.span,
+                                ));
+                                VariableLocation::Temporary(0)
+                            }
+                        };
+
+                    // Assign from return register to variable
+                    match var_location {
+                        VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
+                            if current_register >= 8 {
+                                self.write_instruction(
+                                    Instruction::Move(
+                                        Operand::Register(reg),
+                                        Operand::Register(current_register),
+                                    ),
+                                    Some(name_spanned.span),
+                                )?;
+                                current_register -= 1;
+                            } else {
+                                return Err(Error::Unknown(
+                                    "Tuple unpacking with more than 7 elements not yet supported"
+                                        .into(),
+                                    Some(name_spanned.span),
+                                ));
+                            }
+                        }
+                        VariableLocation::Stack(offset) => {
+                            // Load from return register to temp, then store to stack
+                            if current_register >= 8 {
+                                self.write_instruction(
+                                    Instruction::Move(
+                                        Operand::Register(0),
+                                        Operand::Register(current_register),
+                                    ),
+                                    Some(name_spanned.span),
+                                )?;
+                                current_register -= 1;
+                            } else {
+                                return Err(Error::Unknown(
+                                    "Tuple unpacking with more than 7 elements not yet supported"
+                                        .into(),
+                                    Some(name_spanned.span),
+                                ));
+                            }
+
+                            // Store r0 to stack
+                            self.write_instruction(
+                                Instruction::Sub(
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                    Operand::StackPointer,
+                                    Operand::Number(offset.into()),
+                                ),
+                                Some(name_spanned.span),
+                            )?;
+
+                            self.write_instruction(
+                                Instruction::Put(
+                                    Operand::Device(Cow::from("db")),
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                    Operand::Register(0),
+                                ),
+                                Some(name_spanned.span),
+                            )?;
+                        }
+                        VariableLocation::Constant(_) => {
+                            return Err(Error::ConstAssignment(
+                                name_spanned.node.clone(),
+                                name_spanned.span,
+                            ));
+                        }
+                        VariableLocation::Device(_) => {
+                            return Err(Error::DeviceAssignment(
+                                name_spanned.node.clone(),
+                                name_spanned.span,
+                            ));
+                        }
+                    }
+                }
+            }
+            Expression::Tuple(tuple_expr) => {
+                // Direct tuple literal: (value1, value2, ...)
+                let tuple_elements = &tuple_expr.node;
+
+                // Validate tuple size matches names
+                if tuple_elements.len() != names.len() {
+                    return Err(Error::Unknown(
+                        format!(
+                            "Tuple size mismatch: expected {} elements, got {}",
+                            names.len(),
+                            tuple_elements.len()
+                        ),
+                        Some(value.span),
+                    ));
+                }
+
+                // Compile each element and assign to corresponding variable
+                for (_index, (name_spanned, element)) in
+                    names.iter().zip(tuple_elements.iter()).enumerate()
+                {
+                    // Skip underscores
+                    if name_spanned.node.as_ref() == "_" {
+                        continue;
+                    }
+
+                    // Get the existing variable location
+                    let var_location =
+                        match scope.get_location_of(&name_spanned.node, Some(name_spanned.span)) {
+                            Ok(l) => l,
+                            Err(_) => {
+                                self.errors.push(Error::UnknownIdentifier(
+                                    name_spanned.node.clone(),
+                                    name_spanned.span,
+                                ));
+                                VariableLocation::Temporary(0)
+                            }
+                        };
+
+                    // Compile the element expression - handle common cases directly
+                    match &element.node {
+                        Expression::Literal(lit) => {
+                            let value_operand = extract_literal(lit.node.clone(), false)?;
+                            match &var_location {
+                                VariableLocation::Temporary(reg)
+                                | VariableLocation::Persistant(reg) => {
+                                    self.write_instruction(
+                                        Instruction::Move(Operand::Register(*reg), value_operand),
+                                        Some(name_spanned.span),
+                                    )?;
+                                }
+                                VariableLocation::Stack(offset) => {
+                                    self.write_instruction(
+                                        Instruction::Sub(
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                            Operand::StackPointer,
+                                            Operand::Number((*offset).into()),
+                                        ),
+                                        Some(name_spanned.span),
+                                    )?;
+
+                                    self.write_instruction(
+                                        Instruction::Put(
+                                            Operand::Device(Cow::from("db")),
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                            value_operand,
+                                        ),
+                                        Some(name_spanned.span),
+                                    )?;
+                                }
+                                VariableLocation::Constant(_) => {
+                                    return Err(Error::ConstAssignment(
+                                        name_spanned.node.clone(),
+                                        name_spanned.span,
+                                    ));
+                                }
+                                VariableLocation::Device(_) => {
+                                    return Err(Error::DeviceAssignment(
+                                        name_spanned.node.clone(),
+                                        name_spanned.span,
+                                    ));
+                                }
+                            }
+                        }
+                        Expression::Variable(var) => {
+                            let var_loc = match scope.get_location_of(&var.node, Some(var.span)) {
+                                Ok(l) => l,
+                                Err(_) => {
+                                    self.errors
+                                        .push(Error::UnknownIdentifier(var.node.clone(), var.span));
+                                    VariableLocation::Temporary(0)
+                                }
+                            };
+
+                            let value_operand = match &var_loc {
+                                VariableLocation::Temporary(reg)
+                                | VariableLocation::Persistant(reg) => Operand::Register(*reg),
+                                VariableLocation::Constant(lit) => {
+                                    extract_literal(lit.clone(), false)?
+                                }
+                                VariableLocation::Stack(offset) => {
+                                    self.write_instruction(
+                                        Instruction::Sub(
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                            Operand::StackPointer,
+                                            Operand::Number((*offset).into()),
+                                        ),
+                                        Some(var.span),
+                                    )?;
+
+                                    self.write_instruction(
+                                        Instruction::Get(
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                            Operand::Device(Cow::from("db")),
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                        ),
+                                        Some(var.span),
+                                    )?;
+
+                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER)
+                                }
+                                VariableLocation::Device(_) => {
+                                    return Err(Error::Unknown(
+                                        "Device values not supported in tuple literals".into(),
+                                        Some(var.span),
+                                    ));
+                                }
+                            };
+
+                            match &var_location {
+                                VariableLocation::Temporary(reg)
+                                | VariableLocation::Persistant(reg) => {
+                                    self.write_instruction(
+                                        Instruction::Move(Operand::Register(*reg), value_operand),
+                                        Some(name_spanned.span),
+                                    )?;
+                                }
+                                VariableLocation::Stack(offset) => {
+                                    self.write_instruction(
+                                        Instruction::Sub(
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                            Operand::StackPointer,
+                                            Operand::Number((*offset).into()),
+                                        ),
+                                        Some(name_spanned.span),
+                                    )?;
+
+                                    self.write_instruction(
+                                        Instruction::Put(
+                                            Operand::Device(Cow::from("db")),
+                                            Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                            value_operand,
+                                        ),
+                                        Some(name_spanned.span),
+                                    )?;
+                                }
+                                VariableLocation::Constant(_) => {
+                                    return Err(Error::ConstAssignment(
+                                        name_spanned.node.clone(),
+                                        name_spanned.span,
+                                    ));
+                                }
+                                VariableLocation::Device(_) => {
+                                    return Err(Error::DeviceAssignment(
+                                        name_spanned.node.clone(),
+                                        name_spanned.span,
+                                    ));
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(Error::Unknown(
+                                "Complex expressions in tuple literals not yet supported".into(),
+                                Some(element.span),
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => {
+                return Err(Error::Unknown(
+                    "Tuple assignment only supports function invocations or tuple literals as RHS"
+                        .into(),
+                    Some(value.span),
                 ));
             }
         }
