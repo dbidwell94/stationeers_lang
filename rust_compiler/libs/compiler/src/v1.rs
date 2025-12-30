@@ -603,15 +603,13 @@ impl<'a> Compiler<'a> {
         let name_str = var_name.node;
         let name_span = var_name.span;
 
-        // optimization. Check for a negated numeric literal
-        if let Expression::Negation(box_expr) = &expr.node
-            && let Expression::Literal(spanned_lit) = &box_expr.node
-            && let Literal::Number(neg_num) = &spanned_lit.node
-        {
+        // optimization. Check for a negated numeric literal (including nested negations)
+        // e.g., -5, -(-5), -(-(5)), etc.
+        if let Some(num) = self.try_fold_negation(&expr.node) {
             let loc =
                 scope.add_variable(name_str.clone(), LocationRequest::Persist, Some(name_span))?;
 
-            self.emit_variable_assignment(&loc, Operand::Number((-*neg_num).into()))?;
+            self.emit_variable_assignment(&loc, Operand::Number(num.into()))?;
             return Ok(Some(CompileLocation {
                 location: loc,
                 temp_name: None,
@@ -2032,6 +2030,25 @@ impl<'a> Compiler<'a> {
             },
             scope,
         )
+    }
+
+    /// Recursively fold negations of numeric literals, e.g., -5 => 5, -(-5) => 5
+    fn try_fold_negation(&self, expr: &Expression) -> Option<Number> {
+        match expr {
+            // Base case: plain number literal
+            Expression::Literal(lit) => {
+                if let Literal::Number(n) = lit.node {
+                    Some(n)
+                } else {
+                    None
+                }
+            }
+            // Recursive case: negation of something foldable
+            Expression::Negation(inner) => self.try_fold_negation(&inner.node).map(|n| -n),
+            // Parentheses just pass through
+            Expression::Priority(inner) => self.try_fold_negation(&inner.node),
+            _ => None,
+        }
     }
 
     fn expression_binary(
