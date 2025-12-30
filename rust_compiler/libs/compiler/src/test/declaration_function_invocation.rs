@@ -3,13 +3,19 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn no_arguments() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn doSomething() {};
         let i = doSomething();
         "
     };
+
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
 
     let to_test = indoc! {
         "
@@ -25,15 +31,15 @@ fn no_arguments() -> anyhow::Result<()> {
         "
     };
 
-    assert_eq!(compiled, to_test);
+    assert_eq!(result.output, to_test);
 
     Ok(())
 }
 
 #[test]
 fn let_var_args() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn mul2(arg1) {
             return arg1 * 2;
@@ -46,8 +52,14 @@ fn let_var_args() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -99,8 +111,8 @@ fn incorrect_args_count() -> anyhow::Result<()> {
 
 #[test]
 fn inline_literal_args() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn doSomething(arg1, arg2) {
             return 5;
@@ -110,8 +122,14 @@ fn inline_literal_args() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -141,8 +159,8 @@ fn inline_literal_args() -> anyhow::Result<()> {
 
 #[test]
 fn mixed_args() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let arg1 = 123;
         let returnValue = doSomething(arg1, 456);
@@ -150,8 +168,14 @@ fn mixed_args() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -179,8 +203,8 @@ fn mixed_args() -> anyhow::Result<()> {
 
 #[test]
 fn with_return_statement() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn doSomething(arg1) {
             return 456;
@@ -190,8 +214,14 @@ fn with_return_statement() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -216,8 +246,8 @@ fn with_return_statement() -> anyhow::Result<()> {
 
 #[test]
 fn with_negative_return_literal() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn doSomething() {
             return -1;
@@ -226,8 +256,14 @@ fn with_negative_return_literal() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main

@@ -3,8 +3,8 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn test_comparison_expressions() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let isGreater = 10 > 5;
         let isLess = 5 < 10;
@@ -15,8 +15,14 @@ fn test_comparison_expressions() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -42,8 +48,8 @@ fn test_comparison_expressions() -> anyhow::Result<()> {
 
 #[test]
 fn test_logical_and_or_not() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let logic1 = 1 && 1;
         let logic2 = 1 || 0;
@@ -51,8 +57,14 @@ fn test_logical_and_or_not() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -72,15 +84,21 @@ fn test_logical_and_or_not() -> anyhow::Result<()> {
 
 #[test]
 fn test_complex_logic() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let logic = (10 > 5) && (5 < 10);
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -98,15 +116,21 @@ fn test_complex_logic() -> anyhow::Result<()> {
 
 #[test]
 fn test_math_with_logic() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let logic = (1 + 2) > 1;
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -122,15 +146,21 @@ fn test_math_with_logic() -> anyhow::Result<()> {
 
 #[test]
 fn test_boolean_in_logic() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let res = true && false;
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -146,8 +176,8 @@ fn test_boolean_in_logic() -> anyhow::Result<()> {
 
 #[test]
 fn test_invert_a_boolean() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let i = true;
         let y = !i;
@@ -156,8 +186,14 @@ fn test_invert_a_boolean() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main

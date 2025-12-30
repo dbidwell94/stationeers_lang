@@ -3,8 +3,8 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn test_infinite_loop() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let a = 0;
         loop {
@@ -13,9 +13,15 @@ fn test_infinite_loop() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     // __internal_Labels: L1 (start), L2 (end)
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -35,8 +41,8 @@ fn test_infinite_loop() -> anyhow::Result<()> {
 
 #[test]
 fn test_loop_break() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let a = 0;
         loop {
@@ -48,9 +54,15 @@ fn test_loop_break() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     // __internal_Labels: L1 (start), L2 (end), L3 (if end - implicit else label)
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -74,8 +86,8 @@ fn test_loop_break() -> anyhow::Result<()> {
 
 #[test]
 fn test_while_loop() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let a = 0;
         while (a < 10) {
@@ -84,9 +96,15 @@ fn test_while_loop() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     // __internal_Labels: L1 (start), L2 (end)
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -108,8 +126,8 @@ fn test_while_loop() -> anyhow::Result<()> {
 
 #[test]
 fn test_loop_continue() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         r#"
         let a = 0;
         loop {
@@ -122,9 +140,15 @@ fn test_loop_continue() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     // __internal_Labels: L1 (start), L2 (end), L3 (if end)
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main

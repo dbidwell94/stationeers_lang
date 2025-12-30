@@ -39,6 +39,8 @@ fn negation_of_variable() -> anyhow::Result<()> {
             j main
             main:
             move r8 10
+            sub r1 0 r8
+            move r9 r1
             "
         }
     );
@@ -218,13 +220,15 @@ fn negation_of_expression() -> anyhow::Result<()> {
         "
     };
 
-    // Should be -5
+    // Should be -5 (constant folded)
     assert_eq!(
         compiled,
         indoc! {
             "
             j main
             main:
+            sub r1 0 5
+            move r8 r1
             "
         }
     );
@@ -240,13 +244,15 @@ fn complex_negation_and_priority() -> anyhow::Result<()> {
         "
     };
 
-    // Should be -(5 * 2) = -10
+    // Should be -(5 * 2) = -10 (folded to constant)
     assert_eq!(
         compiled,
         indoc! {
             "
             j main
             main:
+            sub r1 0 10
+            move r8 r1
             "
         }
     );

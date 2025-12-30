@@ -58,7 +58,9 @@ fn negative_number_handling() -> anyhow::Result<()> {
             j main
             main:
             move r8 -100
-            move r9 50
+            sub r1 0 r8
+            move r9 r1
+            move r10 50
             "
         }
     );

@@ -846,6 +846,46 @@ impl<'a> Compiler<'a> {
                 }
                 (var_loc, None)
             }
+            Expression::Negation(_) => {
+                // Use try_fold_negation to see if this is a constant folded negation
+                if let Some(num) = self.try_fold_negation(&expr.node) {
+                    let loc = scope.add_variable(
+                        name_str.clone(),
+                        LocationRequest::Persist,
+                        Some(name_span),
+                    )?;
+                    self.emit_variable_assignment(&loc, Operand::Number(num.into()))?;
+                    return Ok(Some(CompileLocation {
+                        location: loc,
+                        temp_name: None,
+                    }));
+                }
+
+                // Otherwise, compile the negation expression
+                let result = self.expression(expr, scope)?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
+
+                if let Some(res) = result {
+                    // Move result from temp to new persistent variable
+                    let result_reg = self.resolve_register(&res.location)?;
+                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+
+                    // Free the temp result
+                    if let Some(name) = res.temp_name {
+                        scope.free_temp(name, None)?;
+                    }
+                } else {
+                    return Err(Error::Unknown(
+                        format!("`{name_str}` negation expression did not produce a value"),
+                        Some(name_span),
+                    ));
+                }
+                (var_loc, None)
+            }
             _ => {
                 return Err(Error::Unknown(
                     format!("`{name_str}` declaration of this type is not supported/implemented."),
