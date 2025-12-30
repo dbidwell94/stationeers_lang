@@ -143,12 +143,42 @@ pub struct CompilationResult<'a> {
     pub instructions: Instructions<'a>,
 }
 
+/// Metadata for the currently compiling function
+#[derive(Debug)]
+struct FunctionMetadata<'a> {
+    /// Maps function name to its instruction location
+    locations: HashMap<Cow<'a, str>, usize>,
+    /// Maps function name to list of parameter names
+    params: HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>,
+    /// Maps function name to tuple return size (if it returns a tuple)
+    tuple_return_sizes: HashMap<Cow<'a, str>, usize>,
+    /// Name of the function currently being compiled
+    current_name: Option<Cow<'a, str>>,
+    /// Return label for the current function
+    return_label: Option<Cow<'a, str>>,
+    /// Whether the current function returns a tuple
+    returns_tuple: bool,
+    /// Whether the SP (stack pointer) has been saved for the current function
+    sp_saved: bool,
+}
+
+impl<'a> Default for FunctionMetadata<'a> {
+    fn default() -> Self {
+        Self {
+            locations: HashMap::new(),
+            params: HashMap::new(),
+            tuple_return_sizes: HashMap::new(),
+            current_name: None,
+            return_label: None,
+            returns_tuple: false,
+            sp_saved: false,
+        }
+    }
+}
+
 pub struct Compiler<'a> {
     pub parser: ASTParser<'a>,
-    function_locations: HashMap<Cow<'a, str>, usize>,
-    function_metadata: HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>,
-    function_tuple_return_sizes: HashMap<Cow<'a, str>, usize>, // Track tuple return sizes
-    current_function_name: Option<Cow<'a, str>>, // Track the function currently being compiled
+    function_meta: FunctionMetadata<'a>,
     devices: HashMap<Cow<'a, str>, Cow<'a, str>>,
 
     // This holds the IL code which will be used in the
@@ -161,9 +191,6 @@ pub struct Compiler<'a> {
     temp_counter: usize,
     label_counter: usize,
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>)>, // Stores (start_label, end_label)
-    current_return_label: Option<Cow<'a, str>>,
-    current_return_is_tuple: bool, // Track if the current function returns a tuple
-    current_function_sp_saved: bool, // Track if we've emitted the SP save for the current function
     /// stores (IC10 `line_num`, `Vec<Span>`)
     pub source_map: HashMap<usize, Vec<Span>>,
     /// Accumulative errors from the compilation process
@@ -174,8 +201,7 @@ impl<'a> Compiler<'a> {
     pub fn new(parser: ASTParser<'a>, config: Option<CompilerConfig>) -> Self {
         Self {
             parser,
-            function_locations: HashMap::new(),
-            function_metadata: HashMap::new(),
+            function_meta: FunctionMetadata::default(),
             devices: HashMap::new(),
             instructions: Instructions::default(),
             current_line: 1,
@@ -184,11 +210,6 @@ impl<'a> Compiler<'a> {
             temp_counter: 0,
             label_counter: 0,
             loop_stack: Vec::new(),
-            current_return_label: None,
-            current_return_is_tuple: false,
-            current_function_sp_saved: false,
-            current_function_name: None,
-            function_tuple_return_sizes: HashMap::new(),
             source_map: HashMap::new(),
             errors: Vec::new(),
         }
@@ -961,13 +982,17 @@ impl<'a> Compiler<'a> {
     ) -> Result<(), Error<'a>> {
         let InvocationExpression { name, arguments } = invoke_expr;
 
-        if !self.function_locations.contains_key(name.node.as_ref()) {
+        if !self
+            .function_meta
+            .locations
+            .contains_key(name.node.as_ref())
+        {
             self.errors
                 .push(Error::UnknownIdentifier(name.node.clone(), name.span));
             return Ok(());
         }
 
-        let Some(args) = self.function_metadata.get(name.node.as_ref()) else {
+        let Some(args) = self.function_meta.params.get(name.node.as_ref()) else {
             return Err(Error::UnknownIdentifier(name.node.clone(), name.span));
         };
 
@@ -1080,7 +1105,7 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        let Some(_location) = self.function_locations.get(&name.node) else {
+        let Some(_location) = self.function_meta.locations.get(&name.node) else {
             self.errors
                 .push(Error::UnknownIdentifier(name.node.clone(), name.span));
             return Ok(());
@@ -1111,7 +1136,7 @@ impl<'a> Compiler<'a> {
         expected_count: usize,
         span: Span,
     ) {
-        if let Some(&actual_size) = self.function_tuple_return_sizes.get(func_name) {
+        if let Some(&actual_size) = self.function_meta.tuple_return_sizes.get(func_name) {
             if actual_size != expected_count {
                 self.errors
                     .push(Error::TupleSizeMismatch(actual_size, expected_count, span));
@@ -1428,7 +1453,7 @@ impl<'a> Compiler<'a> {
     ) -> Result<(), Error<'a>> {
         let InvocationExpression { name, arguments } = invoke_expr.node;
 
-        if !self.function_locations.contains_key(&name.node) {
+        if !self.function_meta.locations.contains_key(&name.node) {
             self.errors
                 .push(Error::UnknownIdentifier(name.node.clone(), name.span));
             // Don't emit call, just pretend we did?
@@ -1438,7 +1463,7 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
 
-        let Some(args) = self.function_metadata.get(&name.node) else {
+        let Some(args) = self.function_meta.params.get(&name.node) else {
             // Should be covered by check above
             return Err(Error::UnknownIdentifier(name.node, name.span));
         };
@@ -2587,11 +2612,12 @@ impl<'a> Compiler<'a> {
                     self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;
 
                     // Mark that we had a tuple return so the function declaration can skip return label cleanup
-                    self.current_return_is_tuple = true;
+                    self.function_meta.returns_tuple = true;
 
                     // Record the tuple return size for validation at call sites
-                    if let Some(func_name) = &self.current_function_name {
-                        self.function_tuple_return_sizes
+                    if let Some(func_name) = &self.function_meta.current_name {
+                        self.function_meta
+                            .tuple_return_sizes
                             .insert(func_name.clone(), tuple_elements.len());
                     }
 
@@ -2607,7 +2633,7 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        if let Some(label) = &self.current_return_label {
+        if let Some(label) = &self.function_meta.return_label {
             self.write_instruction(Instruction::Jump(Operand::Label(label.clone())), None)?;
         } else {
             return Err(Error::Unknown(
@@ -3313,25 +3339,26 @@ impl<'a> Compiler<'a> {
 
         let span = expr.span;
 
-        if self.function_locations.contains_key(&name.node) {
+        if self.function_meta.locations.contains_key(&name.node) {
             self.errors
                 .push(Error::DuplicateIdentifier(name.node.clone(), name.span));
             // Fallthrough to allow compiling the body anyway?
             // It might be useful to check body for errors.
         }
 
-        self.function_metadata.insert(
+        self.function_meta.params.insert(
             name.node.clone(),
             arguments.iter().map(|a| a.node.clone()).collect(),
         );
 
         // Set the current function being compiled
-        self.current_function_name = Some(name.node.clone());
+        self.function_meta.current_name = Some(name.node.clone());
 
         // Declare the function as a line identifier
         self.write_instruction(Instruction::LabelDef(name.node.clone()), Some(span))?;
 
-        self.function_locations
+        self.function_meta
+            .locations
             .insert(name.node.clone(), self.current_line);
 
         // Create a new block scope for the function body
@@ -3398,14 +3425,17 @@ impl<'a> Compiler<'a> {
                 ),
                 Some(span),
             )?;
-            self.current_function_sp_saved = true;
+            self.function_meta.sp_saved = true;
         }
 
         self.write_instruction(Instruction::Push(Operand::ReturnAddress), Some(span))?;
 
         let return_label = self.next_label_name();
 
-        let prev_return_label = self.current_return_label.replace(return_label.clone());
+        let prev_return_label = self
+            .function_meta
+            .return_label
+            .replace(return_label.clone());
 
         block_scope.add_variable(
             return_label.clone(),
@@ -3452,11 +3482,11 @@ impl<'a> Compiler<'a> {
             }
         };
 
-        self.current_return_label = prev_return_label;
+        self.function_meta.return_label = prev_return_label;
 
         // Only write the return label if this function doesn't have a tuple return
         // (tuple returns handle their own pop ra and return)
-        if !self.current_return_is_tuple {
+        if !self.function_meta.returns_tuple {
             self.write_instruction(Instruction::LabelDef(return_label.clone()), Some(span))?;
 
             if ra_stack_offset == 1 {
@@ -3508,9 +3538,9 @@ impl<'a> Compiler<'a> {
         }
 
         // Reset the flag for the next function
-        self.current_return_is_tuple = false;
-        self.current_function_sp_saved = false;
-        self.current_function_name = None;
+        self.function_meta.returns_tuple = false;
+        self.function_meta.sp_saved = false;
+        self.function_meta.current_name = None;
         Ok(())
     }
 }
