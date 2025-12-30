@@ -64,6 +64,11 @@ pub enum Error<'a> {
     #[error("Attempted to re-assign a value to a device const `{0}`")]
     DeviceAssignment(Cow<'a, str>, Span),
 
+    #[error(
+        "Function '{0}' returns a {1}-tuple, but you're trying to destructure into {2} variables"
+    )]
+    TupleSizeMismatch(Cow<'a, str>, usize, usize, Span),
+
     #[error("{0}")]
     Unknown(String, Option<Span>),
 }
@@ -85,7 +90,8 @@ impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
             | InvalidDevice(_, span)
             | ConstAssignment(_, span)
             | DeviceAssignment(_, span)
-            | AgrumentMismatch(_, span) => Diagnostic {
+            | AgrumentMismatch(_, span)
+            | TupleSizeMismatch(_, _, _, span) => Diagnostic {
                 range: span.into(),
                 message: value.to_string(),
                 severity: Some(DiagnosticSeverity::ERROR),
@@ -143,6 +149,8 @@ pub struct Compiler<'a> {
     pub parser: ASTParser<'a>,
     function_locations: HashMap<Cow<'a, str>, usize>,
     function_metadata: HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>,
+    function_tuple_return_sizes: HashMap<Cow<'a, str>, usize>, // Track tuple return sizes
+    current_function_name: Option<Cow<'a, str>>, // Track the function currently being compiled
     devices: HashMap<Cow<'a, str>, Cow<'a, str>>,
 
     // This holds the IL code which will be used in the
@@ -156,6 +164,7 @@ pub struct Compiler<'a> {
     label_counter: usize,
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>)>, // Stores (start_label, end_label)
     current_return_label: Option<Cow<'a, str>>,
+    current_return_is_tuple: bool, // Track if the current function returns a tuple
     /// stores (IC10 `line_num`, `Vec<Span>`)
     pub source_map: HashMap<usize, Vec<Span>>,
     /// Accumulative errors from the compilation process
@@ -177,6 +186,9 @@ impl<'a> Compiler<'a> {
             label_counter: 0,
             loop_stack: Vec::new(),
             current_return_label: None,
+            current_return_is_tuple: false,
+            current_function_name: None,
+            function_tuple_return_sizes: HashMap::new(),
             source_map: HashMap::new(),
             errors: Vec::new(),
         }
@@ -1103,6 +1115,19 @@ impl<'a> Compiler<'a> {
                 // Pop them in reverse order (from end to beginning)
                 self.expression_function_invocation_with_invocation(invoke_expr, scope)?;
 
+                // Validate tuple return size matches the declaration
+                let func_name = &invoke_expr.node.name.node;
+                if let Some(&expected_size) = self.function_tuple_return_sizes.get(func_name) {
+                    if names.len() != expected_size {
+                        self.errors.push(Error::TupleSizeMismatch(
+                            func_name.clone(),
+                            expected_size,
+                            names.len(),
+                            value.span,
+                        ));
+                    }
+                }
+
                 // First pass: allocate variables in order
                 let mut var_locations = Vec::new();
                 for name_spanned in names.iter() {
@@ -1121,16 +1146,30 @@ impl<'a> Compiler<'a> {
                     var_locations.push(Some(var_location));
                 }
 
-                // Second pass: pop in reverse order and assign to locations
+                // Second pass: pop in reverse order through the list (since stack is LIFO)
+                // var_locations[0] is the first element (bottom of stack)
+                // var_locations[n-1] is the last element (top of stack)
+                // We pop from the top, so we iterate in reverse through var_locations
                 for (idx, var_loc_opt) in var_locations.iter().enumerate().rev() {
-                    if let Some(var_location) = var_loc_opt {
-                        let var_reg = self.resolve_register(&var_location)?;
+                    match var_loc_opt {
+                        Some(var_location) => {
+                            let var_reg = self.resolve_register(&var_location)?;
 
-                        // Pop from stack into the variable's register
-                        self.write_instruction(
-                            Instruction::Pop(Operand::Register(var_reg)),
-                            Some(names[idx].span),
-                        )?;
+                            // Pop from stack into the variable's register
+                            self.write_instruction(
+                                Instruction::Pop(Operand::Register(var_reg)),
+                                Some(names[idx].span),
+                            )?;
+                        }
+                        None => {
+                            // Underscore: pop into temp register to discard
+                            self.write_instruction(
+                                Instruction::Pop(Operand::Register(
+                                    VariableScope::TEMP_STACK_REGISTER,
+                                )),
+                                Some(names[idx].span),
+                            )?;
+                        }
                     }
                 }
             }
@@ -1254,6 +1293,19 @@ impl<'a> Compiler<'a> {
                 // Tuple values are on the stack, sp points after the last pushed value
                 // Pop them in reverse order (from end to beginning)
                 self.expression_function_invocation_with_invocation(invoke_expr, scope)?;
+
+                // Validate tuple return size matches the assignment
+                let func_name = &invoke_expr.node.name.node;
+                if let Some(&expected_size) = self.function_tuple_return_sizes.get(func_name) {
+                    if names.len() != expected_size {
+                        self.errors.push(Error::TupleSizeMismatch(
+                            func_name.clone(),
+                            expected_size,
+                            names.len(),
+                            value.span,
+                        ));
+                    }
+                }
 
                 // First pass: look up variable locations
                 let mut var_locs = Vec::new();
@@ -2547,7 +2599,20 @@ impl<'a> Compiler<'a> {
                     // Record the stack offset where the tuple will start
                     let tuple_start_offset = scope.stack_offset();
 
-                    // Allocate space on the stack for each tuple element
+                    // First pass: Add temporary variables to scope for each tuple element
+                    // This updates the scope's stack_offset so we can calculate ra position later
+                    let mut temp_names = Vec::new();
+                    for (i, _element) in tuple_elements.iter().enumerate() {
+                        let temp_name = format!("__tuple_ret_{}", i);
+                        scope.add_variable(
+                            temp_name.clone().into(),
+                            LocationRequest::Stack,
+                            Some(span),
+                        )?;
+                        temp_names.push(temp_name);
+                    }
+
+                    // Second pass: Push the actual values onto the stack
                     for element in tuple_elements.iter() {
                         match &element.node {
                             Expression::Literal(lit) => {
@@ -2643,6 +2708,52 @@ impl<'a> Compiler<'a> {
                         ),
                         Some(span),
                     )?;
+
+                    // For tuple returns, ra is buried under the tuple values on the stack.
+                    // Stack layout: [ra, val0, val1, val2, ...]
+                    // Instead of popping and pushing, use Get to read ra from its stack position
+                    // while leaving the tuple values in place.
+
+                    // Calculate offset to ra from current stack position
+                    // ra is at tuple_start_offset - 1, so offset = (current - tuple_start) + 1
+                    let current_offset = scope.stack_offset();
+                    let ra_offset_from_current = (current_offset - tuple_start_offset + 1) as i32;
+
+                    // Use a temp register to read ra from the stack
+                    if ra_offset_from_current > 0 {
+                        self.write_instruction(
+                            Instruction::Sub(
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                Operand::StackPointer,
+                                Operand::Number(ra_offset_from_current.into()),
+                            ),
+                            Some(span),
+                        )?;
+
+                        self.write_instruction(
+                            Instruction::Get(
+                                Operand::ReturnAddress,
+                                Operand::Device(Cow::from("db")),
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                            ),
+                            Some(span),
+                        )?;
+                    }
+
+                    // Jump back to caller
+                    self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;
+
+                    // Mark that we had a tuple return so the function declaration can skip return label cleanup
+                    self.current_return_is_tuple = true;
+
+                    // Record the tuple return size for validation at call sites
+                    if let Some(func_name) = &self.current_function_name {
+                        self.function_tuple_return_sizes
+                            .insert(func_name.clone(), tuple_elements.len());
+                    }
+
+                    // Early return to skip the normal return label processing
+                    return Ok(VariableLocation::Persistant(VariableScope::RETURN_REGISTER));
                 }
                 _ => {
                     return Err(Error::Unknown(
@@ -3299,6 +3410,9 @@ impl<'a> Compiler<'a> {
             arguments.iter().map(|a| a.node.clone()).collect(),
         );
 
+        // Set the current function being compiled
+        self.current_function_name = Some(name.node.clone());
+
         // Declare the function as a line identifier
         self.write_instruction(Instruction::LabelDef(name.node.clone()), Some(span))?;
 
@@ -3413,54 +3527,62 @@ impl<'a> Compiler<'a> {
 
         self.current_return_label = prev_return_label;
 
-        self.write_instruction(Instruction::LabelDef(return_label.clone()), Some(span))?;
+        // Only write the return label if this function doesn't have a tuple return
+        // (tuple returns handle their own pop ra and return)
+        if !self.current_return_is_tuple {
+            self.write_instruction(Instruction::LabelDef(return_label.clone()), Some(span))?;
 
-        if ra_stack_offset == 1 {
-            self.write_instruction(Instruction::Pop(Operand::ReturnAddress), Some(span))?;
+            if ra_stack_offset == 1 {
+                self.write_instruction(Instruction::Pop(Operand::ReturnAddress), Some(span))?;
 
-            let remaining_cleanup = block_scope.stack_offset() - 1;
-            if remaining_cleanup > 0 {
+                let remaining_cleanup = block_scope.stack_offset() - 1;
+                if remaining_cleanup > 0 {
+                    self.write_instruction(
+                        Instruction::Sub(
+                            Operand::StackPointer,
+                            Operand::StackPointer,
+                            Operand::Number(remaining_cleanup.into()),
+                        ),
+                        Some(span),
+                    )?;
+                }
+            } else {
                 self.write_instruction(
                     Instruction::Sub(
+                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                         Operand::StackPointer,
-                        Operand::StackPointer,
-                        Operand::Number(remaining_cleanup.into()),
+                        Operand::Number(ra_stack_offset.into()),
                     ),
                     Some(span),
                 )?;
-            }
-        } else {
-            self.write_instruction(
-                Instruction::Sub(
-                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                    Operand::StackPointer,
-                    Operand::Number(ra_stack_offset.into()),
-                ),
-                Some(span),
-            )?;
 
-            self.write_instruction(
-                Instruction::Get(
-                    Operand::ReturnAddress,
-                    Operand::Device(Cow::from("db")),
-                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                ),
-                Some(span),
-            )?;
-
-            if block_scope.stack_offset() > 0 {
                 self.write_instruction(
-                    Instruction::Sub(
-                        Operand::StackPointer,
-                        Operand::StackPointer,
-                        Operand::Number(block_scope.stack_offset().into()),
+                    Instruction::Get(
+                        Operand::ReturnAddress,
+                        Operand::Device(Cow::from("db")),
+                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                     ),
                     Some(span),
                 )?;
+
+                if block_scope.stack_offset() > 0 {
+                    self.write_instruction(
+                        Instruction::Sub(
+                            Operand::StackPointer,
+                            Operand::StackPointer,
+                            Operand::Number(block_scope.stack_offset().into()),
+                        ),
+                        Some(span),
+                    )?;
+                }
             }
+
+            self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;
         }
 
-        self.write_instruction(Instruction::Jump(Operand::ReturnAddress), Some(span))?;
+        // Reset the flag for the next function
+        self.current_return_is_tuple = false;
+        self.current_function_name = None;
         Ok(())
     }
 }

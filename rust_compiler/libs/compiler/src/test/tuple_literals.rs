@@ -180,9 +180,8 @@ mod test {
                 push 10
                 push 20
                 move r15 1
-                j __internal_L1
-                __internal_L1:
-                pop ra
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 jal getPair
@@ -217,12 +216,12 @@ mod test {
                 push 5
                 push 15
                 move r15 1
-                j __internal_L1
-                __internal_L1:
-                pop ra
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 jal getPair
+                pop r0
                 pop r8
                 "
             }
@@ -254,9 +253,8 @@ mod test {
                 push 2
                 push 3
                 move r15 1
-                j __internal_L1
-                __internal_L1:
-                pop ra
+                sub r0 sp 4
+                get ra db r0
                 j ra
                 main:
                 jal getTriple
@@ -294,9 +292,8 @@ mod test {
                 push 42
                 push 84
                 move r15 1
-                j __internal_L1
-                __internal_L1:
-                pop ra
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 move r8 0
@@ -311,6 +308,34 @@ mod test {
                 "
             }
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_return_mismatch() -> anyhow::Result<()> {
+        let errors = compile!(
+            result
+            r#"
+            fn doSomething() {
+                return (1, 2, 3);
+            };
+            let (x, y) = doSomething();
+            "#
+        );
+
+        // Should have exactly one error about tuple size mismatch
+        assert_eq!(errors.len(), 1);
+
+        // Check for the specific TupleSizeMismatch error
+        match &errors[0] {
+            crate::Error::TupleSizeMismatch(func_name, expected_size, actual_count, _) => {
+                assert_eq!(func_name.as_ref(), "doSomething");
+                assert_eq!(*expected_size, 3);
+                assert_eq!(*actual_count, 2);
+            }
+            e => panic!("Expected TupleSizeMismatch error, got: {:?}", e),
+        }
 
         Ok(())
     }
