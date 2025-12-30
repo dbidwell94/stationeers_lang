@@ -538,9 +538,32 @@ mod test {
             "#
         );
 
-        // Should compile - we're just passing the parameter variables through
-        assert!(compiled.contains("add:"));
-        assert!(compiled.contains("jal "));
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                add:
+                pop r8
+                pop r9
+                move r15 sp
+                push ra
+                push r9
+                push r8
+                move r15 1
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                main:
+                push 5
+                push 10
+                jal add
+                pop r9
+                pop r8
+                move sp r15
+                "
+            }
+        );
 
         Ok(())
     }
@@ -563,9 +586,364 @@ mod test {
             "#
         );
 
-        // Both functions return tuples
-        assert!(compiled.contains("inner:"));
-        assert!(compiled.contains("outer:"));
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                inner:
+                move r15 sp
+                push ra
+                push 1
+                push 2
+                move r15 1
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                outer:
+                move r15 sp
+                push ra
+                jal inner
+                pop r9
+                pop r8
+                move sp r15
+                push r9
+                push r8
+                move r15 1
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                main:
+                jal outer
+                pop r9
+                pop r8
+                move sp r15
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_literal_with_constant_expressions() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            let (a, b) = (1 + 2, 3 * 4);
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                main:
+                move r8 3
+                move r9 12
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_literal_with_variable_expressions() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            let x = 5;
+            let y = 10;
+            let (a, b) = (x + 1, y * 2);
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                main:
+                move r8 5
+                move r9 10
+                add r1 r8 1
+                move r10 r1
+                mul r2 r9 2
+                move r11 r2
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_assignment_with_expressions() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            let a = 0;
+            let b = 0;
+            let x = 5;
+            (a, b) = (x + 1, x * 2);
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                main:
+                move r8 0
+                move r9 0
+                move r10 5
+                add r1 r10 1
+                move r8 r1
+                mul r2 r10 2
+                move r9 r2
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_literal_with_function_calls() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            fn getValue() { return 42; };
+            fn getOther() { return 99; };
+            
+            let (a, b) = (getValue(), getOther());
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getValue:
+                push ra
+                move r15 42
+                j __internal_L1
+                __internal_L1:
+                pop ra
+                j ra
+                getOther:
+                push ra
+                move r15 99
+                j __internal_L2
+                __internal_L2:
+                pop ra
+                j ra
+                main:
+                push r8
+                jal getValue
+                pop r8
+                move r1 r15
+                move r8 r1
+                push r8
+                push r9
+                jal getOther
+                pop r9
+                pop r8
+                move r2 r15
+                move r9 r2
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_with_logical_expressions() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            let x = 1;
+            let y = 0;
+            let (a, b) = (x && y, x || y);
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                main:
+                move r8 1
+                move r9 0
+                and r1 r8 r9
+                move r10 r1
+                or r2 r8 r9
+                move r11 r2
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_with_comparison_expressions() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            let x = 5;
+            let y = 10;
+            let (a, b) = (x > y, x < y);
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                main:
+                move r8 5
+                move r9 10
+                sgt r1 r8 r9
+                move r10 r1
+                slt r2 r8 r9
+                move r11 r2
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_with_device_property_access() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            device sensor = "d0";
+            device display = "d1";
+            
+            let (temp, pressure) = (sensor.Temperature, sensor.Pressure);
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                main:
+                l r1 d0 Temperature
+                move r8 r1
+                l r2 d0 Pressure
+                move r9 r2
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_with_device_property_and_function_call() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            device self = "db";
+            
+            fn getY() {
+                return 42;
+            }
+            
+            let (x, y) = (self.Setting, getY());
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getY:
+                push ra
+                move r15 42
+                j __internal_L1
+                __internal_L1:
+                pop ra
+                j ra
+                main:
+                l r1 db Setting
+                move r8 r1
+                push r8
+                push r9
+                jal getY
+                pop r9
+                pop r8
+                move r2 r15
+                move r9 r2
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_with_function_call_expressions() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            fn getValue() { return 10; }
+            fn getOther() { return 20; }
+            
+            let (a, b) = (getValue() + 5, getOther() * 2);
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getValue:
+                push ra
+                move r15 10
+                j __internal_L1
+                __internal_L1:
+                pop ra
+                j ra
+                getOther:
+                push ra
+                move r15 20
+                j __internal_L2
+                __internal_L2:
+                pop ra
+                j ra
+                main:
+                push r8
+                jal getValue
+                pop r8
+                move r1 r15
+                add r2 r1 5
+                move r8 r2
+                push r8
+                push r9
+                jal getOther
+                pop r9
+                pop r8
+                move r3 r15
+                mul r4 r3 2
+                move r9 r4
+                "
+            }
+        );
 
         Ok(())
     }
