@@ -200,3 +200,56 @@ fn test_tuple_declaration() -> Result<()> {
 
     Ok(())
 }
+#[test]
+fn test_tuple_assignment() -> Result<()> {
+    let expr = parser!("(x, y) = (1, 2);").parse()?.unwrap();
+
+    assert_eq!("((x, y) = (1, 2))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_assignment_with_underscore() -> Result<()> {
+    let expr = parser!("(x, _) = (1, 2);").parse()?.unwrap();
+
+    assert_eq!("((x, _) = (1, 2))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_declaration_with_function_call() -> Result<()> {
+    let expr = parser!("let (x, y) = doSomething();").parse()?.unwrap();
+
+    assert_eq!("(let (x, y) = doSomething())", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_declaration_with_function_call_with_underscore() -> Result<()> {
+    let expr = parser!("let (x, _) = doSomething();").parse()?.unwrap();
+
+    assert_eq!("(let (x, _) = doSomething())", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_assignment_with_function_call() -> Result<()> {
+    let expr = parser!("(x, y) = doSomething();").parse()?.unwrap();
+
+    assert_eq!("((x, y) = doSomething())", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_assignment_with_function_call_with_underscore() -> Result<()> {
+    let expr = parser!("(x, _) = doSomething();").parse()?.unwrap();
+
+    assert_eq!("((x, _) = doSomething())", expr.to_string());
+
+    Ok(())
+}

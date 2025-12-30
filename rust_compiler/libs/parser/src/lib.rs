@@ -1086,17 +1086,43 @@ impl<'a> Parser<'a> {
                     end_col: right.span.end_col,
                 };
 
+                // Check if the left side is a tuple, and if so, create a TupleAssignment
+                let node = if let Expression::Tuple(tuple_expr) = &left.node {
+                    // Extract variable names from the tuple, handling underscores
+                    let mut names = Vec::new();
+                    for item in &tuple_expr.node {
+                        if let Expression::Variable(var) = &item.node {
+                            names.push(var.clone());
+                        } else {
+                            return Err(Error::InvalidSyntax(
+                                item.span,
+                                String::from("Tuple assignment can only contain variable names"),
+                            ));
+                        }
+                    }
+                    
+                    Expression::TupleAssignment(Spanned {
+                        span,
+                        node: TupleAssignmentExpression {
+                            names,
+                            value: boxed!(right),
+                        },
+                    })
+                } else {
+                    Expression::Assignment(Spanned {
+                        span,
+                        node: AssignmentExpression {
+                            assignee: boxed!(left),
+                            expression: boxed!(right),
+                        },
+                    })
+                };
+
                 expressions.insert(
                     i,
                     Spanned {
                         span,
-                        node: Expression::Assignment(Spanned {
-                            span,
-                            node: AssignmentExpression {
-                                assignee: boxed!(left),
-                                expression: boxed!(right),
-                            },
-                        }),
+                        node,
                     },
                 );
             }

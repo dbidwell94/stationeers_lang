@@ -264,6 +264,24 @@ impl<'a> std::fmt::Display for TupleDeclarationExpression<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct TupleAssignmentExpression<'a> {
+    pub names: Vec<Spanned<Cow<'a, str>>>,
+    pub value: Box<Spanned<Expression<'a>>>,
+}
+
+impl<'a> std::fmt::Display for TupleAssignmentExpression<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names = self
+            .names
+            .iter()
+            .map(|n| n.node.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "(({}) = {})", names, self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct IfExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
     pub body: Spanned<BlockExpression<'a>>,
@@ -367,6 +385,7 @@ pub enum Expression<'a> {
     Syscall(Spanned<SysCall<'a>>),
     Ternary(Spanned<TernaryExpression<'a>>),
     Tuple(Spanned<Vec<Spanned<Expression<'a>>>>),
+    TupleAssignment(Spanned<TupleAssignmentExpression<'a>>),
     TupleDeclaration(Spanned<TupleDeclarationExpression<'a>>),
     Variable(Spanned<Cow<'a, str>>),
     While(Spanned<WhileExpression<'a>>),
@@ -413,6 +432,7 @@ impl<'a> std::fmt::Display for Expression<'a> {
                     .join(", ");
                 write!(f, "({})", items)
             }
+            Expression::TupleAssignment(e) => write!(f, "{}", e),
             Expression::TupleDeclaration(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),
             Expression::While(e) => write!(f, "{}", e),
