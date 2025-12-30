@@ -1,5 +1,12 @@
 # Changelog
 
+[0.5.0]
+
+- Added support for tuple types
+- Added support for tuple returns from functions
+- Added support for ignoring tuple values
+- Fixed various compiler bugs
+
 [0.4.7]
 
 - Added support for Windows CRLF endings
