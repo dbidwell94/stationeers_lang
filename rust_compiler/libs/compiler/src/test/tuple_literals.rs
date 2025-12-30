@@ -947,4 +947,63 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_tuple_with_stack_spillover() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            fn get8() {
+                return (1, 2, 3, 4, 5, 6, 7, 8);
+            }
+            
+            let (a, b, c, d, e, f, g, h) = get8();
+            let sum = a + h;
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                get8:
+                move r15 sp
+                push ra
+                push 1
+                push 2
+                push 3
+                push 4
+                push 5
+                push 6
+                push 7
+                push 8
+                move r15 1
+                sub r0 sp 9
+                get ra db r0
+                j ra
+                main:
+                jal get8
+                pop r0
+                sub r0 sp 0
+                put db r0 r0
+                pop r14
+                pop r13
+                pop r12
+                pop r11
+                pop r10
+                pop r9
+                pop r8
+                move sp r15
+                sub r0 sp 1
+                get r1 db r0
+                add r2 r8 r1
+                push r2
+                sub sp sp 2
+                "
+            }
+        );
+
+        Ok(())
+    }
 }
