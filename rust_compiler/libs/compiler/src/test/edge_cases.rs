@@ -447,8 +447,8 @@ fn modulo_operation() -> anyhow::Result<()> {
 fn exponentiation() -> anyhow::Result<()> {
     let compiled = compile! {
         check "
-            let x = 2 ^ 8;
-            let y = 3 ^ 3;
+            let x = 2 ** 8;
+            let y = 3 ** 3;
         "
     };
 
@@ -464,8 +464,10 @@ fn exponentiation() -> anyhow::Result<()> {
             "
             j main
             main:
-            move r0 3
-            move r1 3
+            pow r1 2 8
+            move r8 r1
+            pow r2 3 3
+            move r9 r2
             "
         }
     );

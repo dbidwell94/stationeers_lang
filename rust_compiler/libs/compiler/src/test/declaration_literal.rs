@@ -9,8 +9,14 @@ fn variable_declaration_numeric_literal() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -40,8 +46,14 @@ fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> 
         let j = 9;
     "#};
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -73,8 +85,14 @@ fn variable_declaration_negative() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -97,8 +115,14 @@ fn test_boolean_declaration() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -125,8 +149,14 @@ fn test_boolean_return() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -149,15 +179,21 @@ fn test_boolean_return() -> anyhow::Result<()> {
 
 #[test]
 fn test_const_hash_expr() -> anyhow::Result<()> {
-    let compiled = compile!(debug r#"
+    let compiled = compile!(check r#"
         const nameHash = hash("AccessCard");
         device self = "db";
 
         self.Setting = nameHash;
     "#);
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
         "
             j main
@@ -180,8 +216,14 @@ fn test_declaration_is_const() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
