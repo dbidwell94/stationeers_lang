@@ -246,6 +246,24 @@ impl<'a> std::fmt::Display for DeviceDeclarationExpression<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct TupleDeclarationExpression<'a> {
+    pub names: Vec<Spanned<Cow<'a, str>>>,
+    pub value: Box<Spanned<Expression<'a>>>,
+}
+
+impl<'a> std::fmt::Display for TupleDeclarationExpression<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names = self
+            .names
+            .iter()
+            .map(|n| n.node.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "(let ({}) = {})", names, self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct IfExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
     pub body: Spanned<BlockExpression<'a>>,
@@ -348,6 +366,8 @@ pub enum Expression<'a> {
     Return(Option<Box<Spanned<Expression<'a>>>>),
     Syscall(Spanned<SysCall<'a>>),
     Ternary(Spanned<TernaryExpression<'a>>),
+    Tuple(Spanned<Vec<Spanned<Expression<'a>>>>),
+    TupleDeclaration(Spanned<TupleDeclarationExpression<'a>>),
     Variable(Spanned<Cow<'a, str>>),
     While(Spanned<WhileExpression<'a>>),
 }
@@ -384,8 +404,19 @@ impl<'a> std::fmt::Display for Expression<'a> {
             ),
             Expression::Syscall(e) => write!(f, "{}", e),
             Expression::Ternary(e) => write!(f, "{}", e),
+            Expression::Tuple(e) => {
+                let items = e
+                    .node
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "({})", items)
+            }
+            Expression::TupleDeclaration(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),
             Expression::While(e) => write!(f, "{}", e),
         }
     }
 }
+

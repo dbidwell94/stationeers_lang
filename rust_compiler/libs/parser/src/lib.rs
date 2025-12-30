@@ -441,7 +441,13 @@ impl<'a> Parser<'a> {
                 ));
             }
 
-            TokenType::Keyword(Keyword::Let) => Some(self.spanned(|p| p.declaration())?),
+            TokenType::Keyword(Keyword::Let) => {
+                if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) {
+                    Some(self.spanned(|p| p.tuple_declaration())?)
+                } else {
+                    Some(self.spanned(|p| p.declaration())?)
+                }
+            }
 
             TokenType::Keyword(Keyword::Device) => {
                 let spanned_dev = self.spanned(|p| p.device())?;
@@ -561,9 +567,7 @@ impl<'a> Parser<'a> {
                 })
             }
 
-            TokenType::Symbol(Symbol::LParen) => {
-                self.spanned(|p| p.priority())?.node.map(|node| *node)
-            }
+            TokenType::Symbol(Symbol::LParen) => self.parenthesized_or_tuple()?,
 
             TokenType::Symbol(Symbol::Minus) => {
                 let start_span = self.current_span();
@@ -642,8 +646,8 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenType::Symbol(Symbol::LParen) => *self
-                .spanned(|p| p.priority())?
-                .node
+                .parenthesized_or_tuple()?
+                .map(Box::new)
                 .ok_or(Error::UnexpectedEOF)?,
 
             TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
@@ -774,7 +778,8 @@ impl<'a> Parser<'a> {
             | Expression::Ternary(_)
             | Expression::Negation(_)
             | Expression::MemberAccess(_)
-            | Expression::MethodCall(_) => {}
+            | Expression::MethodCall(_)
+            | Expression::Tuple(_) => {}
             _ => {
                 return Err(Error::InvalidSyntax(
                     self.current_span(),
@@ -1117,8 +1122,12 @@ impl<'a> Parser<'a> {
         expressions.pop().ok_or(Error::UnexpectedEOF)
     }
 
-    fn priority(&mut self) -> Result<Option<Box<Spanned<Expression<'a>>>>, Error<'a>> {
+    fn parenthesized_or_tuple(
+        &mut self,
+    ) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {
+        let start_span = self.current_span();
         let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
             return Err(Error::UnexpectedToken(
                 self.current_span(),
@@ -1127,17 +1136,113 @@ impl<'a> Parser<'a> {
         }
 
         self.assign_next()?;
-        let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
 
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
-        if !token_matches!(current_token, TokenType::Symbol(Symbol::RParen)) {
-            return Err(Error::UnexpectedToken(
-                Self::token_to_span(&current_token),
-                current_token,
-            ));
+        // Handle empty tuple '()'
+        if self_matches_peek!(self, TokenType::Symbol(Symbol::RParen)) {
+            self.assign_next()?;
+            let end_span = self.current_span();
+            let span = Span {
+                start_line: start_span.start_line,
+                start_col: start_span.start_col,
+                end_line: end_span.end_line,
+                end_col: end_span.end_col,
+            };
+            return Ok(Some(Spanned {
+                span,
+                node: Expression::Tuple(Spanned { span, node: vec![] }),
+            }));
         }
 
-        Ok(Some(boxed!(expression)))
+        let first_expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+        if self_matches_peek!(self, TokenType::Symbol(Symbol::Comma)) {
+            // It is a tuple
+            let mut items = vec![first_expression];
+            while self_matches_peek!(self, TokenType::Symbol(Symbol::Comma)) {
+                // Next toekn is a comma, we need to consume it and advance 1 more time.
+                self.assign_next()?;
+                self.assign_next()?;
+                println!("{:?}", self.current_token);
+                items.push(self.expression()?.ok_or(Error::UnexpectedEOF)?);
+            }
+
+            let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+            if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
+                return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
+            }
+
+            let end_span = Self::token_to_span(&next);
+            let span = Span {
+                start_line: start_span.start_line,
+                start_col: start_span.start_col,
+                end_line: end_span.end_line,
+                end_col: end_span.end_col,
+            };
+
+            Ok(Some(Spanned {
+                span,
+                node: Expression::Tuple(Spanned { span, node: items }),
+            }))
+        } else {
+            // It is just priority
+            let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+            if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
+                return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
+            }
+
+            Ok(Some(Spanned {
+                span: first_expression.span,
+                node: Expression::Priority(boxed!(first_expression)),
+            }))
+        }
+    }
+
+    fn tuple_declaration(&mut self) -> Result<Expression<'a>, Error<'a>> {
+        // 'let' is consumed before this call
+        // expect '('
+        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        if !token_matches!(next, TokenType::Symbol(Symbol::LParen)) {
+            return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
+        }
+
+        let mut names = Vec::new();
+        while !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen)) {
+            let token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+            let span = Self::token_to_span(&token);
+            if let TokenType::Identifier(id) = token.token_type {
+                names.push(Spanned { span, node: id });
+            } else {
+                return Err(Error::UnexpectedToken(span, token));
+            }
+
+            if self_matches_peek!(self, TokenType::Symbol(Symbol::Comma)) {
+                self.assign_next()?;
+            }
+        }
+        self.assign_next()?; // consume ')'
+
+        let assign = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+
+        if !token_matches!(assign, TokenType::Symbol(Symbol::Assign)) {
+            return Err(Error::UnexpectedToken(Self::token_to_span(&assign), assign));
+        }
+
+        self.assign_next()?; // Consume the `=`
+
+        let value = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+        let semi = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        if !token_matches!(semi, TokenType::Symbol(Symbol::Semicolon)) {
+            return Err(Error::UnexpectedToken(Self::token_to_span(&semi), semi));
+        }
+
+        Ok(Expression::TupleDeclaration(Spanned {
+            span: names.first().map(|n| n.span).unwrap_or(value.span),
+            node: TupleDeclarationExpression {
+                names,
+                value: boxed!(value),
+            },
+        }))
     }
 
     fn invocation(&mut self) -> Result<InvocationExpression<'a>, Error<'a>> {
