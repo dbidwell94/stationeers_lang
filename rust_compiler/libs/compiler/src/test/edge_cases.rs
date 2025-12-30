@@ -3,16 +3,22 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn zero_value_handling() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug "
+    let result = compile! {
+        check "
             let x = 0;
             let y = x + 0;
             let z = x * 100;
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -31,16 +37,22 @@ fn zero_value_handling() -> anyhow::Result<()> {
 
 #[test]
 fn negative_number_handling() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug "
+    let result = compile! {
+        check "
             let x = -100;
             let y = -x;
             let z = -(-50);
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -56,15 +68,21 @@ fn negative_number_handling() -> anyhow::Result<()> {
 
 #[test]
 fn large_number_constants() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug "
+    let result = compile! {
+        check "
             let x = 999999999;
             let y = x + 1;
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -81,16 +99,22 @@ fn large_number_constants() -> anyhow::Result<()> {
 
 #[test]
 fn floating_point_precision() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug "
+    let result = compile! {
+        check "
             let pi = 3.14159265;
             let e = 2.71828182;
             let sum = pi + e;
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -108,16 +132,22 @@ fn floating_point_precision() -> anyhow::Result<()> {
 
 #[test]
 fn temperature_unit_conversion() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug "
+    let result = compile! {
+        check "
             let celsius = 20c;
             let fahrenheit = 68f;
             let kelvin = 293.15k;
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
