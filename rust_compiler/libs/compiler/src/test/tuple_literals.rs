@@ -6,14 +6,20 @@ mod test {
     #[test]
     fn test_tuple_literal_declaration() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let (x, y) = (1, 2);
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -30,14 +36,20 @@ mod test {
     #[test]
     fn test_tuple_literal_declaration_with_underscore() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let (x, _) = (1, 2);
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -53,7 +65,7 @@ mod test {
     #[test]
     fn test_tuple_literal_assignment() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let x = 0;
             let y = 0;
@@ -61,8 +73,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -81,7 +99,7 @@ mod test {
     #[test]
     fn test_tuple_literal_with_variables() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let a = 42;
             let b = 99;
@@ -89,8 +107,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -109,14 +133,20 @@ mod test {
     #[test]
     fn test_tuple_literal_three_elements() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let (x, y, z) = (1, 2, 3);
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -134,7 +164,7 @@ mod test {
     #[test]
     fn test_tuple_literal_assignment_with_underscore() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let i = 0;
             let x = 123;
@@ -142,8 +172,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -161,7 +197,7 @@ mod test {
     #[test]
     fn test_tuple_return_simple() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn getPair() {
                 return (10, 20);
@@ -170,8 +206,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -199,7 +241,7 @@ mod test {
     #[test]
     fn test_tuple_return_with_underscore() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn getPair() {
                 return (5, 15);
@@ -208,8 +250,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -237,7 +285,7 @@ mod test {
     #[test]
     fn test_tuple_return_three_elements() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn getTriple() {
                 return (1, 2, 3);
@@ -246,8 +294,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -277,7 +331,7 @@ mod test {
     #[test]
     fn test_tuple_return_assignment() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn getPair() {
                 return (42, 84);
@@ -288,8 +342,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -346,7 +406,7 @@ mod test {
     #[test]
     fn test_tuple_return_called_by_non_tuple_return() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn doSomething() {
                 return (1, 2);
@@ -361,8 +421,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -399,7 +465,7 @@ mod test {
     #[test]
     fn test_non_tuple_return_called_by_tuple_return() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn getValue() {
                 return 42;
@@ -414,8 +480,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -471,7 +543,7 @@ mod test {
     #[test]
     fn test_multiple_tuple_returns_in_function() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn getValue(x) {
                 if (x) {
@@ -485,8 +557,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -528,7 +606,7 @@ mod test {
     #[test]
     fn test_tuple_return_with_expression() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn add(x, y) {
                 return (x, y);
@@ -538,8 +616,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -571,7 +655,7 @@ mod test {
     #[test]
     fn test_nested_function_tuple_calls() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn inner() {
                 return (1, 2);
@@ -586,8 +670,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -628,14 +718,20 @@ mod test {
     #[test]
     fn test_tuple_literal_with_constant_expressions() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let (a, b) = (1 + 2, 3 * 4);
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -652,7 +748,7 @@ mod test {
     #[test]
     fn test_tuple_literal_with_variable_expressions() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let x = 5;
             let y = 10;
@@ -660,8 +756,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -682,7 +784,7 @@ mod test {
     #[test]
     fn test_tuple_assignment_with_expressions() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let a = 0;
             let b = 0;
@@ -691,8 +793,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -714,7 +822,7 @@ mod test {
     #[test]
     fn test_tuple_literal_with_function_calls() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn getValue() { return 42; };
             fn getOther() { return 99; };
@@ -723,8 +831,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -765,7 +879,7 @@ mod test {
     #[test]
     fn test_tuple_with_logical_expressions() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let x = 1;
             let y = 0;
@@ -773,8 +887,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -795,7 +915,7 @@ mod test {
     #[test]
     fn test_tuple_with_comparison_expressions() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             let x = 5;
             let y = 10;
@@ -803,8 +923,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -825,7 +951,7 @@ mod test {
     #[test]
     fn test_tuple_with_device_property_access() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             device sensor = "d0";
             device display = "d1";
@@ -834,8 +960,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -854,7 +986,7 @@ mod test {
     #[test]
     fn test_tuple_with_device_property_and_function_call() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             device self = "db";
             
@@ -866,8 +998,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -898,7 +1036,7 @@ mod test {
     #[test]
     fn test_tuple_with_function_call_expressions() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn getValue() { return 10; }
             fn getOther() { return 20; }
@@ -907,8 +1045,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main
@@ -951,7 +1095,7 @@ mod test {
     #[test]
     fn test_tuple_with_stack_spillover() -> anyhow::Result<()> {
         let compiled = compile!(
-            debug
+            check
             r#"
             fn get8() {
                 return (1, 2, 3, 4, 5, 6, 7, 8);
@@ -962,8 +1106,14 @@ mod test {
             "#
         );
 
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
         assert_eq!(
-            compiled,
+            compiled.output,
             indoc! {
                 "
                 j main

@@ -3,7 +3,7 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
-    let compiled = compile!(debug r#"
+    let compiled = compile!(check r#"
         // we need more than 4 params to 'spill' into a stack var
         fn doSomething(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
             return arg1 + arg2 + arg3 + arg4 + arg5 + arg6 + arg7 + arg8 + arg9;
@@ -13,8 +13,14 @@ fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
         let returned = doSomething(item1, 2, 3, 4, 5, 6, 7, 8, 9);
     "#);
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {"
             j main
             doSomething:
@@ -67,7 +73,7 @@ fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
 
 #[test]
 fn test_early_return() -> anyhow::Result<()> {
-    let compiled = compile!(debug r#"
+    let compiled = compile!(check r#"
         // This is a test function declaration with no body
         fn doSomething() {
             if (1 == 1) {
@@ -79,8 +85,14 @@ fn test_early_return() -> anyhow::Result<()> {
         doSomething();
     "#);
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -107,14 +119,20 @@ fn test_early_return() -> anyhow::Result<()> {
 
 #[test]
 fn test_function_declaration_with_register_params() -> anyhow::Result<()> {
-    let compiled = compile!(debug r#"
+    let compiled = compile!(check r#"
         // This is a test function declaration with no body
         fn doSomething(arg1, arg2) {
         };
     "#);
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {"
             j main
             doSomething:

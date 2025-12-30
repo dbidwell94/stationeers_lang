@@ -33,17 +33,6 @@ macro_rules! compile {
         compiler.compile().errors
     }};
 
-    (debug $source:expr) => {{
-        let mut writer = std::io::BufWriter::new(Vec::new());
-        let compiler = crate::Compiler::new(
-            parser::Parser::new(tokenizer::Tokenizer::from($source)),
-            Some(crate::CompilerConfig { debug: true }),
-        );
-        let res = compiler.compile();
-        res.instructions.write(&mut writer)?;
-        output!(writer)
-    }};
-
     (check $source:expr) => {{
         let mut writer = std::io::BufWriter::new(Vec::new());
         let compiler = crate::Compiler::new(

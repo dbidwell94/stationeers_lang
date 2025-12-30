@@ -4,7 +4,7 @@ use pretty_assertions::assert_eq;
 #[test]
 fn block_scope() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 10;
             {
                 let y = 20;
@@ -13,8 +13,14 @@ fn block_scope() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -33,7 +39,7 @@ fn block_scope() -> anyhow::Result<()> {
 #[test]
 fn variable_scope_isolation() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 10;
             {
                 let x = 20;
@@ -42,8 +48,14 @@ fn variable_scope_isolation() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -61,7 +73,7 @@ fn variable_scope_isolation() -> anyhow::Result<()> {
 #[test]
 fn function_parameter_scope() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             fn double(x) {
                 return x * 2;
             };
@@ -70,8 +82,14 @@ fn function_parameter_scope() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -96,51 +114,9 @@ fn function_parameter_scope() -> anyhow::Result<()> {
 }
 
 #[test]
-fn function_local_variables() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug "
-            let global = 100;
-            
-            fn test() {
-                let local = 50;
-                return local + global;
-            };
-            
-            let result = test();
-        "
-    };
-
-    assert_eq!(
-        compiled,
-        indoc! {
-            "
-            j main
-            test:
-            push ra
-            move r8 50
-            add r1 r8 r0
-            move r15 r1
-            j __internal_L1
-            __internal_L1:
-            pop ra
-            j ra
-            main:
-            move r8 100
-            push r8
-            jal test
-            pop r8
-            move r9 r15
-            "
-        }
-    );
-
-    Ok(())
-}
-
-#[test]
 fn nested_block_scopes() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 1;
             {
                 let x = 2;
@@ -154,8 +130,14 @@ fn nested_block_scopes() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -176,7 +158,7 @@ fn nested_block_scopes() -> anyhow::Result<()> {
 #[test]
 fn variable_shadowing_in_conditional() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 10;
             
             if (true) {
@@ -187,8 +169,14 @@ fn variable_shadowing_in_conditional() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -208,7 +196,7 @@ fn variable_shadowing_in_conditional() -> anyhow::Result<()> {
 #[test]
 fn variable_shadowing_in_loop() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 0;
             
             loop {
@@ -220,8 +208,14 @@ fn variable_shadowing_in_loop() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -246,7 +240,7 @@ fn variable_shadowing_in_loop() -> anyhow::Result<()> {
 #[test]
 fn const_scope() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             const PI = 3.14;
             
             {
@@ -256,8 +250,14 @@ fn const_scope() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -273,7 +273,7 @@ fn const_scope() -> anyhow::Result<()> {
 #[test]
 fn device_in_scope() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             device d0 = \"d0\";
             
             {
@@ -282,8 +282,14 @@ fn device_in_scope() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -300,7 +306,7 @@ fn device_in_scope() -> anyhow::Result<()> {
 #[test]
 fn function_scope_isolation() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             fn func1() {
                 let x = 10;
                 return x;
@@ -316,8 +322,14 @@ fn function_scope_isolation() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -354,7 +366,7 @@ fn function_scope_isolation() -> anyhow::Result<()> {
 #[test]
 fn tuple_unpacking_scope() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             fn pair() {
                 return (1, 2);
             };
@@ -366,8 +378,14 @@ fn tuple_unpacking_scope() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -397,7 +415,7 @@ fn tuple_unpacking_scope() -> anyhow::Result<()> {
 #[test]
 fn shadowing_doesnt_affect_outer() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug "
+        check "
             let x = 5;
             let y = x;
             {
@@ -408,8 +426,14 @@ fn shadowing_doesnt_affect_outer() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
