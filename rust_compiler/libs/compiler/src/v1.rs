@@ -301,6 +301,29 @@ impl<'a> Compiler<'a> {
         Cow::from(format!("__internal_L{}", self.label_counter))
     }
 
+    /// Merges two spans into a single span covering both
+    fn merge_spans(start: Span, end: Span) -> Span {
+        Span {
+            start_line: start.start_line,
+            start_col: start.start_col,
+            end_line: end.end_line,
+            end_col: end.end_col,
+        }
+    }
+
+    /// Cleans up temporary variables, ignoring errors
+    fn cleanup_temps(
+        scope: &mut VariableScope<'a, '_>,
+        temps: &[Option<Cow<'a, str>>],
+    ) -> Result<(), Error<'a>> {
+        for temp in temps {
+            if let Some(name) = temp {
+                scope.free_temp(name.clone(), None)?;
+            }
+        }
+        Ok(())
+    }
+
     fn expression(
         &mut self,
         expr: Spanned<Expression<'a>>,
@@ -2094,12 +2117,7 @@ impl<'a> Compiler<'a> {
             }
         };
 
-        let span = Span {
-            start_line: left_expr.span.start_line,
-            start_col: left_expr.span.start_col,
-            end_line: right_expr.span.end_line,
-            end_col: right_expr.span.end_col,
-        };
+        let span = Self::merge_spans(left_expr.span, right_expr.span);
 
         // Compile LHS
         let (lhs, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
@@ -2118,12 +2136,7 @@ impl<'a> Compiler<'a> {
         )?;
 
         // Clean up operand temps
-        if let Some(name) = lhs_cleanup {
-            scope.free_temp(name, None)?;
-        }
-        if let Some(name) = rhs_cleanup {
-            scope.free_temp(name, None)?;
-        }
+        Self::cleanup_temps(scope, &[lhs_cleanup, rhs_cleanup])?;
 
         Ok(CompileLocation {
             location: result_loc,
@@ -2199,12 +2212,7 @@ impl<'a> Compiler<'a> {
                     LogicalExpression::Not(_) => unreachable!(),
                 };
 
-                let span = Span {
-                    start_line: left_expr.span.start_line,
-                    start_col: left_expr.span.start_col,
-                    end_line: right_expr.span.end_line,
-                    end_col: right_expr.span.end_col,
-                };
+                let span = Self::merge_spans(left_expr.span, right_expr.span);
 
                 // Compile LHS
                 let (lhs, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
@@ -2224,12 +2232,7 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 // Clean up operand temps
-                if let Some(name) = lhs_cleanup {
-                    scope.free_temp(name, None)?;
-                }
-                if let Some(name) = rhs_cleanup {
-                    scope.free_temp(name, None)?;
-                }
+                Self::cleanup_temps(scope, &[lhs_cleanup, rhs_cleanup])?;
 
                 Ok(CompileLocation {
                     location: result_loc,
