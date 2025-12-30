@@ -83,7 +83,7 @@ cargo test --package compiler --lib -- test::tuple_literals::test::test_tuple_li
 ```bash
 cd rust_compiler
 # Compile Slang code to IC10 using current compiler changes
-echo 'let x = 5;' | cargo run --bin slang -
+echo 'let x = 5;' | cargo run --bin slang --
 # Or from file
 cargo run --bin slang -- input.slang -o output.ic10
 # Optimize the output with -z flag
@@ -99,8 +99,13 @@ Tests follow a macro pattern in [libs/compiler/src/test/mod.rs](rust_compiler/li
 ```rust
 #[test]
 fn test_name() -> Result<()> {
-    let output = compile!("slang code here");
-    assert_eq!(expected_ic10, output);
+    let output = compile!(debug "slang code here");
+    assert_eq!(
+      output,
+      indoc! {
+         "Expected IC10 output here"
+      }
+      );
     Ok(())
 }
 ```
