@@ -333,8 +333,7 @@ mod test {
 
         // Check for the specific TupleSizeMismatch error
         match &errors[0] {
-            crate::Error::TupleSizeMismatch(func_name, expected_size, actual_count, _) => {
-                assert_eq!(func_name.as_ref(), "doSomething");
+            crate::Error::TupleSizeMismatch(expected_size, actual_count, _) => {
                 assert_eq!(*expected_size, 3);
                 assert_eq!(*actual_count, 2);
             }
@@ -461,7 +460,10 @@ mod test {
 
         // Should have exactly one error about tuple size mismatch
         assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0], crate::Error::Unknown(_, _)));
+        assert!(matches!(
+            errors[0],
+            crate::Error::TupleSizeMismatch(_, _, _)
+        ));
 
         Ok(())
     }
@@ -483,11 +485,42 @@ mod test {
             "#
         );
 
-        println!("Generated code:\n{}", compiled);
-
-        // Both returns are 2-tuples, should compile successfully
-        assert!(compiled.contains("getValue:"));
-        assert!(compiled.contains("move r15 "));
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getValue:
+                pop r8
+                move r15 sp
+                push ra
+                beqz r8 __internal_L3
+                push 1
+                push 2
+                move r15 0
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                sub sp sp 2
+                j __internal_L2
+                __internal_L3:
+                push 3
+                push 4
+                move r15 0
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                sub sp sp 2
+                __internal_L2:
+                main:
+                push 1
+                jal getValue
+                pop r9
+                pop r8
+                move sp r15
+                "
+            },
+        );
 
         Ok(())
     }

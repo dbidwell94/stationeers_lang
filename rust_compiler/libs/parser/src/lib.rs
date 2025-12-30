@@ -1100,7 +1100,7 @@ impl<'a> Parser<'a> {
                             ));
                         }
                     }
-                    
+
                     Expression::TupleAssignment(Spanned {
                         span,
                         node: TupleAssignmentExpression {
@@ -1118,13 +1118,7 @@ impl<'a> Parser<'a> {
                     })
                 };
 
-                expressions.insert(
-                    i,
-                    Spanned {
-                        span,
-                        node,
-                    },
-                );
+                expressions.insert(i, Spanned { span, node });
             }
         }
         operators.retain(|symbol| !matches!(symbol, Symbol::Assign));
@@ -1188,7 +1182,6 @@ impl<'a> Parser<'a> {
                 // Next toekn is a comma, we need to consume it and advance 1 more time.
                 self.assign_next()?;
                 self.assign_next()?;
-                println!("{:?}", self.current_token);
                 items.push(self.expression()?.ok_or(Error::UnexpectedEOF)?);
             }
 

@@ -253,3 +253,37 @@ fn test_tuple_assignment_with_function_call_with_underscore() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_tuple_declaration_with_complex_expressions() -> Result<()> {
+    let expr = parser!("let (x, y) = (1 + 1, doSomething());")
+        .parse()?
+        .unwrap();
+
+    assert_eq!("(let (x, y) = ((1 + 1), doSomething()))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_assignment_with_complex_expressions() -> Result<()> {
+    let expr = parser!("(x, y) = (doSomething(), 123 / someValue.Setting);")
+        .parse()?
+        .unwrap();
+
+    assert_eq!(
+        "((x, y) = (doSomething(), (123 / someValue.Setting)))",
+        expr.to_string()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_declaration_all_complex_expressions() -> Result<()> {
+    let expr = parser!("let (x, y) = (a + b, c * d);").parse()?.unwrap();
+
+    assert_eq!("(let (x, y) = ((a + b), (c * d)))", expr.to_string());
+
+    Ok(())
+}
