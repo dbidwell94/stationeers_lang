@@ -1099,17 +1099,16 @@ impl<'a> Compiler<'a> {
         match &value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call
-                // Tuple result: r15 points to tuple on stack, individual elements in r14, r13, etc.
+                // Tuple values are on the stack, sp points after the last pushed value
+                // Pop them in reverse order (from end to beginning)
                 self.expression_function_invocation_with_invocation(invoke_expr, scope)?;
 
-                // For each variable in names, assign from the return registers/stack
-                // Start from r15-1 (r14) for the first element
-                let mut current_register = VariableScope::PERSIST_REGISTER_COUNT; // r14 = register 14
-
-                for (_index, name_spanned) in names.iter().enumerate() {
+                // First pass: allocate variables in order
+                let mut var_locations = Vec::new();
+                for name_spanned in names.iter() {
                     // Skip underscores
                     if name_spanned.node.as_ref() == "_" {
-                        current_register = current_register.saturating_sub(1);
+                        var_locations.push(None);
                         continue;
                     }
 
@@ -1119,27 +1118,19 @@ impl<'a> Compiler<'a> {
                         LocationRequest::Persist,
                         Some(name_spanned.span),
                     )?;
+                    var_locations.push(Some(var_location));
+                }
 
-                    // Move from return register to variable location
-                    let var_reg = self.resolve_register(&var_location)?;
+                // Second pass: pop in reverse order and assign to locations
+                for (idx, var_loc_opt) in var_locations.iter().enumerate().rev() {
+                    if let Some(var_location) = var_loc_opt {
+                        let var_reg = self.resolve_register(&var_location)?;
 
-                    // If we still have return registers available, use them
-                    if current_register >= 8 {
+                        // Pop from stack into the variable's register
                         self.write_instruction(
-                            Instruction::Move(
-                                Operand::Register(var_reg),
-                                Operand::Register(current_register),
-                            ),
-                            Some(name_spanned.span),
+                            Instruction::Pop(Operand::Register(var_reg)),
+                            Some(names[idx].span),
                         )?;
-                        current_register -= 1;
-                    } else {
-                        // If we run out of registers, we'd need to load from stack
-                        // For now, this is a limitation
-                        return Err(Error::Unknown(
-                            "Tuple unpacking with more than 7 elements not yet supported".into(),
-                            Some(name_spanned.span),
-                        ));
                     }
                 }
             }
@@ -1260,16 +1251,16 @@ impl<'a> Compiler<'a> {
         match &value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call
-                // Tuple result: r15 points to tuple on stack, individual elements in r14, r13, etc.
+                // Tuple values are on the stack, sp points after the last pushed value
+                // Pop them in reverse order (from end to beginning)
                 self.expression_function_invocation_with_invocation(invoke_expr, scope)?;
 
-                // For each variable in names, assign from the return registers
-                let mut current_register = VariableScope::PERSIST_REGISTER_COUNT; // r14 = register 14
-
-                for (_index, name_spanned) in names.iter().enumerate() {
+                // First pass: look up variable locations
+                let mut var_locs = Vec::new();
+                for name_spanned in names.iter() {
                     // Skip underscores
                     if name_spanned.node.as_ref() == "_" {
-                        current_register = current_register.saturating_sub(1);
+                        var_locs.push(None);
                         continue;
                     }
 
@@ -1285,76 +1276,62 @@ impl<'a> Compiler<'a> {
                                 VariableLocation::Temporary(0)
                             }
                         };
+                    var_locs.push(Some(var_location));
+                }
 
-                    // Assign from return register to variable
-                    match var_location {
-                        VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
-                            if current_register >= 8 {
+                // Second pass: pop in reverse order and assign
+                for (idx, var_loc_opt) in var_locs.iter().enumerate().rev() {
+                    if let Some(var_location) = var_loc_opt {
+                        // Pop from stack and assign to variable
+                        match var_location {
+                            VariableLocation::Temporary(reg)
+                            | VariableLocation::Persistant(reg) => {
+                                // Pop directly into the variable's register
                                 self.write_instruction(
-                                    Instruction::Move(
-                                        Operand::Register(reg),
-                                        Operand::Register(current_register),
-                                    ),
-                                    Some(name_spanned.span),
+                                    Instruction::Pop(Operand::Register(*reg)),
+                                    Some(names[idx].span),
                                 )?;
-                                current_register -= 1;
-                            } else {
-                                return Err(Error::Unknown(
-                                    "Tuple unpacking with more than 7 elements not yet supported"
-                                        .into(),
-                                    Some(name_spanned.span),
-                                ));
                             }
-                        }
-                        VariableLocation::Stack(offset) => {
-                            // Load from return register to temp, then store to stack
-                            if current_register >= 8 {
+                            VariableLocation::Stack(offset) => {
+                                // Pop into temp register, then write to variable stack
                                 self.write_instruction(
-                                    Instruction::Move(
+                                    Instruction::Pop(Operand::Register(
+                                        VariableScope::TEMP_STACK_REGISTER,
+                                    )),
+                                    Some(names[idx].span),
+                                )?;
+
+                                // Write to variable stack location
+                                self.write_instruction(
+                                    Instruction::Sub(
                                         Operand::Register(0),
-                                        Operand::Register(current_register),
+                                        Operand::StackPointer,
+                                        Operand::Number((*offset).into()),
                                     ),
-                                    Some(name_spanned.span),
+                                    Some(names[idx].span),
                                 )?;
-                                current_register -= 1;
-                            } else {
-                                return Err(Error::Unknown(
-                                    "Tuple unpacking with more than 7 elements not yet supported"
-                                        .into(),
-                                    Some(name_spanned.span),
+
+                                self.write_instruction(
+                                    Instruction::Put(
+                                        Operand::Device(Cow::from("db")),
+                                        Operand::Register(0),
+                                        Operand::Register(VariableScope::TEMP_STACK_REGISTER),
+                                    ),
+                                    Some(names[idx].span),
+                                )?;
+                            }
+                            VariableLocation::Constant(_) => {
+                                return Err(Error::ConstAssignment(
+                                    names[idx].node.clone(),
+                                    names[idx].span,
                                 ));
                             }
-
-                            // Store r0 to stack
-                            self.write_instruction(
-                                Instruction::Sub(
-                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::StackPointer,
-                                    Operand::Number(offset.into()),
-                                ),
-                                Some(name_spanned.span),
-                            )?;
-
-                            self.write_instruction(
-                                Instruction::Put(
-                                    Operand::Device(Cow::from("db")),
-                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::Register(0),
-                                ),
-                                Some(name_spanned.span),
-                            )?;
-                        }
-                        VariableLocation::Constant(_) => {
-                            return Err(Error::ConstAssignment(
-                                name_spanned.node.clone(),
-                                name_spanned.span,
-                            ));
-                        }
-                        VariableLocation::Device(_) => {
-                            return Err(Error::DeviceAssignment(
-                                name_spanned.node.clone(),
-                                name_spanned.span,
-                            ));
+                            VariableLocation::Device(_) => {
+                                return Err(Error::DeviceAssignment(
+                                    names[idx].node.clone(),
+                                    names[idx].span,
+                                ));
+                            }
                         }
                     }
                 }
@@ -2562,6 +2539,110 @@ impl<'a> Compiler<'a> {
                             scope.free_temp(temp, Some(span))?;
                         }
                     }
+                }
+                Expression::Tuple(tuple_expr) => {
+                    let span = expr.span;
+                    let tuple_elements = &tuple_expr.node;
+
+                    // Record the stack offset where the tuple will start
+                    let tuple_start_offset = scope.stack_offset();
+
+                    // Allocate space on the stack for each tuple element
+                    for element in tuple_elements.iter() {
+                        match &element.node {
+                            Expression::Literal(lit) => {
+                                let value_operand = extract_literal(lit.node.clone(), false)?;
+                                self.write_instruction(
+                                    Instruction::Push(value_operand),
+                                    Some(span),
+                                )?;
+                            }
+                            Expression::Variable(var) => {
+                                let var_loc = match scope.get_location_of(&var.node, Some(var.span))
+                                {
+                                    Ok(l) => l,
+                                    Err(_) => {
+                                        self.errors.push(Error::UnknownIdentifier(
+                                            var.node.clone(),
+                                            var.span,
+                                        ));
+                                        VariableLocation::Temporary(0)
+                                    }
+                                };
+
+                                match &var_loc {
+                                    VariableLocation::Temporary(reg)
+                                    | VariableLocation::Persistant(reg) => {
+                                        self.write_instruction(
+                                            Instruction::Push(Operand::Register(*reg)),
+                                            Some(span),
+                                        )?;
+                                    }
+                                    VariableLocation::Constant(lit) => {
+                                        let value_operand = extract_literal(lit.clone(), false)?;
+                                        self.write_instruction(
+                                            Instruction::Push(value_operand),
+                                            Some(span),
+                                        )?;
+                                    }
+                                    VariableLocation::Stack(offset) => {
+                                        self.write_instruction(
+                                            Instruction::Sub(
+                                                Operand::Register(
+                                                    VariableScope::TEMP_STACK_REGISTER,
+                                                ),
+                                                Operand::StackPointer,
+                                                Operand::Number((*offset).into()),
+                                            ),
+                                            Some(span),
+                                        )?;
+                                        self.write_instruction(
+                                            Instruction::Get(
+                                                Operand::Register(
+                                                    VariableScope::TEMP_STACK_REGISTER,
+                                                ),
+                                                Operand::Device(Cow::from("db")),
+                                                Operand::Register(
+                                                    VariableScope::TEMP_STACK_REGISTER,
+                                                ),
+                                            ),
+                                            Some(span),
+                                        )?;
+                                        self.write_instruction(
+                                            Instruction::Push(Operand::Register(
+                                                VariableScope::TEMP_STACK_REGISTER,
+                                            )),
+                                            Some(span),
+                                        )?;
+                                    }
+                                    VariableLocation::Device(_) => {
+                                        return Err(Error::Unknown(
+                                            "You can not return a device from a function.".into(),
+                                            Some(var.span),
+                                        ));
+                                    }
+                                }
+                            }
+                            _ => {
+                                // For complex expressions, just push 0 for now
+                                self.write_instruction(
+                                    Instruction::Push(Operand::Number(
+                                        Number::Integer(0, Unit::None).into(),
+                                    )),
+                                    Some(span),
+                                )?;
+                            }
+                        }
+                    }
+
+                    // Store the pointer to the tuple (stack offset) in r15
+                    self.write_instruction(
+                        Instruction::Move(
+                            Operand::Register(VariableScope::RETURN_REGISTER),
+                            Operand::Number(tuple_start_offset.into()),
+                        ),
+                        Some(span),
+                    )?;
                 }
                 _ => {
                     return Err(Error::Unknown(

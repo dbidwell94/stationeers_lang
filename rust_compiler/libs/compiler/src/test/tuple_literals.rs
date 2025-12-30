@@ -170,10 +170,27 @@ mod test {
             "#
         );
 
-        // Basic structure check - should have the function label and main
-        assert!(compiled.contains("getPair:"));
-        assert!(compiled.contains("main:"));
-        assert!(compiled.contains("jal getPair"));
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getPair:
+                push ra
+                push 10
+                push 20
+                move r15 1
+                j __internal_L1
+                __internal_L1:
+                pop ra
+                j ra
+                main:
+                jal getPair
+                pop r9
+                pop r8
+                "
+            }
+        );
 
         Ok(())
     }
@@ -190,10 +207,26 @@ mod test {
             "#
         );
 
-        // Basic structure check
-        assert!(compiled.contains("getPair:"));
-        assert!(compiled.contains("main:"));
-        assert!(compiled.contains("jal getPair"));
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getPair:
+                push ra
+                push 5
+                push 15
+                move r15 1
+                j __internal_L1
+                __internal_L1:
+                pop ra
+                j ra
+                main:
+                jal getPair
+                pop r8
+                "
+            }
+        );
 
         Ok(())
     }
@@ -210,10 +243,29 @@ mod test {
             "#
         );
 
-        // Basic structure check
-        assert!(compiled.contains("getTriple:"));
-        assert!(compiled.contains("main:"));
-        assert!(compiled.contains("jal getTriple"));
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getTriple:
+                push ra
+                push 1
+                push 2
+                push 3
+                move r15 1
+                j __internal_L1
+                __internal_L1:
+                pop ra
+                j ra
+                main:
+                jal getTriple
+                pop r10
+                pop r9
+                pop r8
+                "
+            }
+        );
 
         Ok(())
     }
@@ -232,10 +284,33 @@ mod test {
             "#
         );
 
-        // Basic structure check
-        assert!(compiled.contains("getPair:"));
-        assert!(compiled.contains("main:"));
-        assert!(compiled.contains("jal getPair"));
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getPair:
+                push ra
+                push 42
+                push 84
+                move r15 1
+                j __internal_L1
+                __internal_L1:
+                pop ra
+                j ra
+                main:
+                move r8 0
+                move r9 0
+                push r8
+                push r9
+                jal getPair
+                pop r9
+                pop r8
+                pop r9
+                pop r8
+                "
+            }
+        );
 
         Ok(())
     }
