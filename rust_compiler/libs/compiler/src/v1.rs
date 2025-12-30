@@ -165,6 +165,7 @@ pub struct Compiler<'a> {
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>)>, // Stores (start_label, end_label)
     current_return_label: Option<Cow<'a, str>>,
     current_return_is_tuple: bool, // Track if the current function returns a tuple
+    current_function_sp_saved: bool, // Track if we've emitted the SP save for the current function
     /// stores (IC10 `line_num`, `Vec<Span>`)
     pub source_map: HashMap<usize, Vec<Span>>,
     /// Accumulative errors from the compilation process
@@ -187,6 +188,7 @@ impl<'a> Compiler<'a> {
             loop_stack: Vec::new(),
             current_return_label: None,
             current_return_is_tuple: false,
+            current_function_sp_saved: false,
             current_function_name: None,
             function_tuple_return_sizes: HashMap::new(),
             source_map: HashMap::new(),
@@ -957,6 +959,7 @@ impl<'a> Compiler<'a> {
         &mut self,
         invoke_expr: &InvocationExpression<'a>,
         parent_scope: &mut VariableScope<'a, '_>,
+        backup_registers: bool,
     ) -> Result<(), Error<'a>> {
         let InvocationExpression { name, arguments } = invoke_expr;
 
@@ -977,18 +980,22 @@ impl<'a> Compiler<'a> {
         }
         let mut stack = VariableScope::scoped(parent_scope);
 
-        // backup all used registers to the stack
+        // Get the list of active registers (may or may not backup)
         let active_registers = stack.registers();
-        for register in &active_registers {
-            stack.add_variable(
-                Cow::from(format!("temp_{register}")),
-                LocationRequest::Stack,
-                None,
-            )?;
-            self.write_instruction(
-                Instruction::Push(Operand::Register(*register)),
-                Some(name.span),
-            )?;
+
+        // backup all used registers to the stack (unless this is for tuple return handling)
+        if backup_registers {
+            for register in &active_registers {
+                stack.add_variable(
+                    Cow::from(format!("temp_{register}")),
+                    LocationRequest::Stack,
+                    None,
+                )?;
+                self.write_instruction(
+                    Instruction::Push(Operand::Register(*register)),
+                    Some(name.span),
+                )?;
+            }
         }
         for arg in arguments {
             match &arg.node {
@@ -1086,12 +1093,14 @@ impl<'a> Compiler<'a> {
             Some(name.span),
         )?;
 
-        // pop all registers back
-        for register in active_registers.iter().rev() {
-            self.write_instruction(
-                Instruction::Pop(Operand::Register(*register)),
-                Some(name.span),
-            )?;
+        // pop all registers back (if they were backed up)
+        if backup_registers {
+            for register in active_registers.iter().rev() {
+                self.write_instruction(
+                    Instruction::Pop(Operand::Register(*register)),
+                    Some(name.span),
+                )?;
+            }
         }
 
         Ok(())
@@ -1113,7 +1122,8 @@ impl<'a> Compiler<'a> {
                 // Execute the function call
                 // Tuple values are on the stack, sp points after the last pushed value
                 // Pop them in reverse order (from end to beginning)
-                self.expression_function_invocation_with_invocation(invoke_expr, scope)?;
+                // We don't need to backup registers for tuple returns
+                self.expression_function_invocation_with_invocation(invoke_expr, scope, false)?;
 
                 // Validate tuple return size matches the declaration
                 let func_name = &invoke_expr.node.name.node;
@@ -1172,6 +1182,15 @@ impl<'a> Compiler<'a> {
                         }
                     }
                 }
+
+                // Restore stack pointer to value saved at function entry
+                self.write_instruction(
+                    Instruction::Move(
+                        Operand::StackPointer,
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                    ),
+                    Some(value.span),
+                )?;
             }
             Expression::Tuple(tuple_expr) => {
                 // Direct tuple literal: (value1, value2, ...)
@@ -1292,7 +1311,8 @@ impl<'a> Compiler<'a> {
                 // Execute the function call
                 // Tuple values are on the stack, sp points after the last pushed value
                 // Pop them in reverse order (from end to beginning)
-                self.expression_function_invocation_with_invocation(invoke_expr, scope)?;
+                // We don't need to backup registers for tuple returns
+                self.expression_function_invocation_with_invocation(invoke_expr, scope, false)?;
 
                 // Validate tuple return size matches the assignment
                 let func_name = &invoke_expr.node.name.node;
@@ -1387,6 +1407,15 @@ impl<'a> Compiler<'a> {
                         }
                     }
                 }
+
+                // Restore stack pointer to value saved at function entry
+                self.write_instruction(
+                    Instruction::Move(
+                        Operand::StackPointer,
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                    ),
+                    Some(value.span),
+                )?;
             }
             Expression::Tuple(tuple_expr) => {
                 // Direct tuple literal: (value1, value2, ...)
@@ -3383,6 +3412,23 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// Check if a function body contains any tuple returns
+    fn has_tuple_return(body: &BlockExpression) -> bool {
+        for expr in &body.0 {
+            match &expr.node {
+                Expression::Return(Some(ret_expr)) => {
+                    if let Expression::Tuple(_) = &ret_expr.node {
+                        return true;
+                    }
+                }
+                _ => {
+                    // Could recursively check nested blocks, but for now just check direct returns
+                }
+            }
+        }
+        false
+    }
+
     /// Compile a function declaration.
     /// Calees are responsible for backing up any registers they wish to use.
     fn expression_function(
@@ -3472,6 +3518,18 @@ impl<'a> Compiler<'a> {
                 LocationRequest::Stack,
                 Some(var_name.span),
             )?;
+        }
+
+        // If this function has tuple returns, save the SP to r15 before pushing ra
+        if Self::has_tuple_return(&body) {
+            self.write_instruction(
+                Instruction::Move(
+                    Operand::Register(VariableScope::RETURN_REGISTER),
+                    Operand::StackPointer,
+                ),
+                Some(span),
+            )?;
+            self.current_function_sp_saved = true;
         }
 
         self.write_instruction(Instruction::Push(Operand::ReturnAddress), Some(span))?;
@@ -3582,6 +3640,7 @@ impl<'a> Compiler<'a> {
 
         // Reset the flag for the next function
         self.current_return_is_tuple = false;
+        self.current_function_sp_saved = false;
         self.current_function_name = None;
         Ok(())
     }

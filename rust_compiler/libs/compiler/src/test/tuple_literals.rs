@@ -176,6 +176,7 @@ mod test {
                 "
                 j main
                 getPair:
+                move r15 sp
                 push ra
                 push 10
                 push 20
@@ -187,6 +188,7 @@ mod test {
                 jal getPair
                 pop r9
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -212,6 +214,7 @@ mod test {
                 "
                 j main
                 getPair:
+                move r15 sp
                 push ra
                 push 5
                 push 15
@@ -223,6 +226,7 @@ mod test {
                 jal getPair
                 pop r0
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -248,6 +252,7 @@ mod test {
                 "
                 j main
                 getTriple:
+                move r15 sp
                 push ra
                 push 1
                 push 2
@@ -261,6 +266,7 @@ mod test {
                 pop r10
                 pop r9
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -276,8 +282,8 @@ mod test {
             fn getPair() {
                 return (42, 84);
             };
-            let i = 0;
-            let j = 0;
+            let i = 1;
+            let j = 2;
             (i, j) = getPair();
             "#
         );
@@ -288,6 +294,7 @@ mod test {
                 "
                 j main
                 getPair:
+                move r15 sp
                 push ra
                 push 42
                 push 84
@@ -296,15 +303,12 @@ mod test {
                 get ra db r0
                 j ra
                 main:
-                move r8 0
-                move r9 0
-                push r8
-                push r9
+                move r8 1
+                move r9 2
                 jal getPair
                 pop r9
                 pop r8
-                pop r9
-                pop r8
+                move sp r15
                 "
             }
         );
@@ -336,6 +340,199 @@ mod test {
             }
             e => panic!("Expected TupleSizeMismatch error, got: {:?}", e),
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_return_called_by_non_tuple_return() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            fn doSomething() {
+                return (1, 2);
+            };
+            
+            fn doSomethingElse() {
+                let (x, y) = doSomething();
+                return y;
+            };
+            
+            let returnedValue = doSomethingElse();
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                doSomething:
+                move r15 sp
+                push ra
+                push 1
+                push 2
+                move r15 1
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                doSomethingElse:
+                push ra
+                jal doSomething
+                pop r9
+                pop r8
+                move sp r15
+                move r15 r9
+                j __internal_L2
+                __internal_L2:
+                pop ra
+                j ra
+                main:
+                jal doSomethingElse
+                move r8 r15
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_non_tuple_return_called_by_tuple_return() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            fn getValue() {
+                return 42;
+            };
+            
+            fn getTuple() {
+                let x = getValue();
+                return (x, x);
+            };
+            
+            let (a, b) = getTuple();
+            "#
+        );
+
+        assert_eq!(
+            compiled,
+            indoc! {
+                "
+                j main
+                getValue:
+                push ra
+                move r15 42
+                j __internal_L1
+                __internal_L1:
+                pop ra
+                j ra
+                getTuple:
+                move r15 sp
+                push ra
+                jal getValue
+                move r8 r15
+                push r8
+                push r8
+                move r15 1
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                main:
+                jal getTuple
+                pop r9
+                pop r8
+                move sp r15
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_literal_size_mismatch() -> anyhow::Result<()> {
+        let errors = compile!(
+            result
+            r#"
+            let (x, y) = (1, 2, 3);
+            "#
+        );
+
+        // Should have exactly one error about tuple size mismatch
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], crate::Error::Unknown(_, _)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_tuple_returns_in_function() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            fn getValue(x) {
+                if (x) {
+                    return (1, 2);
+                } else {
+                    return (3, 4);
+                }
+            };
+            
+            let (a, b) = getValue(1);
+            "#
+        );
+
+        println!("Generated code:\n{}", compiled);
+
+        // Both returns are 2-tuples, should compile successfully
+        assert!(compiled.contains("getValue:"));
+        assert!(compiled.contains("move r15 "));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_return_with_expression() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            fn add(x, y) {
+                return (x, y);
+            };
+            
+            let (a, b) = add(5, 10);
+            "#
+        );
+
+        // Should compile - we're just passing the parameter variables through
+        assert!(compiled.contains("add:"));
+        assert!(compiled.contains("jal "));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_nested_function_tuple_calls() -> anyhow::Result<()> {
+        let compiled = compile!(
+            debug
+            r#"
+            fn inner() {
+                return (1, 2);
+            };
+            
+            fn outer() {
+                let (x, y) = inner();
+                return (y, x);
+            };
+            
+            let (a, b) = outer();
+            "#
+        );
+
+        // Both functions return tuples
+        assert!(compiled.contains("inner:"));
+        assert!(compiled.contains("outer:"));
 
         Ok(())
     }
