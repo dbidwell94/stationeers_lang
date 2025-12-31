@@ -358,11 +358,12 @@ fn find_matching_ra_pop<'a>(
             return Some((idx, &instructions[1..idx]));
         }
 
-        // Stop searching if we hit a jump (different control flow)
-        // Labels are OK - they're just markers
+        // Stop searching if we hit a jump (different control flow) or a function label
+        // Labels are OK - they're just markers EXCEPT for user-defined function labels
+        // which indicate a function boundary
         if matches!(
             node.instruction,
-            Instruction::Jump(_) | Instruction::JumpRelative(_)
+            Instruction::Jump(_) | Instruction::JumpRelative(_) | Instruction::LabelDef(_)
         ) {
             return None;
         }
