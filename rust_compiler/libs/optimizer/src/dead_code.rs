@@ -51,7 +51,7 @@ pub fn remove_redundant_jumps<'a>(
 ) -> (Vec<InstructionNode<'a>>, bool) {
     let mut output = Vec::with_capacity(input.len());
     let mut changed = false;
-    
+
     for (i, node) in input.iter().enumerate() {
         // Check if this is a jump to the next line number
         if let Instruction::Jump(Operand::Number(target)) = &node.instruction {
@@ -64,7 +64,7 @@ pub fn remove_redundant_jumps<'a>(
         }
         output.push(node.clone());
     }
-    
+
     (output, changed)
 }
 
