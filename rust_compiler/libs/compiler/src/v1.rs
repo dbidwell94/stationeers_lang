@@ -1180,6 +1180,27 @@ impl<'a> Compiler<'a> {
             Some(name.span),
         )?;
 
+        // Pop the arguments off the stack (caller cleanup convention)
+        // BUT: If the function returns a tuple, it saves SP in r15 and the caller
+        // will restore SP with "move sp r15", which automatically cleans up everything.
+        // So we only pop arguments for non-tuple-returning functions.
+        let returns_tuple = self
+            .function_meta
+            .tuple_return_sizes
+            .get(&name.node)
+            .copied()
+            .unwrap_or(0)
+            > 0;
+
+        if !returns_tuple {
+            for _ in 0..arguments.len() {
+                self.write_instruction(
+                    Instruction::Pop(Operand::Register(VariableScope::TEMP_STACK_REGISTER)),
+                    Some(name.span),
+                )?;
+            }
+        }
+
         // pop all registers back (if they were backed up)
         if backup_registers {
             for register in active_registers.iter().rev() {

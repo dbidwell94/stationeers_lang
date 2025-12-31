@@ -17,6 +17,4 @@ j ra
 ## Optimized Output
 
 j main
-j main
-move r8 10
 j ra

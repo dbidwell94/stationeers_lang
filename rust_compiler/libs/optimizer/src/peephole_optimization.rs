@@ -38,6 +38,8 @@ pub fn peephole_optimization<'a>(
                                 // Safe to remove all four: push sp, push ra, pop ra, pop sp
                                 // Also need to adjust stack pointer offsets in between by -2
                                 let absolute_sp_pop = absolute_ra_pop + 1;
+                                // Clear output since we're going to reprocess the entire input
+                                output.clear();
                                 for (idx, node) in input.iter().enumerate() {
                                     if idx == i
                                         || idx == i + 1
@@ -83,6 +85,8 @@ pub fn peephole_optimization<'a>(
                     // Safe to remove both push and pop
                     // Also need to adjust stack pointer offsets in between
                     let absolute_pop_idx = i + pop_idx;
+                    // Clear output since we're going to reprocess the entire input
+                    output.clear();
                     for (idx, node) in input.iter().enumerate() {
                         if idx == i || idx == absolute_pop_idx {
                             // Skip the push and pop

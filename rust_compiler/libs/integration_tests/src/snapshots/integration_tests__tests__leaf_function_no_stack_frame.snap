@@ -19,9 +19,4 @@ j ra
 ## Optimized Output
 
 j main
-pop r8
-j main
-pop r8
-add r1 r8 1
-move r8 r1
 j ra

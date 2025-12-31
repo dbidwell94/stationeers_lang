@@ -24,10 +24,9 @@ j main
 pop r8
 push sp
 push ra
-move r9 20
 add r1 r8 1
 move r15 r1
-j 8
+j 7
 pop ra
 pop sp
 j ra

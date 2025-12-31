@@ -32,11 +32,29 @@ pub fn dead_store_elimination<'a>(
             last_write.insert(dest_reg, i);
         }
 
-        // On labels/jumps, conservatively clear tracking (value might be used elsewhere)
+        // Before clearing on labels/calls, check if current tracked writes are dead
         if matches!(
             node.instruction,
-            Instruction::LabelDef(_) | Instruction::Jump(_) | Instruction::JumpAndLink(_)
+            Instruction::LabelDef(_) | Instruction::JumpAndLink(_)
         ) {
+            // Check all currently tracked writes to see if they're dead
+            for (&reg, &idx) in &last_write {
+                // Don't remove writes to r15 (return register)
+                if reg == 15 {
+                    continue;
+                }
+
+                // Check if this write was used between write and now
+                let was_used = input[idx + 1..i]
+                    .iter()
+                    .any(|n| reg_is_read_or_affects_control(&n.instruction, reg));
+
+                if !was_used && !to_remove.contains(&idx) {
+                    to_remove.push(idx);
+                    changed = true;
+                }
+            }
+
             last_write.clear();
         }
     }
@@ -59,29 +77,12 @@ pub fn dead_store_elimination<'a>(
     }
 }
 
-/// Simplified check: Does this instruction read the register or affect control flow?
+/// Simplified check: Does this instruction read the register?
 fn reg_is_read_or_affects_control(instr: &Instruction, reg: u8) -> bool {
     use crate::helpers::reg_is_read;
 
     // If it reads the register, it's used
-    if reg_is_read(instr, reg) {
-        return true;
-    }
-
-    // Conservatively assume register might be used if there's control flow
-    matches!(
-        instr,
-        Instruction::Jump(_)
-            | Instruction::JumpAndLink(_)
-            | Instruction::BranchEq(_, _, _)
-            | Instruction::BranchNe(_, _, _)
-            | Instruction::BranchGt(_, _, _)
-            | Instruction::BranchLt(_, _, _)
-            | Instruction::BranchGe(_, _, _)
-            | Instruction::BranchLe(_, _, _)
-            | Instruction::BranchEqZero(_, _)
-            | Instruction::BranchNeZero(_, _)
-    )
+    reg_is_read(instr, reg)
 }
 
 #[cfg(test)]
