@@ -13,13 +13,20 @@ pub fn dead_store_elimination<'a>(
 
     // Scan for dead writes
     for (i, node) in input.iter().enumerate() {
+        // Never remove Pop instructions - they have critical side effects on the stack pointer
+        if matches!(node.instruction, Instruction::Pop(_)) {
+            continue;
+        }
+
         if let Some(dest_reg) = get_destination_reg(&node.instruction) {
             // If this register was written before and hasn't been read, previous write is dead
             if let Some(&prev_idx) = last_write.get(&dest_reg) {
                 // Check if the value was ever used between prev_idx and current
                 let was_used = input[prev_idx + 1..i]
                     .iter()
-                    .any(|n| reg_is_read_or_affects_control(&n.instruction, dest_reg));
+                    .any(|n| reg_is_read_or_affects_control(&n.instruction, dest_reg))
+                    // Also check if current instruction reads the register before overwriting it
+                    || reg_is_read_or_affects_control(&node.instruction, dest_reg);
 
                 if !was_used {
                     // Previous write was dead

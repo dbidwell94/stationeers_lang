@@ -17,7 +17,7 @@ mod strength_reduction;
 
 use algebraic_simplification::algebraic_simplification;
 use constant_propagation::constant_propagation;
-use dead_code::{remove_redundant_moves, remove_unreachable_code};
+use dead_code::{remove_redundant_jumps, remove_redundant_moves, remove_unreachable_code};
 use dead_store_elimination::dead_store_elimination;
 use function_call_optimization::optimize_function_calls;
 use label_resolution::resolve_labels;
@@ -91,5 +91,10 @@ pub fn optimize<'a>(instructions: Instructions<'a>) -> Instructions<'a> {
     }
 
     // Final Pass: Resolve Labels to Line Numbers
-    Instructions::new(resolve_labels(instructions))
+    let mut instructions = resolve_labels(instructions);
+    
+    // Post-resolution Pass: Remove redundant jumps (must run after label resolution)
+    let (instructions, _) = remove_redundant_jumps(instructions);
+    
+    Instructions::new(instructions)
 }

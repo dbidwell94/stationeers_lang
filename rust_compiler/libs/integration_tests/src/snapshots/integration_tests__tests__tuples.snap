@@ -1,0 +1,94 @@
+---
+source: libs/integration_tests/src/lib.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+getSomethingElse:
+pop r8
+push sp
+push ra
+add r1 r8 1
+move r15 r1
+j __internal_L1
+__internal_L1:
+pop ra
+pop sp
+j ra
+getSensorData:
+push sp
+push ra
+l r1 d0 Vertical
+push r1
+l r2 d0 Horizontal
+push r2
+push 3
+jal getSomethingElse
+move r3 r15
+push r3
+sub r0 sp 5
+get r0 db r0
+move r15 r0
+j __internal_L2
+__internal_L2:
+sub r0 sp 4
+get ra db r0
+j ra
+main:
+__internal_L3:
+yield
+jal getSensorData
+pop r0
+pop r9
+pop r8
+move sp r15
+jal getSensorData
+pop r0
+pop r0
+pop r9
+move sp r15
+s db Setting r9
+j __internal_L3
+__internal_L4:
+
+## Optimized Output
+
+j 27
+pop r8
+push sp
+push ra
+add r1 r8 1
+move r15 r1
+pop ra
+pop sp
+j ra
+push sp
+push ra
+l r1 d0 Vertical
+push r1
+l r2 d0 Horizontal
+push r2
+push 3
+jal 1
+move r3 r15
+push r3
+sub r0 sp 5
+get r0 db r0
+move r15 r0
+sub r0 sp 4
+get ra db r0
+j ra
+yield
+jal 10
+pop r0
+pop r9
+pop r8
+move sp r15
+jal 10
+pop r0
+pop r0
+pop r9
+move sp r15
+s db Setting r9
+j 27

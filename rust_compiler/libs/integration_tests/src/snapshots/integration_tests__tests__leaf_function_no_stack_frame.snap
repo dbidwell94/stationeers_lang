@@ -19,4 +19,5 @@ j ra
 ## Optimized Output
 
 j main
+pop r8
 j ra

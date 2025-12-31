@@ -43,7 +43,6 @@ move r13 r3
 add r4 r11 r12
 add r5 r4 r13
 move r15 r5
-j 16
 pop ra
 pop sp
 j ra

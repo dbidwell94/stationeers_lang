@@ -12,7 +12,6 @@ move r9 r1
 
 ## Optimized Output
 
-j 1
 move r8 5
 move r1 5
 move r9 5

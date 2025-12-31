@@ -172,4 +172,37 @@ mod tests {
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
+
+    #[test]
+    fn test_tuples() {
+        let source = indoc! {r#"
+            device self = "db";
+            device day  = "d0";
+
+            fn getSomethingElse(input) {
+                return input + 1;
+            }
+
+            fn getSensorData() {
+                return (
+                    day.Vertical,
+                    day.Horizontal,
+                    getSomethingElse(3)
+                );
+            }
+
+            loop {
+                yield();
+                
+                let (vertical, horizontal, _) = getSensorData();
+
+                (horizontal, _, _) = getSensorData();
+
+                self.Setting = horizontal;
+            }
+        "#};
+
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
 }

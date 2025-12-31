@@ -31,7 +31,6 @@ push sp
 push ra
 select r9 r8 10 20
 move r15 r9
-j 7
 pop ra
 pop sp
 j ra

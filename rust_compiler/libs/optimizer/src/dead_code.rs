@@ -1,4 +1,4 @@
-use il::{Instruction, InstructionNode};
+use il::{Instruction, InstructionNode, Operand};
 
 /// Pass: Redundant Move Elimination  
 /// Removes moves where source and destination are the same: `move rx rx`
@@ -40,6 +40,31 @@ pub fn remove_unreachable_code<'a>(
         }
         output.push(node);
     }
+    (output, changed)
+}
+
+/// Pass: Remove Redundant Jumps
+/// Removes jumps to the next instruction (after label resolution).
+/// Must run AFTER label resolution since it needs line numbers.
+pub fn remove_redundant_jumps<'a>(
+    input: Vec<InstructionNode<'a>>,
+) -> (Vec<InstructionNode<'a>>, bool) {
+    let mut output = Vec::with_capacity(input.len());
+    let mut changed = false;
+    
+    for (i, node) in input.iter().enumerate() {
+        // Check if this is a jump to the next line number
+        if let Instruction::Jump(Operand::Number(target)) = &node.instruction {
+            // Current line number is i, next line number is i+1
+            // If jump target equals the next line, it's redundant
+            if target.to_string().parse::<usize>().ok() == Some(i + 1) {
+                changed = true;
+                continue; // Skip this redundant jump
+            }
+        }
+        output.push(node.clone());
+    }
+    
     (output, changed)
 }
 
