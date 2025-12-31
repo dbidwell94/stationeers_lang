@@ -212,4 +212,11 @@ mod tests {
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
+
+    #[test]
+    fn test_reagent_processing() {
+        let source = include_str!("./test_files/reagent_processing.stlg");
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
 }

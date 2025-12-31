@@ -1,0 +1,49 @@
+device combustion = "d0";
+device furnace = "d1";
+device vent = "d2";
+device gasSensor = "d3";
+device self = "db";
+
+const MAX_WAIT_ITER = 2;
+const STACK_SIZE = 100;
+
+vent.Mode = 1; // Vent inward into pipes
+vent.On = false;
+let ejecting = false;
+let combustionWaitIter = 0;
+
+loop {
+  yield();
+
+  let reagentCount = combustion.Reagents;
+  
+  if (reagentCount >= STACK_SIZE || combustionWaitIter >= MAX_WAIT_ITER) {
+    ejecting = true;
+  }
+
+  combustionWaitIter = (reagentCount < STACK_SIZE && !ls(combustion, 0, "Occupied"))
+    ? combustionWaitIter + 1
+    : 0;
+
+  if (ejecting && combustion.Rpm < 1) {
+    combustion.Open = true;
+    ejecting = !(reagentCount == 0 && ls(combustion, 0, "Occupied"));
+  }
+
+  combustion.On = !ejecting;
+  
+  let furnaceAmt = ls(furnace, 0, "Quantity");
+
+  if (gasSensor.Pressure > 200) {
+    // safety: don't turn this on if we have gas still to process
+    // This should prevent pipes from blowing. This will NOT hault
+    // The in-progress burn job, but it'll prevent new jobs from
+    // blowing the walls or pipes.
+    continue;
+  } 
+
+  furnace.On = furnaceAmt > 0;
+  furnace.Activate = furnaceAmt > 0;
+  vent.On = gasSensor.Pressure > 0 || furnace.Activate;
+  self.Setting = furnace.Activate;
+}
