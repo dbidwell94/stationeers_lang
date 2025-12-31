@@ -1288,4 +1288,67 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_tuple_all_forms_combined() -> anyhow::Result<()> {
+        // Test all three tuple forms in one test:
+        // 1. Tuple literal declaration: let (x, y) = (1, 2);
+        // 2. Tuple literal assignment: (x, y) = (3, 4);
+        // 3. Function return tuple: let (a, b) = func();
+        let compiled = compile!(
+            check
+            r#"
+            fn swap(x, y) {
+                return (y, x);
+            };
+            
+            let (a, b) = (10, 20);      // Literal declaration
+            (a, b) = (30, 40);          // Literal assignment
+            let (c, d) = swap(a, b);    // Function return
+            "#
+        );
+
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
+        assert_eq!(
+            compiled.output,
+            indoc! {
+                "
+                j main
+                swap:
+                pop r8
+                pop r9
+                push sp
+                push ra
+                push r8
+                push r9
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
+                j __internal_L1
+                __internal_L1:
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                main:
+                move r8 10
+                move r9 20
+                move r8 30
+                move r9 40
+                push r8
+                push r9
+                jal swap
+                pop r11
+                pop r10
+                move sp r15
+                "
+            }
+        );
+
+        Ok(())
+    }
 }
