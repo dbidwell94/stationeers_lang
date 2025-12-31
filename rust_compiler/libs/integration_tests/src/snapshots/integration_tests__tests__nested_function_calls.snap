@@ -1,0 +1,111 @@
+---
+source: libs/integration_tests/src/lib.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+add:
+pop r8
+pop r9
+push sp
+push ra
+add r1 r9 r8
+move r15 r1
+j __internal_L1
+__internal_L1:
+pop ra
+pop sp
+j ra
+multiply:
+pop r8
+pop r9
+push sp
+push ra
+mul r1 r9 2
+move r15 r1
+j __internal_L2
+__internal_L2:
+pop ra
+pop sp
+j ra
+complex:
+pop r8
+pop r9
+push sp
+push ra
+push r8
+push r9
+push r9
+push r8
+jal add
+pop r9
+pop r8
+move r10 r15
+push r8
+push r9
+push r10
+push r10
+push 2
+jal multiply
+pop r10
+pop r9
+pop r8
+move r11 r15
+move r15 r11
+j __internal_L3
+__internal_L3:
+pop ra
+pop sp
+j ra
+
+## Optimized Output
+
+j main
+pop r8
+pop r9
+push sp
+push ra
+add r1 r9 r8
+move r15 r1
+j 8
+pop ra
+pop sp
+j ra
+pop r8
+pop r9
+push sp
+push ra
+add r1 r9 r9
+move r15 r1
+j 18
+pop ra
+pop sp
+j ra
+pop r8
+pop r9
+push sp
+push ra
+push r8
+push r9
+push r9
+push r8
+jal 1
+pop r9
+pop r8
+move r10 r15
+push r8
+push r9
+push r10
+push r10
+push 2
+jal 11
+pop r10
+pop r9
+pop r8
+move r11 r15
+move r15 r11
+j 45
+pop ra
+pop sp
+j ra

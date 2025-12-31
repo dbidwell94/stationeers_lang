@@ -1,0 +1,19 @@
+[package]
+name = "integration_tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+compiler = { path = "../compiler" }
+parser = { path = "../parser" }
+tokenizer = { path = "../tokenizer" }
+optimizer = { path = "../optimizer" }
+il = { path = "../il" }
+anyhow = { workspace = true }
+indoc = "2"
+insta = "1.40"
+
+[lib]
+# This is a test-only crate
+path = "src/lib.rs"

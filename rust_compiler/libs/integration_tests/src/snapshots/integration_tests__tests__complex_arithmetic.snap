@@ -1,0 +1,49 @@
+---
+source: libs/integration_tests/src/lib.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+compute:
+pop r8
+pop r9
+pop r10
+push sp
+push ra
+mul r1 r10 2
+move r11 r1
+add r2 r9 0
+move r12 r2
+mul r3 r8 1
+move r13 r3
+add r4 r11 r12
+add r5 r4 r13
+move r15 r5
+j __internal_L1
+__internal_L1:
+pop ra
+pop sp
+j ra
+
+## Optimized Output
+
+j main
+pop r8
+pop r9
+pop r10
+push sp
+push ra
+add r1 r10 r10
+move r11 r1
+move r2 r9
+move r12 r2
+move r3 r8
+move r13 r3
+add r4 r11 r12
+add r5 r4 r13
+move r15 r5
+j 16
+pop ra
+pop sp
+j ra
