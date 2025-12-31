@@ -1,5 +1,6 @@
 ---
 source: libs/integration_tests/src/lib.rs
+assertion_line: 70
 expression: output
 ---
 ## Unoptimized Output
@@ -31,13 +32,12 @@ j ra
 
 ## Optimized Output
 
-j 10
+j 9
 pop r8
 pop r9
 push sp
 push ra
-add r1 r9 r8
-move r15 r1
+add r15 r9 r8
 pop ra
 pop sp
 j ra
@@ -46,6 +46,7 @@ push ra
 push 5
 push 10
 jal 1
+move r8 r15
 pop ra
 pop sp
 j ra

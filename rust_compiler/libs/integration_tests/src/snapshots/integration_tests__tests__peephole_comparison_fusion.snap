@@ -24,5 +24,6 @@ j ra
 j main
 pop r8
 pop r9
-ble r9 r8 4
+ble r9 r8 5
+move r10 1
 j ra

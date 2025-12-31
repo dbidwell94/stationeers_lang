@@ -80,10 +80,14 @@ cargo test --package compiler --lib -- test::tuple_literals::test::test_tuple_li
 
 ### Quick Compilation
 
+!IMPORTANT: make sure you use these commands instead of creating temporary files.
+
 ```bash
 cd rust_compiler
 # Compile Slang code to IC10 using current compiler changes
 echo 'let x = 5;' | cargo run --bin slang
+# Compile Slang code to IC10 with optimization
+echo 'let x = 5;' | cargo run --bin slang -z
 # Or from file
 cargo run --bin slang -- input.slang -o output.ic10
 # Optimize the output with -z flag

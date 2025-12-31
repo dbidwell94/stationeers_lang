@@ -25,24 +25,12 @@ pub fn constant_propagation<'a>(
             Instruction::Add(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| x + y),
             Instruction::Sub(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| x - y),
             Instruction::Mul(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| x * y),
-            Instruction::Div(dst, a, b) => {
-                try_fold_math(
-                    dst,
-                    a,
-                    b,
-                    &registers,
-                    |x, y| if y.is_zero() { x } else { x / y },
-                )
-            }
-            Instruction::Mod(dst, a, b) => {
-                try_fold_math(
-                    dst,
-                    a,
-                    b,
-                    &registers,
-                    |x, y| if y.is_zero() { x } else { x % y },
-                )
-            }
+            Instruction::Div(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| {
+                if y.is_zero() { Decimal::ZERO } else { x / y }
+            }),
+            Instruction::Mod(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| {
+                if y.is_zero() { Decimal::ZERO } else { x % y }
+            }),
             Instruction::BranchEq(a, b, l) => {
                 try_resolve_branch(a, b, l, &registers, |x, y| x == y)
             }

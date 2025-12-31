@@ -1,5 +1,6 @@
 use crate::helpers::{get_destination_reg, reg_is_read, set_destination_reg};
-use il::{Instruction, InstructionNode};
+use il::{Instruction, InstructionNode, Operand};
+use std::collections::HashMap;
 
 /// Pass: Register Forwarding
 /// Eliminates intermediate moves by writing directly to the final destination.
@@ -9,6 +10,20 @@ pub fn register_forwarding<'a>(
 ) -> (Vec<InstructionNode<'a>>, bool) {
     let mut changed = false;
     let mut i = 0;
+
+    // Build a map of label positions to detect backward jumps
+    // Use String keys to avoid lifetime issues with references into input
+    let label_positions: HashMap<String, usize> = input
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, node)| {
+            if let Instruction::LabelDef(label) = &node.instruction {
+                Some((label.to_string(), idx))
+            } else {
+                None
+            }
+        })
+        .collect();
 
     while i < input.len().saturating_sub(1) {
         let next_idx = i + 1;
@@ -48,23 +63,51 @@ pub fn register_forwarding<'a>(
                     break;
                 }
 
-                // Conservative: assume liveness might leak at labels/jumps
-                if matches!(
-                    node.instruction,
-                    Instruction::LabelDef(_) | Instruction::Jump(_) | Instruction::JumpAndLink(_)
-                ) {
-                    temp_is_dead = false;
+                // Function calls (jal) clobber the return register (r15)
+                // So if we're tracking r15 and hit a function call, the old value is dead
+                if matches!(node.instruction, Instruction::JumpAndLink(_)) && temp_reg == 15 {
                     break;
+                }
+
+                // Labels are just markers - they don't affect register liveness
+                // But backward jumps create loops we need to analyze carefully
+                let jump_target = match &node.instruction {
+                    Instruction::Jump(Operand::Label(target)) => Some(target.as_ref()),
+                    Instruction::BranchEq(_, _, Operand::Label(target))
+                    | Instruction::BranchNe(_, _, Operand::Label(target))
+                    | Instruction::BranchGt(_, _, Operand::Label(target))
+                    | Instruction::BranchLt(_, _, Operand::Label(target))
+                    | Instruction::BranchGe(_, _, Operand::Label(target))
+                    | Instruction::BranchLe(_, _, Operand::Label(target))
+                    | Instruction::BranchEqZero(_, Operand::Label(target))
+                    | Instruction::BranchNeZero(_, Operand::Label(target)) => Some(target.as_ref()),
+                    _ => None,
+                };
+
+                if let Some(target) = jump_target {
+                    // Check if this is a backward jump (target appears before current position)
+                    if let Some(&target_pos) = label_positions.get(target) {
+                        if target_pos < i {
+                            // Backward jump - could loop back, register might be live
+                            temp_is_dead = false;
+                            break;
+                        }
+                        // Forward jump is OK - doesn't affect liveness before it
+                    }
                 }
             }
 
             if temp_is_dead {
-                // Rewrite to use final destination directly
-                if let Some(new_instr) = set_destination_reg(&input[i].instruction, final_reg) {
-                    input[i].instruction = new_instr;
-                    input.remove(next_idx);
-                    changed = true;
-                    continue;
+                // Safety check: ensure final_reg is not used as an operand in the current instruction.
+                // This prevents generating invalid instructions like `sub r5 r0 r5` (read and write same register).
+                if !reg_is_read(&input[i].instruction, final_reg) {
+                    // Rewrite to use final destination directly
+                    if let Some(new_instr) = set_destination_reg(&input[i].instruction, final_reg) {
+                        input[i].instruction = new_instr;
+                        input.remove(next_idx);
+                        changed = true;
+                        continue;
+                    }
                 }
             }
         }
