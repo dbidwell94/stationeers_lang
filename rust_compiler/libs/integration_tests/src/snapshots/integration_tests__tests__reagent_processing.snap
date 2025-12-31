@@ -1,6 +1,5 @@
 ---
 source: libs/integration_tests/src/lib.rs
-assertion_line: 220
 expression: output
 ---
 ## Unoptimized Output
@@ -26,7 +25,7 @@ ls r15 d0 0 Occupied
 seq r6 r15 0
 and r7 r5 r6
 add r1 r9 1
-select r2 r7 r1 r9
+select r2 r7 r1 0
 move r9 r2
 l r3 d0 Rpm
 slt r4 r3 1
@@ -80,7 +79,7 @@ ls r15 d0 0 Occupied
 seq r6 r15 0
 and r7 r5 r6
 add r1 r9 1
-select r2 r7 r1 r9
+select r2 r7 r1 0
 move r9 r2
 l r3 d0 Rpm
 slt r4 r3 1
