@@ -21,9 +21,11 @@ fn no_arguments() -> anyhow::Result<()> {
         "
         j main
         doSomething:
+        push sp
         push ra
         __internal_L1:
         pop ra
+        pop sp
         j ra
         main:
         jal doSomething
@@ -65,12 +67,14 @@ fn let_var_args() -> anyhow::Result<()> {
             j main
             mul2:
             pop r8
+            push sp
             push ra
             mul r1 r8 2
             move r15 r1
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             __internal_L2:
@@ -136,11 +140,13 @@ fn inline_literal_args() -> anyhow::Result<()> {
             doSomething:
             pop r8
             pop r9
+            push sp
             push ra
             move r15 5
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             move r8 123
@@ -182,9 +188,11 @@ fn mixed_args() -> anyhow::Result<()> {
             doSomething:
             pop r8
             pop r9
+            push sp
             push ra
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             move r8 123
@@ -227,11 +235,13 @@ fn with_return_statement() -> anyhow::Result<()> {
             j main
             doSomething:
             pop r8
+            push sp
             push ra
             move r15 456
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             push 123
@@ -268,10 +278,12 @@ fn with_negative_return_literal() -> anyhow::Result<()> {
             "
             j main
             doSomething:
+            push sp
             push ra
             move r15 -1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             jal doSomething

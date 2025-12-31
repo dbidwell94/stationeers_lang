@@ -218,19 +218,23 @@ mod test {
                 "
                 j main
                 getPair:
+                push sp
                 push ra
                 push 10
                 push 20
-                move r15 20
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L1:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 jal getPair
                 pop r9
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -262,19 +266,23 @@ mod test {
                 "
                 j main
                 getPair:
+                push sp
                 push ra
                 push 5
                 push 15
-                move r15 15
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L1:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 jal getPair
                 pop r0
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -306,21 +314,25 @@ mod test {
                 "
                 j main
                 getTriple:
+                push sp
                 push ra
                 push 1
                 push 2
                 push 3
-                move r15 3
+                sub r0 sp 5
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L1:
-                pop ra
-                sub sp sp 3
+                sub r0 sp 4
+                get ra db r0
                 j ra
                 main:
                 jal getTriple
                 pop r10
                 pop r9
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -354,14 +366,17 @@ mod test {
                 "
                 j main
                 getPair:
+                push sp
                 push ra
                 push 42
                 push 84
-                move r15 84
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L1:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 move r8 1
@@ -369,6 +384,7 @@ mod test {
                 jal getPair
                 pop r9
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -433,24 +449,30 @@ mod test {
                 "
                 j main
                 doSomething:
+                push sp
                 push ra
                 push 1
                 push 2
-                move r15 2
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L1:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 doSomethingElse:
+                push sp
                 push ra
                 jal doSomething
                 pop r9
                 pop r8
+                move sp r15
                 move r15 r9
                 j __internal_L2
                 __internal_L2:
                 pop ra
+                pop sp
                 j ra
                 main:
                 jal doSomethingElse
@@ -492,28 +514,34 @@ mod test {
                 "
                 j main
                 getValue:
+                push sp
                 push ra
                 move r15 42
                 j __internal_L1
                 __internal_L1:
                 pop ra
+                pop sp
                 j ra
                 getTuple:
+                push sp
                 push ra
                 jal getValue
                 move r8 r15
                 push r8
                 push r8
-                move r15 r8
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L2
                 __internal_L2:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 jal getTuple
                 pop r9
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -542,6 +570,7 @@ mod test {
 
     #[test]
     fn test_multiple_tuple_returns_in_function() -> anyhow::Result<()> {
+        // Test multiple return paths in tuple-returning function
         let compiled = compile!(
             check
             r#"
@@ -570,28 +599,34 @@ mod test {
                 j main
                 getValue:
                 pop r8
+                push sp
                 push ra
                 beqz r8 __internal_L3
                 push 1
                 push 2
-                move r15 2
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 j __internal_L2
                 __internal_L3:
                 push 3
                 push 4
-                move r15 4
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L2:
                 __internal_L1:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 push 1
                 jal getValue
                 pop r9
                 pop r8
+                move sp r15
                 "
             },
         );
@@ -626,14 +661,17 @@ mod test {
                 add:
                 pop r8
                 pop r9
+                push sp
                 push ra
                 push r9
                 push r8
-                move r15 r8
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L1:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 push 5
@@ -641,6 +679,7 @@ mod test {
                 jal add
                 pop r9
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -678,32 +717,40 @@ mod test {
                 "
                 j main
                 inner:
+                push sp
                 push ra
                 push 1
                 push 2
-                move r15 2
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L1:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 outer:
+                push sp
                 push ra
                 jal inner
                 pop r9
                 pop r8
+                move sp r15
                 push r9
                 push r8
-                move r15 r8
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
                 j __internal_L2
                 __internal_L2:
-                pop ra
-                sub sp sp 2
+                sub r0 sp 3
+                get ra db r0
                 j ra
                 main:
                 jal outer
                 pop r9
                 pop r8
+                move sp r15
                 "
             }
         );
@@ -839,18 +886,22 @@ mod test {
                 "
                 j main
                 getValue:
+                push sp
                 push ra
                 move r15 42
                 j __internal_L1
                 __internal_L1:
                 pop ra
+                pop sp
                 j ra
                 getOther:
+                push sp
                 push ra
                 move r15 99
                 j __internal_L2
                 __internal_L2:
                 pop ra
+                pop sp
                 j ra
                 main:
                 push r8
@@ -1006,11 +1057,13 @@ mod test {
                 "
                 j main
                 getY:
+                push sp
                 push ra
                 move r15 42
                 j __internal_L1
                 __internal_L1:
                 pop ra
+                pop sp
                 j ra
                 main:
                 l r1 db Setting
@@ -1053,18 +1106,22 @@ mod test {
                 "
                 j main
                 getValue:
+                push sp
                 push ra
                 move r15 10
                 j __internal_L1
                 __internal_L1:
                 pop ra
+                pop sp
                 j ra
                 getOther:
+                push sp
                 push ra
                 move r15 20
                 j __internal_L2
                 __internal_L2:
                 pop ra
+                pop sp
                 j ra
                 main:
                 push r8
@@ -1114,6 +1171,7 @@ mod test {
                 "
                 j main
                 get8:
+                push sp
                 push ra
                 push 1
                 push 2
@@ -1123,11 +1181,13 @@ mod test {
                 push 6
                 push 7
                 push 8
-                move r15 8
+                sub r0 sp 10
+                get r0 db r0
+                move r15 r0
                 j __internal_L1
                 __internal_L1:
-                pop ra
-                sub sp sp 8
+                sub r0 sp 9
+                get ra db r0
                 j ra
                 main:
                 jal get8
@@ -1141,11 +1201,87 @@ mod test {
                 pop r10
                 pop r9
                 pop r8
+                move sp r15
                 sub r0 sp 1
                 get r1 db r0
                 add r2 r8 r1
                 push r2
                 sub sp sp 2
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tuple_return_in_loop() -> anyhow::Result<()> {
+        let compiled = compile!(
+            check
+            r#"
+            fn getValues(i) {
+                return (i, i * 2);
+            };
+            
+            let sum = 0;
+            let i = 0;
+            loop {
+                let (a, b) = getValues(i);
+                sum = sum + a + b;
+                i = i + 1;
+                if (i > 3) {
+                    break;
+                }
+            }
+            "#
+        );
+
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
+        assert_eq!(
+            compiled.output,
+            indoc! {
+                "
+                j main
+                getValues:
+                pop r8
+                push sp
+                push ra
+                push r8
+                mul r1 r8 2
+                push r1
+                sub r0 sp 4
+                get r0 db r0
+                move r15 r0
+                j __internal_L1
+                __internal_L1:
+                sub r0 sp 3
+                get ra db r0
+                j ra
+                main:
+                move r8 0
+                move r9 0
+                __internal_L2:
+                push r9
+                jal getValues
+                pop r11
+                pop r10
+                move sp r15
+                add r1 r8 r10
+                add r2 r1 r11
+                move r8 r2
+                add r3 r9 1
+                move r9 r3
+                sgt r4 r9 3
+                beqz r4 __internal_L4
+                j __internal_L3
+                __internal_L4:
+                j __internal_L2
+                __internal_L3:
                 "
             }
         );

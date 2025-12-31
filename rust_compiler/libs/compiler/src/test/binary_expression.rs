@@ -59,6 +59,7 @@ fn nested_binary_expressions() -> Result<()> {
             pop r8
             pop r9
             pop r10
+            push sp
             push ra
             add r1 r10 r9
             mul r2 r1 r8
@@ -66,6 +67,7 @@ fn nested_binary_expressions() -> Result<()> {
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             push 10

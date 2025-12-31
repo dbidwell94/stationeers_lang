@@ -161,11 +161,13 @@ fn test_boolean_return() -> anyhow::Result<()> {
             "
             j main
             getTrue:
+            push sp
             push ra
             move r15 1
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             jal getTrue

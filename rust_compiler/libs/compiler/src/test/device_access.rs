@@ -189,12 +189,14 @@ fn device_used_in_function() -> anyhow::Result<()> {
             "
             j main
             check_power:
+            push sp
             push ra
             l r1 d0 On
             move r15 r1
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             jal check_power

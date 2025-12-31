@@ -315,10 +315,12 @@ fn function_with_no_return() -> anyhow::Result<()> {
             "
             j main
             no_return:
+            push sp
             push ra
             move r8 5
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             jal no_return
@@ -576,8 +578,9 @@ fn function_with_many_parameters() -> anyhow::Result<()> {
             pop r12
             pop r13
             pop r14
+            push sp
             push ra
-            sub r0 sp 2
+            sub r0 sp 3
             get r1 db r0
             add r2 r1 r14
             add r3 r2 r13
@@ -590,7 +593,7 @@ fn function_with_many_parameters() -> anyhow::Result<()> {
             j __internal_L1
             __internal_L1:
             pop ra
-            sub sp sp 1
+            pop sp
             j ra
             main:
             push 1
@@ -635,21 +638,25 @@ fn tuple_declaration_with_functions() -> anyhow::Result<()> {
         indoc! {"
             j main
             doSomething:
+            push sp
             push ra
-            l r0 db Setting
-            push r0
-            l r0 db Temperature
-            push r0
+            l r1 db Setting
+            push r1
+            l r2 db Temperature
+            push r2
+            sub r0 sp 4
+            get r0 db r0
             move r15 r0
             j __internal_L1
             __internal_L1:
-            pop ra
-            sub sp sp 2
+            sub r0 sp 3
+            get ra db r0
             j ra
             main:
             jal doSomething
             pop r9
             pop r8
+            move sp r15
         "}
     );
 
@@ -679,19 +686,23 @@ fn tuple_from_simple_function() -> anyhow::Result<()> {
         indoc! {"
             j main
             get_pair:
+            push sp
             push ra
             push 1
             push 2
-            move r15 2
+            sub r0 sp 4
+            get r0 db r0
+            move r15 r0
             j __internal_L1
             __internal_L1:
-            pop ra
-            sub sp sp 2
+            sub r0 sp 3
+            get ra db r0
             j ra
             main:
             jal get_pair
             pop r9
             pop r8
+            move sp r15
         "}
     );
 

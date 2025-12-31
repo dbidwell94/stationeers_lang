@@ -95,12 +95,14 @@ fn function_parameter_scope() -> anyhow::Result<()> {
             j main
             double:
             pop r8
+            push sp
             push ra
             mul r1 r8 2
             move r15 r1
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             push 5
@@ -334,20 +336,24 @@ fn function_scope_isolation() -> anyhow::Result<()> {
             "
             j main
             func1:
+            push sp
             push ra
             move r8 10
             move r15 r8
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             func2:
+            push sp
             push ra
             move r8 20
             move r15 r8
             j __internal_L2
             __internal_L2:
             pop ra
+            pop sp
             j ra
             main:
             jal func1
@@ -390,19 +396,23 @@ fn tuple_unpacking_scope() -> anyhow::Result<()> {
             "
             j main
             pair:
+            push sp
             push ra
             push 1
             push 2
-            move r15 2
+            sub r0 sp 4
+            get r0 db r0
+            move r15 r0
             j __internal_L1
             __internal_L1:
-            pop ra
-            sub sp sp 2
+            sub r0 sp 3
+            get ra db r0
             j ra
             main:
             jal pair
             pop r9
             pop r8
+            move sp r15
             add r1 r8 r9
             move r10 r1
             "

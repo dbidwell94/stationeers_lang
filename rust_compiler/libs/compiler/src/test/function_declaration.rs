@@ -31,10 +31,11 @@ fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
             pop r12
             pop r13
             pop r14
+            push sp
             push ra
-            sub r0 sp 3
+            sub r0 sp 4
             get r1 db r0
-            sub r0 sp 2
+            sub r0 sp 3
             get r2 db r0
             add r3 r1 r2
             add r4 r3 r14
@@ -48,7 +49,7 @@ fn test_function_declaration_with_spillover_params() -> anyhow::Result<()> {
             j __internal_L1
             __internal_L1:
             pop ra
-            sub sp sp 2
+            pop sp
             j ra
             main:
             move r8 1
@@ -97,6 +98,7 @@ fn test_early_return() -> anyhow::Result<()> {
             "
             j main
             doSomething:
+            push sp
             push ra
             seq r1 1 1
             beqz r1 __internal_L2
@@ -106,6 +108,7 @@ fn test_early_return() -> anyhow::Result<()> {
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             jal doSomething
@@ -138,9 +141,11 @@ fn test_function_declaration_with_register_params() -> anyhow::Result<()> {
             doSomething:
             pop r8
             pop r9
+            push sp
             push ra
             __internal_L1:
             pop ra
+            pop sp
             j ra
         "}
     );
