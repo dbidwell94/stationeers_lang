@@ -46,12 +46,15 @@ pub fn remove_unreachable_code<'a>(
 /// Pass: Remove Redundant Jumps
 /// Removes jumps to the next instruction (after label resolution).
 /// Must run AFTER label resolution since it needs line numbers.
+/// This pass also adjusts all jump targets to account for removed instructions.
 pub fn remove_redundant_jumps<'a>(
     input: Vec<InstructionNode<'a>>,
 ) -> (Vec<InstructionNode<'a>>, bool) {
     let mut output = Vec::with_capacity(input.len());
     let mut changed = false;
+    let mut removed_lines = Vec::new();
 
+    // First pass: identify redundant jumps
     for (i, node) in input.iter().enumerate() {
         // Check if this is a jump to the next line number
         if let Instruction::Jump(Operand::Number(target)) = &node.instruction {
@@ -59,10 +62,48 @@ pub fn remove_redundant_jumps<'a>(
             // If jump target equals the next line, it's redundant
             if target.to_string().parse::<usize>().ok() == Some(i + 1) {
                 changed = true;
+                removed_lines.push(i);
                 continue; // Skip this redundant jump
             }
         }
         output.push(node.clone());
+    }
+
+    // Second pass: adjust all jump/branch targets to account for removed lines
+    if changed {
+        for node in &mut output {
+            // Helper to adjust a target line number
+            let adjust_target = |target_line: usize| -> usize {
+                // Count how many removed lines are before the target
+                let offset = removed_lines
+                    .iter()
+                    .filter(|&&removed| removed < target_line)
+                    .count();
+                target_line.saturating_sub(offset)
+            };
+
+            match &mut node.instruction {
+                Instruction::Jump(Operand::Number(target))
+                | Instruction::JumpAndLink(Operand::Number(target)) => {
+                    if let Ok(target_line) = target.to_string().parse::<usize>() {
+                        *target = rust_decimal::Decimal::from(adjust_target(target_line));
+                    }
+                }
+                Instruction::BranchEq(_, _, Operand::Number(target))
+                | Instruction::BranchNe(_, _, Operand::Number(target))
+                | Instruction::BranchGt(_, _, Operand::Number(target))
+                | Instruction::BranchLt(_, _, Operand::Number(target))
+                | Instruction::BranchGe(_, _, Operand::Number(target))
+                | Instruction::BranchLe(_, _, Operand::Number(target))
+                | Instruction::BranchEqZero(_, Operand::Number(target))
+                | Instruction::BranchNeZero(_, Operand::Number(target)) => {
+                    if let Ok(target_line) = target.to_string().parse::<usize>() {
+                        *target = rust_decimal::Decimal::from(adjust_target(target_line));
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     (output, changed)

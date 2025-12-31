@@ -31,7 +31,7 @@ j ra
 
 ## Optimized Output
 
-j 11
+j 10
 pop r8
 pop r9
 push sp

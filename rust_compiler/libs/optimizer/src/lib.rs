@@ -91,7 +91,7 @@ pub fn optimize<'a>(instructions: Instructions<'a>) -> Instructions<'a> {
     }
 
     // Final Pass: Resolve Labels to Line Numbers
-    let mut instructions = resolve_labels(instructions);
+    let instructions = resolve_labels(instructions);
 
     // Post-resolution Pass: Remove redundant jumps (must run after label resolution)
     let (instructions, _) = remove_redundant_jumps(instructions);

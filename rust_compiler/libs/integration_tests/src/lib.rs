@@ -205,4 +205,11 @@ mod tests {
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
+
+    #[test]
+    fn test_larre_script() {
+        let source = include_str!("./test_files/test_larre_script.stlg");
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
 }

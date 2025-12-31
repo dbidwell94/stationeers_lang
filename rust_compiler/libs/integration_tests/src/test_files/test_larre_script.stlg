@@ -1,0 +1,72 @@
+/// Laree script V1
+
+device self = "db";
+device larre = "d0";
+device exportChute = "d1";
+
+const TOTAL_SLOTS = 19;
+const EXPORT_CHUTE = 1;
+const START_STATION = 2;
+
+let currentIndex = 0;
+
+/// Waits for the larre to be idle before continuing
+fn waitForIdle() {
+  yield();
+  while (!larre.Idle) {
+    yield();
+  }
+}
+
+/// Instructs the Larre to go to the chute and deposit
+/// what is currently in its arm
+fn deposit() {
+  larre.Setting = EXPORT_CHUTE;
+  waitForIdle();
+  larre.Activate = true;
+  waitForIdle();
+  exportChute.Open = false;
+}
+
+/// This function is responsible for checking the plant under
+/// the larre at this index, and harvesting if applicable
+fn checkAndHarvest(currentIndex) {
+  if (currentIndex <= EXPORT_CHUTE || ls(larre, 255, "Seeding") < 1) {
+    return;
+  }
+
+  // harvest from this device
+  while (ls(larre, 255, "Mature")) {
+    yield();
+    larre.Activate = true;
+  }
+  let hasRemainingPlant = ls(larre, 255, "Occupied");
+  
+  // move to the export chute
+  larre.Setting = EXPORT_CHUTE;
+  waitForIdle();
+  deposit();
+  if (hasRemainingPlant) {
+    deposit();
+  }
+
+  larre.Setting = currentIndex;
+  waitForIdle();
+
+  if (ls(larre, 0, "Occupied")) {
+    larre.Activate = true;
+  }
+  waitForIdle();
+}
+
+loop {
+  yield();
+  if (!larre.Idle) {
+    continue;
+  }
+  let newIndex = currentIndex + 1 > TOTAL_SLOTS ? START_STATION : currentIndex + 1;
+
+  checkAndHarvest(currentIndex);
+  larre.Setting = newIndex;
+  currentIndex = newIndex;
+}
