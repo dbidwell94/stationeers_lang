@@ -1,0 +1,27 @@
+---
+source: libs/integration_tests/src/lib.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+__internal_L1:
+l r1 20088 Horizontal
+sb -539224550 Horizontal r1
+l r2 20088 Vertical
+add r3 r2 90
+sb -539224550 Vertical r3
+yield
+j __internal_L1
+__internal_L2:
+
+## Optimized Output
+
+l r1 20088 Horizontal
+sb -539224550 Horizontal r1
+l r2 20088 Vertical
+add r3 r2 90
+sb -539224550 Vertical r3
+yield
+j 0

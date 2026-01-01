@@ -125,6 +125,9 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
         | Instruction::Pow(_, a, b) => check(a) || check(b),
         Instruction::Load(_, a, _) => check(a),
         Instruction::Store(a, _, b) => check(a) || check(b),
+        Instruction::StoreBatch(a, _, b) => check(a) || check(b),
+        Instruction::StoreBatchNamed(a, b, _, c) => check(a) || check(b) || check(c),
+        Instruction::StoreSlot(a, b, _, c) => check(a) || check(b) || check(c),
         Instruction::BranchEq(a, b, _)
         | Instruction::BranchNe(a, b, _)
         | Instruction::BranchGt(a, b, _)
@@ -167,6 +170,8 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
         Instruction::Atan2(_, a, b) | Instruction::Max(_, a, b) | Instruction::Min(_, a, b) => {
             check(a) || check(b)
         }
+        Instruction::JumpRelative(a) => check(a),
+        Instruction::Alias(_, a) => check(a),
         _ => false,
     }
 }

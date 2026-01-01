@@ -65,4 +65,20 @@ mod integration_tests {
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
+
+    #[test]
+    fn test_setbatched_with_member_access() {
+        let source = indoc! {r#"
+            const SENSOR = 20088;
+            const PANELS = hash("StructureSolarPanelDual");
+            
+            loop {
+              setBatched(PANELS, "Horizontal", SENSOR.Horizontal);
+              setBatched(PANELS, "Vertical", SENSOR.Vertical + 90);
+              yield();
+            }
+        "#};
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
 }
