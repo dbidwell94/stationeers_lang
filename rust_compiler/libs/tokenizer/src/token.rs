@@ -172,6 +172,23 @@ pub enum TokenType<'a> {
     #[token(";", symbol!(Semicolon))]
     #[token(":", symbol!(Colon))]
     #[token(",", symbol!(Comma))]
+    #[token("?", symbol!(Question))]
+    #[token(".", symbol!(Dot))]
+    #[token("%", symbol!(Percent))]
+    #[token("~", symbol!(BitwiseNot))]
+    // Multi-character tokens must be defined before their single-character prefixes
+    // For tokens like >> and >>>, define >>> before >> to ensure correct matching
+    #[token(">>>", symbol!(RightShiftLogical))]
+    #[token(">>", symbol!(RightShiftArithmetic))]
+    #[token("<<", symbol!(LeftShift))]
+    #[token("==", symbol!(Equal))]
+    #[token("!=", symbol!(NotEqual))]
+    #[token("&&", symbol!(LogicalAnd))]
+    #[token("||", symbol!(LogicalOr))]
+    #[token("<=", symbol!(LessThanOrEqual))]
+    #[token(">=", symbol!(GreaterThanOrEqual))]
+    #[token("**", symbol!(Exp))]
+    // Single-character tokens
     #[token("+", symbol!(Plus))]
     #[token("-", symbol!(Minus))]
     #[token("*", symbol!(Asterisk))]
@@ -180,17 +197,9 @@ pub enum TokenType<'a> {
     #[token(">", symbol!(GreaterThan))]
     #[token("=", symbol!(Assign))]
     #[token("!", symbol!(LogicalNot))]
-    #[token(".", symbol!(Dot))]
     #[token("^", symbol!(Caret))]
-    #[token("%", symbol!(Percent))]
-    #[token("?", symbol!(Question))]
-    #[token("==", symbol!(Equal))]
-    #[token("!=", symbol!(NotEqual))]
-    #[token("&&", symbol!(LogicalAnd))]
-    #[token("||", symbol!(LogicalOr))]
-    #[token("<=", symbol!(LessThanOrEqual))]
-    #[token(">=", symbol!(GreaterThanOrEqual))]
-    #[token("**", symbol!(Exp))]
+    #[token("&", symbol!(BitwiseAnd))]
+    #[token("|", symbol!(BitwiseOr))]
     /// Represents a symbol token
     Symbol(Symbol),
 
@@ -615,6 +624,12 @@ pub enum Symbol {
     Percent,
     /// Represents the `?` symbol
     Question,
+    /// Represents the `&` symbol (bitwise AND)
+    BitwiseAnd,
+    /// Represents the `|` symbol (bitwise OR)
+    BitwiseOr,
+    /// Represents the `~` symbol (bitwise NOT)
+    BitwiseNot,
 
     // Double Character Symbols
     /// Represents the `==` symbol
@@ -629,6 +644,12 @@ pub enum Symbol {
     LessThanOrEqual,
     /// Represents the `>=` symbol
     GreaterThanOrEqual,
+    /// Represents the `<<` symbol (left shift)
+    LeftShift,
+    /// Represents the `>>` symbol (arithmetic right shift)
+    RightShiftArithmetic,
+    /// Represents the `>>>` symbol (logical right shift)
+    RightShiftLogical,
     /// Represents the `**` symbol
     Exp,
 }
@@ -643,6 +664,19 @@ impl Symbol {
                 | Symbol::Slash
                 | Symbol::Exp
                 | Symbol::Percent
+                | Symbol::Caret
+        )
+    }
+
+    pub fn is_bitwise(&self) -> bool {
+        matches!(
+            self,
+            Symbol::BitwiseAnd
+                | Symbol::BitwiseOr
+                | Symbol::BitwiseNot
+                | Symbol::LeftShift
+                | Symbol::RightShiftArithmetic
+                | Symbol::RightShiftLogical
         )
     }
 
@@ -693,6 +727,12 @@ impl std::fmt::Display for Symbol {
             Self::NotEqual => write!(f, "!="),
             Self::Dot => write!(f, "."),
             Self::Caret => write!(f, "^"),
+            Self::BitwiseAnd => write!(f, "&"),
+            Self::BitwiseOr => write!(f, "|"),
+            Self::BitwiseNot => write!(f, "~"),
+            Self::LeftShift => write!(f, "<<"),
+            Self::RightShiftArithmetic => write!(f, ">>"),
+            Self::RightShiftLogical => write!(f, ">>>"),
             Self::Exp => write!(f, "**"),
         }
     }

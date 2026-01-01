@@ -294,12 +294,12 @@ impl<'a> Parser<'a> {
         // Handle Infix operators (Binary, Logical, Assignment)
         if self_matches_peek!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question)
         ) {
             return Ok(Some(self.infix(lhs)?));
         } else if self_matches_current!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question)
         ) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
             return Ok(Some(self.infix(lhs)?));
@@ -608,6 +608,23 @@ impl<'a> Parser<'a> {
                 })
             }
 
+            TokenType::Symbol(Symbol::BitwiseNot) => {
+                let start_span = self.current_span();
+                self.assign_next()?;
+                let inner_expr = self.unary()?.ok_or(Error::UnexpectedEOF)?;
+                let inner_with_postfix = self.parse_postfix(inner_expr)?;
+                let combined_span = Span {
+                    start_line: start_span.start_line,
+                    start_col: start_span.start_col,
+                    end_line: inner_with_postfix.span.end_line,
+                    end_col: inner_with_postfix.span.end_col,
+                };
+                Some(Spanned {
+                    span: combined_span,
+                    node: Expression::BitwiseNot(boxed!(inner_with_postfix)),
+                })
+            }
+
             _ => {
                 return Err(Error::UnexpectedToken(
                     self.current_span(),
@@ -699,6 +716,20 @@ impl<'a> Parser<'a> {
                     }),
                 }
             }
+            TokenType::Symbol(Symbol::BitwiseNot) => {
+                self.assign_next()?;
+                let inner = self.get_infix_child_node()?;
+                let span = Span {
+                    start_line: start_span.start_line,
+                    start_col: start_span.start_col,
+                    end_line: inner.span.end_line,
+                    end_col: inner.span.end_col,
+                };
+                Spanned {
+                    span,
+                    node: Expression::BitwiseNot(boxed!(inner)),
+                }
+            }
             _ => {
                 return Err(Error::UnexpectedToken(
                     self.current_span(),
@@ -777,6 +808,7 @@ impl<'a> Parser<'a> {
             | Expression::Variable(_)
             | Expression::Ternary(_)
             | Expression::Negation(_)
+            | Expression::BitwiseNot(_)
             | Expression::MemberAccess(_)
             | Expression::MethodCall(_)
             | Expression::Tuple(_) => {}
@@ -796,7 +828,7 @@ impl<'a> Parser<'a> {
         // Include Assign in the operator loop
         while token_matches!(
             temp_token,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question | Symbol::Colon)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question | Symbol::Colon)
         ) {
             let operator = match temp_token.token_type {
                 TokenType::Symbol(s) => s,
@@ -869,6 +901,24 @@ impl<'a> Parser<'a> {
                             Symbol::Minus => {
                                 BinaryExpression::Subtract(boxed!(left), boxed!(right))
                             }
+                            Symbol::LeftShift => {
+                                BinaryExpression::LeftShift(boxed!(left), boxed!(right))
+                            }
+                            Symbol::RightShiftArithmetic => {
+                                BinaryExpression::RightShiftArithmetic(boxed!(left), boxed!(right))
+                            }
+                            Symbol::RightShiftLogical => {
+                                BinaryExpression::RightShiftLogical(boxed!(left), boxed!(right))
+                            }
+                            Symbol::BitwiseAnd => {
+                                BinaryExpression::BitwiseAnd(boxed!(left), boxed!(right))
+                            }
+                            Symbol::BitwiseOr => {
+                                BinaryExpression::BitwiseOr(boxed!(left), boxed!(right))
+                            }
+                            Symbol::Caret => {
+                                BinaryExpression::BitwiseXor(boxed!(left), boxed!(right))
+                            }
                             _ => unreachable!(),
                         };
 
@@ -895,7 +945,22 @@ impl<'a> Parser<'a> {
         // --- PRECEDENCE LEVEL 3: Additive (+, -) ---
         process_binary_ops!(Symbol::Plus | Symbol::Minus, BinaryExpression);
 
-        // --- PRECEDENCE LEVEL 4: Comparison (<, >, <=, >=) ---
+        // --- PRECEDENCE LEVEL 4: Shift Operations (<<, >>, >>>) ---
+        process_binary_ops!(
+            Symbol::LeftShift | Symbol::RightShiftArithmetic | Symbol::RightShiftLogical,
+            BinaryExpression
+        );
+
+        // --- PRECEDENCE LEVEL 5: Bitwise AND (&) ---
+        process_binary_ops!(Symbol::BitwiseAnd, BinaryExpression);
+
+        // --- PRECEDENCE LEVEL 6: Bitwise XOR (^) ---
+        process_binary_ops!(Symbol::Caret, BinaryExpression);
+
+        // --- PRECEDENCE LEVEL 7: Bitwise OR (|) ---
+        process_binary_ops!(Symbol::BitwiseOr, BinaryExpression);
+
+        // --- PRECEDENCE LEVEL 8: Comparison (<, >, <=, >=) ---
         let mut current_iteration = 0;
         for (i, operator) in operators.iter().enumerate() {
             if operator.is_comparison() && !matches!(operator, Symbol::Equal | Symbol::NotEqual) {

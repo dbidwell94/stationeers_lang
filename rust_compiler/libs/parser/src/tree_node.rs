@@ -45,6 +45,12 @@ pub enum BinaryExpression<'a> {
     Subtract(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
     Exponent(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
     Modulo(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    BitwiseAnd(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    BitwiseOr(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    BitwiseXor(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    LeftShift(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    RightShiftArithmetic(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
+    RightShiftLogical(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
 }
 
 impl<'a> std::fmt::Display for BinaryExpression<'a> {
@@ -56,6 +62,12 @@ impl<'a> std::fmt::Display for BinaryExpression<'a> {
             BinaryExpression::Subtract(l, r) => write!(f, "({} - {})", l, r),
             BinaryExpression::Exponent(l, r) => write!(f, "({} ** {})", l, r),
             BinaryExpression::Modulo(l, r) => write!(f, "({} % {})", l, r),
+            BinaryExpression::BitwiseAnd(l, r) => write!(f, "({} & {})", l, r),
+            BinaryExpression::BitwiseOr(l, r) => write!(f, "({} | {})", l, r),
+            BinaryExpression::BitwiseXor(l, r) => write!(f, "({} ^ {})", l, r),
+            BinaryExpression::LeftShift(l, r) => write!(f, "({} << {})", l, r),
+            BinaryExpression::RightShiftArithmetic(l, r) => write!(f, "({} >> {})", l, r),
+            BinaryExpression::RightShiftLogical(l, r) => write!(f, "({} >>> {})", l, r),
         }
     }
 }
@@ -367,6 +379,7 @@ pub enum Expression<'a> {
     Binary(Spanned<BinaryExpression<'a>>),
     Block(Spanned<BlockExpression<'a>>),
     Break(Span),
+    BitwiseNot(Box<Spanned<Expression<'a>>>),
     ConstDeclaration(Spanned<ConstDeclarationExpression<'a>>),
     Continue(Span),
     Declaration(Spanned<Cow<'a, str>>, Box<Spanned<Expression<'a>>>),
@@ -398,6 +411,7 @@ impl<'a> std::fmt::Display for Expression<'a> {
             Expression::Binary(e) => write!(f, "{}", e),
             Expression::Block(e) => write!(f, "{}", e),
             Expression::Break(_) => write!(f, "break"),
+            Expression::BitwiseNot(e) => write!(f, "(~{})", e),
             Expression::ConstDeclaration(e) => write!(f, "{}", e),
             Expression::Continue(_) => write!(f, "continue"),
             Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
@@ -439,4 +453,3 @@ impl<'a> std::fmt::Display for Expression<'a> {
         }
     }
 }
-

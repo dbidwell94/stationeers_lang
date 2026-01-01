@@ -232,12 +232,22 @@ pub enum Instruction<'a> {
     /// `sle dst a b` - Set if Less or Equal
     SetLe(Operand<'a>, Operand<'a>, Operand<'a>),
 
-    /// `and dst a b` - Logical AND
+    /// `and dst a b` - Bitwise AND
     And(Operand<'a>, Operand<'a>, Operand<'a>),
-    /// `or dst a b` - Logical OR
+    /// `or dst a b` - Bitwise OR
     Or(Operand<'a>, Operand<'a>, Operand<'a>),
-    /// `xor dst a b` - Logical XOR
+    /// `xor dst a b` - Bitwise XOR
     Xor(Operand<'a>, Operand<'a>, Operand<'a>),
+    /// `nor dst a b` - Bitwise NOR
+    Nor(Operand<'a>, Operand<'a>, Operand<'a>),
+    /// `not dst a` - Bitwise NOT
+    Not(Operand<'a>, Operand<'a>),
+    /// `sll dst a b` - Logical Left Shift
+    Sll(Operand<'a>, Operand<'a>, Operand<'a>),
+    /// `sra dst a b` - Arithmetic Right Shift
+    Sra(Operand<'a>, Operand<'a>, Operand<'a>),
+    /// `srl dst a b` - Logical Right Shift
+    Srl(Operand<'a>, Operand<'a>, Operand<'a>),
 
     /// `push val` - Push to Stack
     Push(Operand<'a>),
@@ -338,6 +348,11 @@ impl<'a> fmt::Display for Instruction<'a> {
             Instruction::And(dst, a, b) => write!(f, "and {} {} {}", dst, a, b),
             Instruction::Or(dst, a, b) => write!(f, "or {} {} {}", dst, a, b),
             Instruction::Xor(dst, a, b) => write!(f, "xor {} {} {}", dst, a, b),
+            Instruction::Nor(dst, a, b) => write!(f, "nor {} {} {}", dst, a, b),
+            Instruction::Not(dst, a) => write!(f, "not {} {}", dst, a),
+            Instruction::Sll(dst, a, b) => write!(f, "sll {} {} {}", dst, a, b),
+            Instruction::Sra(dst, a, b) => write!(f, "sra {} {} {}", dst, a, b),
+            Instruction::Srl(dst, a, b) => write!(f, "srl {} {} {}", dst, a, b),
             Instruction::Push(val) => write!(f, "push {}", val),
             Instruction::Pop(dst) => write!(f, "pop {}", dst),
             Instruction::Peek(dst) => write!(f, "peek {}", dst),

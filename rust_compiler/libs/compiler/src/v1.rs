@@ -525,6 +525,28 @@ impl<'a> Compiler<'a> {
                     temp_name: Some(result_name),
                 }))
             }
+            Expression::BitwiseNot(inner_expr) => {
+                // Compile bitwise NOT using the NOT instruction
+                let (inner_str, cleanup) = self.compile_operand(*inner_expr, scope)?;
+                let result_name = self.next_temp_name();
+                let result_loc =
+                    scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
+                let result_reg = self.resolve_register(&result_loc)?;
+
+                self.write_instruction(
+                    Instruction::Not(Operand::Register(result_reg), inner_str),
+                    Some(expr.span),
+                )?;
+
+                if let Some(name) = cleanup {
+                    scope.free_temp(name, None)?;
+                }
+
+                Ok(Some(CompileLocation {
+                    location: result_loc,
+                    temp_name: Some(result_name),
+                }))
+            }
             Expression::TupleDeclaration(tuple_decl) => {
                 self.expression_tuple_declaration(tuple_decl.node, scope)?;
                 Ok(None)
@@ -884,6 +906,32 @@ impl<'a> Compiler<'a> {
                 } else {
                     return Err(Error::Unknown(
                         format!("`{name_str}` negation expression did not produce a value"),
+                        Some(name_span),
+                    ));
+                }
+                (var_loc, None)
+            }
+            Expression::BitwiseNot(_) => {
+                // Compile the bitwise NOT expression
+                let result = self.expression(expr, scope)?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
+
+                if let Some(res) = result {
+                    // Move result from temp to new persistent variable
+                    let result_reg = self.resolve_register(&res.location)?;
+                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+
+                    // Free the temp result
+                    if let Some(name) = res.temp_name {
+                        scope.free_temp(name, None)?;
+                    }
+                } else {
+                    return Err(Error::Unknown(
+                        format!("`{name_str}` bitwise NOT expression did not produce a value"),
                         Some(name_span),
                     ));
                 }
@@ -2121,6 +2169,7 @@ impl<'a> Compiler<'a> {
                 | BinaryExpression::Divide(l, r)
                 | BinaryExpression::Exponent(l, r)
                 | BinaryExpression::Modulo(l, r) => (fold_expression(l)?, fold_expression(r)?),
+                _ => return None,
             };
 
             match expr {
@@ -2188,6 +2237,24 @@ impl<'a> Compiler<'a> {
             }
             BinaryExpression::Modulo(l, r) => {
                 (|into, lhs, rhs| Instruction::Mod(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::BitwiseAnd(l, r) => {
+                (|into, lhs, rhs| Instruction::And(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::BitwiseOr(l, r) => {
+                (|into, lhs, rhs| Instruction::Or(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::BitwiseXor(l, r) => {
+                (|into, lhs, rhs| Instruction::Xor(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::LeftShift(l, r) => {
+                (|into, lhs, rhs| Instruction::Sll(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::RightShiftArithmetic(l, r) => {
+                (|into, lhs, rhs| Instruction::Sra(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::RightShiftLogical(l, r) => {
+                (|into, lhs, rhs| Instruction::Srl(into, lhs, rhs), l, r)
             }
         };
 
