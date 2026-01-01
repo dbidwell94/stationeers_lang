@@ -210,6 +210,18 @@ impl<'a> std::fmt::Display for MethodCallExpression<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct IndexAccessExpression<'a> {
+    pub object: Box<Spanned<Expression<'a>>>,
+    pub index: Box<Spanned<Expression<'a>>>,
+}
+
+impl<'a> std::fmt::Display for IndexAccessExpression<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}[{}]", self.object, self.index)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum LiteralOrVariable<'a> {
     Literal(Literal<'a>),
     Variable(Spanned<Cow<'a, str>>),
@@ -402,6 +414,7 @@ pub enum Expression<'a> {
     TupleDeclaration(Spanned<TupleDeclarationExpression<'a>>),
     Variable(Spanned<Cow<'a, str>>),
     While(Spanned<WhileExpression<'a>>),
+    IndexAccess(Spanned<IndexAccessExpression<'a>>),
 }
 
 impl<'a> std::fmt::Display for Expression<'a> {
@@ -450,6 +463,7 @@ impl<'a> std::fmt::Display for Expression<'a> {
             Expression::TupleDeclaration(e) => write!(f, "{}", e),
             Expression::Variable(id) => write!(f, "{}", id),
             Expression::While(e) => write!(f, "{}", e),
+            Expression::IndexAccess(e) => write!(f, "{}", e),
         }
     }
 }

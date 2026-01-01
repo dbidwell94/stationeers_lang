@@ -272,3 +272,108 @@ fn device_property_with_underscore_name() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn device_index_read() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device printer = \"d0\";
+            let value = printer[255];
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            get r1 d0 255
+            move r8 r1
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn device_index_write() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device printer = \"d0\";
+            printer[255] = 42;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            put d0 255 42
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn device_index_db_not_allowed() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device stack = \"db\";
+            let x = stack[10];
+        "
+    };
+
+    assert!(
+        !compiled.errors.is_empty(),
+        "Expected error for db indexing"
+    );
+    assert!(
+        compiled.errors[0]
+            .to_string()
+            .contains("Direct stack access on 'db' is not yet supported"),
+        "Expected db restriction error"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn device_index_db_write_not_allowed() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device stack = \"db\";
+            stack[10] = 42;
+        "
+    };
+
+    assert!(
+        !compiled.errors.is_empty(),
+        "Expected error for db indexing"
+    );
+    assert!(
+        compiled.errors[0]
+            .to_string()
+            .contains("Direct stack access on 'db' is not yet supported"),
+        "Expected db restriction error"
+    );
+
+    Ok(())
+}

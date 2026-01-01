@@ -8,8 +8,8 @@ use parser::{
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
-        InvocationExpression, Literal, LiteralOr, LiteralOrVariable, LogicalExpression,
-        LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
+        IndexAccessExpression, InvocationExpression, Literal, LiteralOr, LiteralOrVariable,
+        LogicalExpression, LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
         TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
     },
 };
@@ -487,6 +487,50 @@ impl<'a> Compiler<'a> {
                     temp_name: Some(result_name),
                 }))
             }
+            Expression::IndexAccess(access) => {
+                // "get" behavior (e.g. `let x = d0[255]`)
+                let IndexAccessExpression { object, index } = access.node;
+
+                // 1. Resolve the object to a device string
+                let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
+
+                // Check if device is "db" (not allowed)
+                if let Operand::Device(ref dev_str) = device {
+                    if dev_str.as_ref() == "db" {
+                        return Err(Error::Unknown(
+                            "Direct stack access on 'db' is not yet supported".to_string(),
+                            Some(expr.span),
+                        ));
+                    }
+                }
+
+                // 2. Compile the index expression to get the address
+                let (addr, addr_cleanup) = self.compile_operand(*index, scope)?;
+
+                // 3. Allocate a temp register for the result
+                let result_name = self.next_temp_name();
+                let loc = scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
+                let reg = self.resolve_register(&loc)?;
+
+                // 4. Emit get instruction: get rX device address
+                self.write_instruction(
+                    Instruction::Get(Operand::Register(reg), device, addr),
+                    Some(expr.span),
+                )?;
+
+                // 5. Cleanup
+                if let Some(c) = dev_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+                if let Some(c) = addr_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+
+                Ok(Some(CompileLocation {
+                    location: loc,
+                    temp_name: Some(result_name),
+                }))
+            }
             Expression::MethodCall(call) => {
                 // Methods are not yet fully supported (e.g. `d0.SomeFunc()`).
                 // This would likely map to specialized syscalls or batch instructions.
@@ -937,6 +981,32 @@ impl<'a> Compiler<'a> {
                 }
                 (var_loc, None)
             }
+            Expression::IndexAccess(_) => {
+                // Compile the index access expression
+                let result = self.expression(expr, scope)?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
+
+                if let Some(res) = result {
+                    // Move result from temp to new persistent variable
+                    let result_reg = self.resolve_register(&res.location)?;
+                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+
+                    // Free the temp result
+                    if let Some(name) = res.temp_name {
+                        scope.free_temp(name, None)?;
+                    }
+                } else {
+                    return Err(Error::Unknown(
+                        format!("`{name_str}` index access expression did not produce a value"),
+                        Some(name_span),
+                    ));
+                }
+                (var_loc, None)
+            }
             _ => {
                 return Err(Error::Unknown(
                     format!("`{name_str}` declaration of this type is not supported/implemented."),
@@ -1067,6 +1137,37 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 if let Some(c) = dev_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+                if let Some(c) = val_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+            }
+            Expression::IndexAccess(access) => {
+                // Put instruction: put device address value
+                let IndexAccessExpression { object, index } = access.node;
+
+                let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
+
+                // Check if device is "db" (not allowed)
+                if let Operand::Device(ref dev_str) = device {
+                    if dev_str.as_ref() == "db" {
+                        return Err(Error::Unknown(
+                            "Direct stack access on 'db' is not yet supported".to_string(),
+                            Some(assignee.span),
+                        ));
+                    }
+                }
+
+                let (addr, addr_cleanup) = self.compile_operand(*index, scope)?;
+                let (val, val_cleanup) = self.compile_operand(*expression, scope)?;
+
+                self.write_instruction(Instruction::Put(device, addr, val), Some(assignee.span))?;
+
+                if let Some(c) = dev_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+                if let Some(c) = addr_cleanup {
                     scope.free_temp(c, None)?;
                 }
                 if let Some(c) = val_cleanup {

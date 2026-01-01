@@ -308,7 +308,7 @@ impl<'a> Parser<'a> {
         Ok(Some(lhs))
     }
 
-    /// Handles dot notation chains: x.y.z()
+    /// Handles dot notation chains: x.y.z() and bracket notation: x[i]
     fn parse_postfix(
         &mut self,
         mut lhs: Spanned<Expression<'a>>,
@@ -411,6 +411,40 @@ impl<'a> Parser<'a> {
                         }),
                     };
                 }
+            } else if self_matches_peek!(self, TokenType::Symbol(Symbol::LBracket)) {
+                // Index Access
+                self.assign_next()?; // consume '[', now current is '['
+                self.assign_next()?; // advance to the expression, now current is first token of index expr
+                let index = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+
+                // After expression(), current is still on the last token of the index expression
+                // We need to get the next token and verify it's ']'
+                let rbracket_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                if !token_matches!(rbracket_token, TokenType::Symbol(Symbol::RBracket)) {
+                    return Err(Error::UnexpectedToken(
+                        Self::token_to_span(&rbracket_token),
+                        rbracket_token.clone(),
+                    ));
+                }
+
+                let end_span = Self::token_to_span(&rbracket_token);
+                let combined_span = Span {
+                    start_line: lhs.span.start_line,
+                    start_col: lhs.span.start_col,
+                    end_line: end_span.end_line,
+                    end_col: end_span.end_col,
+                };
+
+                lhs = Spanned {
+                    span: combined_span,
+                    node: Expression::IndexAccess(Spanned {
+                        span: combined_span,
+                        node: IndexAccessExpression {
+                            object: boxed!(lhs),
+                            index: boxed!(index),
+                        },
+                    }),
+                };
             } else {
                 break;
             }
@@ -811,6 +845,7 @@ impl<'a> Parser<'a> {
             | Expression::BitwiseNot(_)
             | Expression::MemberAccess(_)
             | Expression::MethodCall(_)
+            | Expression::IndexAccess(_)
             | Expression::Tuple(_) => {}
             _ => {
                 return Err(Error::InvalidSyntax(
