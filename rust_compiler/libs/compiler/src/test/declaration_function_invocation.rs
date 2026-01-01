@@ -3,21 +3,29 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn no_arguments() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn doSomething() {};
         let i = doSomething();
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     let to_test = indoc! {
         "
         j main
         doSomething:
+        push sp
         push ra
         __internal_L1:
         pop ra
+        pop sp
         j ra
         main:
         jal doSomething
@@ -25,15 +33,15 @@ fn no_arguments() -> anyhow::Result<()> {
         "
     };
 
-    assert_eq!(compiled, to_test);
+    assert_eq!(result.output, to_test);
 
     Ok(())
 }
 
 #[test]
 fn let_var_args() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn mul2(arg1) {
             return arg1 * 2;
@@ -46,19 +54,27 @@ fn let_var_args() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
             mul2:
             pop r8
+            push sp
             push ra
             mul r1 r8 2
             move r15 r1
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             __internal_L2:
@@ -99,8 +115,8 @@ fn incorrect_args_count() -> anyhow::Result<()> {
 
 #[test]
 fn inline_literal_args() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn doSomething(arg1, arg2) {
             return 5;
@@ -110,19 +126,27 @@ fn inline_literal_args() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
             doSomething:
             pop r8
             pop r9
+            push sp
             push ra
             move r15 5
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             move r8 123
@@ -141,8 +165,8 @@ fn inline_literal_args() -> anyhow::Result<()> {
 
 #[test]
 fn mixed_args() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let arg1 = 123;
         let returnValue = doSomething(arg1, 456);
@@ -150,17 +174,25 @@ fn mixed_args() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
             doSomething:
             pop r8
             pop r9
+            push sp
             push ra
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             move r8 123
@@ -179,8 +211,8 @@ fn mixed_args() -> anyhow::Result<()> {
 
 #[test]
 fn with_return_statement() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn doSomething(arg1) {
             return 456;
@@ -190,18 +222,26 @@ fn with_return_statement() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
             doSomething:
             pop r8
+            push sp
             push ra
             move r15 456
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             push 123
@@ -216,8 +256,8 @@ fn with_return_statement() -> anyhow::Result<()> {
 
 #[test]
 fn with_negative_return_literal() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn doSomething() {
             return -1;
@@ -226,16 +266,24 @@ fn with_negative_return_literal() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
             doSomething:
+            push sp
             push ra
             move r15 -1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             jal doSomething

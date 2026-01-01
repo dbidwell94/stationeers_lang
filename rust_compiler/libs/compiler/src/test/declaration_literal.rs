@@ -4,13 +4,19 @@ use pretty_assertions::assert_eq;
 #[test]
 fn variable_declaration_numeric_literal() -> anyhow::Result<()> {
     let compiled = crate::compile! {
-        debug r#"
+        check r#"
             let i = 20c;
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -26,7 +32,7 @@ fn variable_declaration_numeric_literal() -> anyhow::Result<()> {
 #[test]
 fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
         let a = 0;
         let b = 1;
@@ -40,8 +46,14 @@ fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> 
         let j = 9;
     "#};
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -67,14 +79,20 @@ fn variable_declaration_numeric_literal_stack_spillover() -> anyhow::Result<()> 
 #[test]
 fn variable_declaration_negative() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let i = -1;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -90,15 +108,21 @@ fn variable_declaration_negative() -> anyhow::Result<()> {
 #[test]
 fn test_boolean_declaration() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         let t = true;
         let f = false;
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
@@ -115,7 +139,7 @@ fn test_boolean_declaration() -> anyhow::Result<()> {
 #[test]
 fn test_boolean_return() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         "
         fn getTrue() {
             return true;
@@ -125,17 +149,25 @@ fn test_boolean_return() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main
             getTrue:
+            push sp
             push ra
             move r15 1
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             jal getTrue
@@ -149,15 +181,21 @@ fn test_boolean_return() -> anyhow::Result<()> {
 
 #[test]
 fn test_const_hash_expr() -> anyhow::Result<()> {
-    let compiled = compile!(debug r#"
+    let compiled = compile!(check r#"
         const nameHash = hash("AccessCard");
         device self = "db";
 
         self.Setting = nameHash;
     "#);
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
         "
             j main
@@ -172,7 +210,7 @@ fn test_const_hash_expr() -> anyhow::Result<()> {
 #[test]
 fn test_declaration_is_const() -> anyhow::Result<()> {
     let compiled = compile! {
-        debug
+        check
         r#"
             const MAX = 100;
 
@@ -180,8 +218,14 @@ fn test_declaration_is_const() -> anyhow::Result<()> {
         "#
     };
 
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
     assert_eq!(
-        compiled,
+        compiled.output,
         indoc! {
             "
             j main

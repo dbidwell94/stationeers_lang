@@ -61,6 +61,7 @@ impl<'a> std::fmt::Display for Instructions<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct InstructionNode<'a> {
     pub instruction: Instruction<'a>,
     pub span: Option<Span>,

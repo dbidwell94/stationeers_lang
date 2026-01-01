@@ -1,0 +1,52 @@
+---
+source: libs/integration_tests/src/lib.rs
+assertion_line: 70
+expression: output
+---
+## Unoptimized Output
+
+j main
+add:
+pop r8
+pop r9
+push sp
+push ra
+add r1 r9 r8
+move r15 r1
+j __internal_L1
+__internal_L1:
+pop ra
+pop sp
+j ra
+main:
+push sp
+push ra
+push 5
+push 10
+jal add
+move r8 r15
+__internal_L2:
+pop ra
+pop sp
+j ra
+
+## Optimized Output
+
+j 9
+pop r8
+pop r9
+push sp
+push ra
+add r15 r9 r8
+pop ra
+pop sp
+j ra
+push sp
+push ra
+push 5
+push 10
+jal 1
+move r8 r15
+pop ra
+pop sp
+j ra

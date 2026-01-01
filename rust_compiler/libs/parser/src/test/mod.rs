@@ -112,7 +112,7 @@ fn test_function_invocation() -> Result<()> {
 #[test]
 fn test_priority_expression() -> Result<()> {
     let input = r#"
-            let x = (4);
+            let x = (4 + 3);
         "#;
 
     let tokenizer = Tokenizer::from(input);
@@ -120,7 +120,7 @@ fn test_priority_expression() -> Result<()> {
 
     let expression = parser.parse()?.unwrap();
 
-    assert_eq!("(let x = 4)", expression.to_string());
+    assert_eq!("(let x = ((4 + 3)))", expression.to_string());
 
     Ok(())
 }
@@ -137,7 +137,7 @@ fn test_binary_expression() -> Result<()> {
     assert_eq!("(((45 * 2) - (15 / 5)) + (5 ** 2))", expr.to_string());
 
     let expr = parser!("(5 - 2) * 10;").parse()?.unwrap();
-    assert_eq!("((5 - 2) * 10)", expr.to_string());
+    assert_eq!("(((5 - 2)) * 10)", expr.to_string());
 
     Ok(())
 }
@@ -170,7 +170,7 @@ fn test_ternary_expression() -> Result<()> {
 fn test_complex_binary_with_ternary() -> Result<()> {
     let expr = parser!("let i = (x ? 1 : 3) * 2;").parse()?.unwrap();
 
-    assert_eq!("(let i = ((x ? 1 : 3) * 2))", expr.to_string());
+    assert_eq!("(let i = (((x ? 1 : 3)) * 2))", expr.to_string());
 
     Ok(())
 }
@@ -189,5 +189,101 @@ fn test_nested_ternary_right_associativity() -> Result<()> {
     let expr = parser!("let i = a ? b : c ? d : e;").parse()?.unwrap();
 
     assert_eq!("(let i = (a ? b : (c ? d : e)))", expr.to_string());
+    Ok(())
+}
+
+#[test]
+fn test_tuple_declaration() -> Result<()> {
+    let expr = parser!("let (x, _) = (1, 2);").parse()?.unwrap();
+
+    assert_eq!("(let (x, _) = (1, 2))", expr.to_string());
+
+    Ok(())
+}
+#[test]
+fn test_tuple_assignment() -> Result<()> {
+    let expr = parser!("(x, y) = (1, 2);").parse()?.unwrap();
+
+    assert_eq!("((x, y) = (1, 2))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_assignment_with_underscore() -> Result<()> {
+    let expr = parser!("(x, _) = (1, 2);").parse()?.unwrap();
+
+    assert_eq!("((x, _) = (1, 2))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_declaration_with_function_call() -> Result<()> {
+    let expr = parser!("let (x, y) = doSomething();").parse()?.unwrap();
+
+    assert_eq!("(let (x, y) = doSomething())", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_declaration_with_function_call_with_underscore() -> Result<()> {
+    let expr = parser!("let (x, _) = doSomething();").parse()?.unwrap();
+
+    assert_eq!("(let (x, _) = doSomething())", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_assignment_with_function_call() -> Result<()> {
+    let expr = parser!("(x, y) = doSomething();").parse()?.unwrap();
+
+    assert_eq!("((x, y) = doSomething())", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_assignment_with_function_call_with_underscore() -> Result<()> {
+    let expr = parser!("(x, _) = doSomething();").parse()?.unwrap();
+
+    assert_eq!("((x, _) = doSomething())", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_declaration_with_complex_expressions() -> Result<()> {
+    let expr = parser!("let (x, y) = (1 + 1, doSomething());")
+        .parse()?
+        .unwrap();
+
+    assert_eq!("(let (x, y) = ((1 + 1), doSomething()))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_assignment_with_complex_expressions() -> Result<()> {
+    let expr = parser!("(x, y) = (doSomething(), 123 / someValue.Setting);")
+        .parse()?
+        .unwrap();
+
+    assert_eq!(
+        "((x, y) = (doSomething(), (123 / someValue.Setting)))",
+        expr.to_string()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_tuple_declaration_all_complex_expressions() -> Result<()> {
+    let expr = parser!("let (x, y) = (a + b, c * d);").parse()?.unwrap();
+
+    assert_eq!("(let (x, y) = ((a + b), (c * d)))", expr.to_string());
+
     Ok(())
 }

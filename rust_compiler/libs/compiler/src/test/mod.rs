@@ -6,6 +6,12 @@ macro_rules! output {
     };
 }
 
+/// Represents both compilation errors and compiled output
+pub struct CompilationCheckResult {
+    pub errors: Vec<crate::Error<'static>>,
+    pub output: String,
+}
+
 #[cfg_attr(test, macro_export)]
 macro_rules! compile {
     ($source:expr) => {{
@@ -27,7 +33,7 @@ macro_rules! compile {
         compiler.compile().errors
     }};
 
-    (debug $source:expr) => {{
+    (check $source:expr) => {{
         let mut writer = std::io::BufWriter::new(Vec::new());
         let compiler = crate::Compiler::new(
             parser::Parser::new(tokenizer::Tokenizer::from($source)),
@@ -35,15 +41,25 @@ macro_rules! compile {
         );
         let res = compiler.compile();
         res.instructions.write(&mut writer)?;
-        output!(writer)
+        let output = output!(writer);
+        crate::test::CompilationCheckResult {
+            errors: res.errors,
+            output,
+        }
     }};
 }
 mod binary_expression;
 mod branching;
 mod declaration_function_invocation;
 mod declaration_literal;
+mod device_access;
+mod edge_cases;
+mod error_handling;
 mod function_declaration;
 mod logic_expression;
 mod loops;
 mod math_syscall;
+mod negation_priority;
+mod scoping;
 mod syscall;
+mod tuple_literals;

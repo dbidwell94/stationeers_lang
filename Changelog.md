@@ -1,5 +1,12 @@
 # Changelog
 
+[0.5.0]
+
+- Added full tuple support: declarations, assignments, and returns
+- Refactored optimizer into modular passes with improved code generation
+- Enhanced peephole optimizations and pattern recognition
+- Comprehensive test coverage for edge cases and error handling
+
 [0.4.7]
 
 - Added support for Windows CRLF endings

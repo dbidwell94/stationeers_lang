@@ -3,8 +3,8 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn test_if_statement() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let a = 10;
         if (a > 5) {
@@ -13,8 +13,14 @@ fn test_if_statement() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -33,8 +39,8 @@ fn test_if_statement() -> anyhow::Result<()> {
 
 #[test]
 fn test_if_else_statement() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let a = 0;
         if (10 > 5) {
@@ -45,8 +51,14 @@ fn test_if_else_statement() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -68,8 +80,8 @@ fn test_if_else_statement() -> anyhow::Result<()> {
 
 #[test]
 fn test_if_else_if_statement() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let a = 0;
         if (a == 1) {
@@ -82,8 +94,14 @@ fn test_if_else_if_statement() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -111,8 +129,8 @@ fn test_if_else_if_statement() -> anyhow::Result<()> {
 
 #[test]
 fn test_spilled_variable_update_in_branch() -> anyhow::Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let a = 1;
         let b = 2;
@@ -129,8 +147,14 @@ fn test_spilled_variable_update_in_branch() -> anyhow::Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main

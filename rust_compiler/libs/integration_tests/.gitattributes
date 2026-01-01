@@ -1,0 +1,2 @@
+# Treat snapshot files as text
+*.snap text

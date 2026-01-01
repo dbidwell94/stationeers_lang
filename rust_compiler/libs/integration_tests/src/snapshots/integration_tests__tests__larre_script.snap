@@ -1,0 +1,223 @@
+---
+source: libs/integration_tests/src/lib.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+waitForIdle:
+push sp
+push ra
+yield
+__internal_L2:
+l r1 d0 Idle
+seq r2 r1 0
+beqz r2 __internal_L3
+yield
+j __internal_L2
+__internal_L3:
+__internal_L1:
+pop ra
+pop sp
+j ra
+deposit:
+push sp
+push ra
+s d0 Setting 1
+jal waitForIdle
+move r1 r15
+s d0 Activate 1
+jal waitForIdle
+move r2 r15
+s d1 Open 0
+__internal_L4:
+pop ra
+pop sp
+j ra
+checkAndHarvest:
+pop r8
+push sp
+push ra
+sle r1 r8 1
+ls r15 d0 255 Seeding
+slt r2 r15 1
+or r3 r1 r2
+beqz r3 __internal_L6
+j __internal_L5
+__internal_L6:
+__internal_L7:
+ls r15 d0 255 Mature
+beqz r15 __internal_L8
+yield
+s d0 Activate 1
+j __internal_L7
+__internal_L8:
+ls r15 d0 255 Occupied
+move r9 r15
+s d0 Setting 1
+push r8
+push r9
+jal waitForIdle
+pop r9
+pop r8
+move r4 r15
+push r8
+push r9
+jal deposit
+pop r9
+pop r8
+move r5 r15
+beqz r9 __internal_L9
+push r8
+push r9
+jal deposit
+pop r9
+pop r8
+move r6 r15
+__internal_L9:
+s d0 Setting r8
+push r8
+push r9
+jal waitForIdle
+pop r9
+pop r8
+move r6 r15
+ls r15 d0 0 Occupied
+beqz r15 __internal_L10
+s d0 Activate 1
+__internal_L10:
+push r8
+push r9
+jal waitForIdle
+pop r9
+pop r8
+move r7 r15
+__internal_L5:
+pop ra
+pop sp
+j ra
+main:
+move r8 0
+__internal_L11:
+yield
+l r1 d0 Idle
+seq r2 r1 0
+beqz r2 __internal_L13
+j __internal_L11
+__internal_L13:
+add r3 r8 1
+sgt r4 r3 19
+add r5 r8 1
+select r6 r4 2 r5
+move r9 r6
+push r8
+push r9
+push r8
+jal checkAndHarvest
+pop r9
+pop r8
+move r7 r15
+s d0 Setting r9
+move r8 r9
+j __internal_L11
+__internal_L12:
+
+## Optimized Output
+
+j 77
+push sp
+push ra
+yield
+l r1 d0 Idle
+bne r1 0 8
+yield
+j 4
+pop ra
+pop sp
+j ra
+push sp
+push ra
+s d0 Setting 1
+jal 1
+move r1 r15
+s d0 Activate 1
+jal 1
+move r2 r15
+s d1 Open 0
+pop ra
+pop sp
+j ra
+pop r8
+push sp
+push ra
+sle r1 r8 1
+ls r15 d0 255 Seeding
+slt r2 r15 1
+or r3 r1 r2
+beqz r3 32
+j 74
+ls r15 d0 255 Mature
+beqz r15 37
+yield
+s d0 Activate 1
+j 32
+ls r9 d0 255 Occupied
+s d0 Setting 1
+push r8
+push r9
+jal 1
+pop r9
+pop r8
+move r4 r15
+push r8
+push r9
+jal 11
+pop r9
+pop r8
+move r5 r15
+beqz r9 58
+push r8
+push r9
+jal 11
+pop r9
+pop r8
+move r6 r15
+s d0 Setting r8
+push r8
+push r9
+jal 1
+pop r9
+pop r8
+move r6 r15
+ls r15 d0 0 Occupied
+beqz r15 68
+s d0 Activate 1
+push r8
+push r9
+jal 1
+pop r9
+pop r8
+move r7 r15
+pop ra
+pop sp
+j ra
+move r8 0
+yield
+l r1 d0 Idle
+bne r1 0 82
+j 78
+add r3 r8 1
+sgt r4 r3 19
+add r5 r8 1
+select r6 r4 2 r5
+move r9 r6
+push r8
+push r9
+push r8
+jal 23
+pop r9
+pop r8
+move r7 r15
+s d0 Setting r9
+move r8 r9
+j 78

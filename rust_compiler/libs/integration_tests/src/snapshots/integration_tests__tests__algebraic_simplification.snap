@@ -1,0 +1,17 @@
+---
+source: libs/integration_tests/src/lib.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+move r8 5
+mul r1 r8 1
+move r9 r1
+
+## Optimized Output
+
+move r8 5
+move r1 5
+move r9 5

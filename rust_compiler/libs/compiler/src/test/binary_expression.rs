@@ -4,15 +4,21 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn simple_binary_expression() -> Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let i = 1 + 2;
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -27,8 +33,8 @@ fn simple_binary_expression() -> Result<()> {
 
 #[test]
 fn nested_binary_expressions() -> Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         fn calculateArgs(arg1, arg2, arg3) {
             return (arg1 + arg2) * arg3;
@@ -38,8 +44,14 @@ fn nested_binary_expressions() -> Result<()> {
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -47,6 +59,7 @@ fn nested_binary_expressions() -> Result<()> {
             pop r8
             pop r9
             pop r10
+            push sp
             push ra
             add r1 r10 r9
             mul r2 r1 r8
@@ -54,6 +67,7 @@ fn nested_binary_expressions() -> Result<()> {
             j __internal_L1
             __internal_L1:
             pop ra
+            pop sp
             j ra
             main:
             push 10
@@ -72,15 +86,21 @@ fn nested_binary_expressions() -> Result<()> {
 
 #[test]
 fn stress_test_constant_folding() -> Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         "
         let negationHell = (-1 + -2) * (-3 + (-4 * (-5 + -6)));
         "
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -95,16 +115,22 @@ fn stress_test_constant_folding() -> Result<()> {
 
 #[test]
 fn test_constant_folding_with_variables_mixed_in() -> Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         r#"
         device self = "db";
         let i = 1 - 3 * (1 + 123.4) * self.Setting + 245c;
         "#
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -123,15 +149,21 @@ fn test_constant_folding_with_variables_mixed_in() -> Result<()> {
 
 #[test]
 fn test_ternary_expression() -> Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         r#"
         let i = 1 > 2 ? 15 : 20;
         "#
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -148,16 +180,22 @@ fn test_ternary_expression() -> Result<()> {
 
 #[test]
 fn test_ternary_expression_assignment() -> Result<()> {
-    let compiled = compile! {
-        debug
+    let result = compile! {
+        check
         r#"
         let i = 0;
         i = 1 > 2 ? 15 : 20;
         "#
     };
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -175,15 +213,21 @@ fn test_ternary_expression_assignment() -> Result<()> {
 
 #[test]
 fn test_negative_literals() -> Result<()> {
-    let compiled = compile!(
-    debug
+    let result = compile!(
+    check
     r#"
         let item = -10c - 20c;
     "#
     );
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
@@ -198,16 +242,22 @@ fn test_negative_literals() -> Result<()> {
 
 #[test]
 fn test_mismatched_temperature_literals() -> Result<()> {
-    let compiled = compile!(
-    debug
+    let result = compile!(
+    check
     r#"
         let item = -10c - 100k;
         let item2 = item + 500c;
     "#
     );
 
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
     assert_eq!(
-        compiled,
+        result.output,
         indoc! {
             "
             j main
