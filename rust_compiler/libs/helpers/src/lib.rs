@@ -1,4 +1,5 @@
 mod helper_funcs;
+pub use helper_funcs::dedent;
 mod macros;
 mod syscall;
 
