@@ -99,12 +99,12 @@ macro_rules! documented {
                                 ),*
                             ];
 
-                            doc_lines.iter()
+                            let combined = doc_lines.iter()
                                 .filter_map(|&d| d)
                                 .collect::<Vec<_>>()
-                                .join("\n")
-                                .trim()
-                                .to_string()
+                                .join("\n");
+
+                            $crate::dedent(&combined).trim().to_string()
                         }
                     )*
                 }
@@ -122,12 +122,13 @@ macro_rules! documented {
                                         documented!(@doc_filter #[ $($variant_attr)* ])
                                     ),*
                                 ];
-                                doc_lines.iter()
+
+                                let combined = doc_lines.iter()
                                     .filter_map(|&d| d)
                                     .collect::<Vec<_>>()
-                                    .join("\n")
-                                    .trim()
-                                    .to_string()
+                                    .join("\n");
+
+                                $crate::dedent(&combined).trim().to_string()
                             }
                         )
                     ),*
@@ -136,4 +137,3 @@ macro_rules! documented {
         }
     };
 }
-
