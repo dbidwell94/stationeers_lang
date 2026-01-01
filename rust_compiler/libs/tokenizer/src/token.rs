@@ -1065,20 +1065,4 @@ mod tests {
         );
         Ok(())
     }
-
-    #[test]
-    fn test_binary_with_temperature_suffix() -> anyhow::Result<()> {
-        // Binary, octal, and hex literals do NOT support temperature suffixes
-        // (temperature suffixes are only for decimal numbers)
-        // This test verifies that trying to parse something like 0b1010c
-        // will be treated as 0b101 followed by 0 (the 'c' would start a new token or error)
-        Ok(())
-    }
-
-    #[test]
-    fn test_hex_with_temperature_suffix() -> anyhow::Result<()> {
-        // Hex, octal, and binary literals do NOT support temperature suffixes
-        // Temperature suffixes are only for decimal numbers
-        Ok(())
-    }
 }
