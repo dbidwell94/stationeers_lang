@@ -2162,14 +2162,36 @@ impl<'a> Compiler<'a> {
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompileLocation<'a>, Error<'a>> {
         fn fold_binary_expression<'a>(expr: &BinaryExpression<'a>) -> Option<Number> {
+            fn number_to_i64(n: Number) -> Option<i64> {
+                match n {
+                    Number::Integer(i, _) => i64::try_from(i).ok(),
+                    Number::Decimal(d, _) => {
+                        // Convert decimal to i64 by truncating
+                        let int_part = d.trunc();
+                        i64::try_from(int_part.mantissa() / 10_i128.pow(int_part.scale())).ok()
+                    }
+                }
+            }
+
+            fn i64_to_number(i: i64) -> Number {
+                Number::Integer(i as i128, Unit::None)
+            }
+
             let (lhs, rhs) = match &expr {
                 BinaryExpression::Add(l, r)
                 | BinaryExpression::Subtract(l, r)
                 | BinaryExpression::Multiply(l, r)
                 | BinaryExpression::Divide(l, r)
                 | BinaryExpression::Exponent(l, r)
-                | BinaryExpression::Modulo(l, r) => (fold_expression(l)?, fold_expression(r)?),
-                _ => return None,
+                | BinaryExpression::Modulo(l, r)
+                | BinaryExpression::BitwiseAnd(l, r)
+                | BinaryExpression::BitwiseOr(l, r)
+                | BinaryExpression::BitwiseXor(l, r)
+                | BinaryExpression::LeftShift(l, r)
+                | BinaryExpression::RightShiftArithmetic(l, r)
+                | BinaryExpression::RightShiftLogical(l, r) => {
+                    (fold_expression(l)?, fold_expression(r)?)
+                }
             };
 
             match expr {
@@ -2178,7 +2200,37 @@ impl<'a> Compiler<'a> {
                 BinaryExpression::Multiply(..) => Some(lhs * rhs),
                 BinaryExpression::Divide(..) => Some(lhs / rhs), // Watch out for div by zero panics!
                 BinaryExpression::Modulo(..) => Some(lhs % rhs),
-                _ => None, // Handle Exponent separately or implement pow
+                BinaryExpression::BitwiseAnd(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int & rhs_int))
+                }
+                BinaryExpression::BitwiseOr(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int | rhs_int))
+                }
+                BinaryExpression::BitwiseXor(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int ^ rhs_int))
+                }
+                BinaryExpression::LeftShift(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int << rhs_int))
+                }
+                BinaryExpression::RightShiftArithmetic(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int >> rhs_int))
+                }
+                BinaryExpression::RightShiftLogical(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int >> rhs_int))
+                }
+                _ => None, // Exponent not handled in compile-time folding
             }
         }
 

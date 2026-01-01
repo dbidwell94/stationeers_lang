@@ -135,6 +135,9 @@ pub enum TokenType<'a> {
     /// Represents a string token
     String(Cow<'a, str>),
 
+    #[regex(r"0[xX][0-9a-fA-F][0-9a-fA-F_]*([cfk])?", parse_number)]
+    #[regex(r"0[oO][0-7][0-7_]*([cfk])?", parse_number)]
+    #[regex(r"0[bB][01][01_]*([cfk])?", parse_number)]
     #[regex(r"[0-9][0-9_]*(\.[0-9][0-9_]*)?([cfk])?", parse_number)]
     /// Represents a number token
     Number(Number),
@@ -254,7 +257,33 @@ fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexE
         _ => Unit::None,
     };
 
-    if clean_str.contains('.') {
+    // Determine the base and parse accordingly
+    if clean_str.starts_with("0x") || clean_str.starts_with("0X") {
+        // Hexadecimal
+        let hex_part = &clean_str[2..];
+        Ok(Number::Integer(
+            i128::from_str_radix(hex_part, 16)
+                .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
+            unit,
+        ))
+    } else if clean_str.starts_with("0o") || clean_str.starts_with("0O") {
+        // Octal
+        let octal_part = &clean_str[2..];
+        Ok(Number::Integer(
+            i128::from_str_radix(octal_part, 8)
+                .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
+            unit,
+        ))
+    } else if clean_str.starts_with("0b") || clean_str.starts_with("0B") {
+        // Binary
+        let binary_part = &clean_str[2..];
+        Ok(Number::Integer(
+            i128::from_str_radix(binary_part, 2)
+                .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
+            unit,
+        ))
+    } else if clean_str.contains('.') {
+        // Decimal floating point
         Ok(Number::Decimal(
             clean_str
                 .parse::<Decimal>()
@@ -262,6 +291,7 @@ fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexE
             unit,
         ))
     } else {
+        // Decimal integer
         Ok(Number::Integer(
             clean_str
                 .parse::<i128>()
