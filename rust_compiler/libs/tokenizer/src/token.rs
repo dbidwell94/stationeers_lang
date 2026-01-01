@@ -789,7 +789,7 @@ documented! {
         /// }
         /// ```
         Continue,
-        /// Prepresents the `const` keyword. This allows you to define a variable that will never
+        /// Represents the `const` keyword. This allows you to define a variable that will never
         /// change throughout the lifetime of the program, similar to `define` in IC10. If you are
         /// not planning on mutating the variable (changing it), it is recommend you store it as a
         /// const, as the compiler will not assign it to a register or stack variable.
@@ -931,7 +931,10 @@ mod tests {
 
         let tokens = lexer.collect::<Vec<_>>();
 
-        assert!(!tokens.iter().any(|res| res.is_err()));
+        assert!(
+            !tokens.iter().any(|res| res.is_err()),
+            "Expected no lexing errors for CRLF endings"
+        );
         Ok(())
     }
 

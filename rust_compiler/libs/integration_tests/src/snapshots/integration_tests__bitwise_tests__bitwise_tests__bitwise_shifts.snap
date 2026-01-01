@@ -1,0 +1,26 @@
+---
+source: libs/integration_tests/src/bitwise_tests.rs
+assertion_line: 29
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+move r8 8
+sll r1 r8 2
+move r9 r1
+sra r2 r8 1
+move r10 r2
+srl r3 r8 1
+move r11 r3
+
+## Optimized Output
+
+move r8 8
+sll r1 r8 2
+move r9 r1
+sra r2 r8 1
+move r10 r2
+srl r3 r8 1
+move r11 r3

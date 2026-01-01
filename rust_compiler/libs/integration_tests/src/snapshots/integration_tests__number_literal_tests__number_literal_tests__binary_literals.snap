@@ -1,0 +1,20 @@
+---
+source: libs/integration_tests/src/number_literal_tests.rs
+assertion_line: 15
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+move r8 172
+move r9 493
+move r10 3735928559
+move r11 51966
+
+## Optimized Output
+
+move r8 172
+move r9 493
+move r10 3735928559
+move r11 51966
