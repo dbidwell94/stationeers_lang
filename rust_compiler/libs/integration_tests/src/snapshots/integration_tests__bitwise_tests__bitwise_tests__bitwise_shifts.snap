@@ -18,9 +18,9 @@ move r11 r3
 ## Optimized Output
 
 move r8 8
-sll r1 r8 2
-move r9 r1
-sra r2 r8 1
-move r10 r2
-srl r3 r8 1
-move r11 r3
+move r1 32
+move r9 32
+move r2 4
+move r10 4
+move r3 4
+move r11 4

@@ -68,6 +68,9 @@ pub enum Error<'a> {
     TupleSizeMismatch(usize, usize, Span),
 
     #[error("{0}")]
+    OperationNotSupported(String, Span),
+
+    #[error("{0}")]
     Unknown(String, Option<Span>),
 }
 
@@ -89,7 +92,8 @@ impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
             | ConstAssignment(_, span)
             | DeviceAssignment(_, span)
             | AgrumentMismatch(_, span)
-            | TupleSizeMismatch(_, _, span) => Diagnostic {
+            | TupleSizeMismatch(_, _, span)
+            | OperationNotSupported(_, span) => Diagnostic {
                 range: span.into(),
                 message: value.to_string(),
                 severity: Some(DiagnosticSeverity::ERROR),
@@ -497,9 +501,9 @@ impl<'a> Compiler<'a> {
                 // Check if device is "db" (not allowed)
                 if let Operand::Device(ref dev_str) = device {
                     if dev_str.as_ref() == "db" {
-                        return Err(Error::Unknown(
+                        return Err(Error::OperationNotSupported(
                             "Direct stack access on 'db' is not yet supported".to_string(),
-                            Some(expr.span),
+                            expr.span,
                         ));
                     }
                 }
@@ -1152,9 +1156,9 @@ impl<'a> Compiler<'a> {
                 // Check if device is "db" (not allowed)
                 if let Operand::Device(ref dev_str) = device {
                     if dev_str.as_ref() == "db" {
-                        return Err(Error::Unknown(
+                        return Err(Error::OperationNotSupported(
                             "Direct stack access on 'db' is not yet supported".to_string(),
-                            Some(assignee.span),
+                            assignee.span,
                         ));
                     }
                 }
@@ -2355,7 +2359,22 @@ impl<'a> Compiler<'a> {
                 // 4. Handle Binary Ops: Recurse BOTH sides, then combine
                 Expression::Binary(bin) => fold_binary_expression(&bin.node),
 
-                // 5. Anything else (Variables, Function Calls) cannot be compile-time folded
+                // 5. Handle hash() macro - evaluates to a constant at compile time
+                Expression::Invocation(inv) => {
+                    if inv.node.name.node == "hash" && inv.node.arguments.len() == 1 {
+                        if let Expression::Literal(Spanned {
+                            node: Literal::String(str_to_hash),
+                            ..
+                        }) = &inv.node.arguments[0].node
+                        {
+                            // hash() takes a string literal and returns a signed integer
+                            return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
+                        }
+                    }
+                    None
+                }
+
+                // 6. Anything else cannot be compile-time folded
                 _ => None,
             }
         }

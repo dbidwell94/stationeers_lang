@@ -8,6 +8,8 @@ mod bitwise_tests;
 #[cfg(test)]
 mod common;
 #[cfg(test)]
+mod device_indexing_tests;
+#[cfg(test)]
 mod function_tests;
 #[cfg(test)]
 mod number_literal_tests;

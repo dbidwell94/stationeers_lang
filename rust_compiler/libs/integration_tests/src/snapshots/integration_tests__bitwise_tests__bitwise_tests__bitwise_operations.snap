@@ -22,8 +22,11 @@ move r13 r4
 
 move r8 5
 move r9 3
-and r10 r8 r9
-or r11 r8 r9
-xor r12 r8 r9
+move r1 1
+move r10 1
+move r2 7
+move r11 7
+move r3 6
+move r12 6
 not r4 r8
 move r13 r4

@@ -31,6 +31,26 @@ pub fn constant_propagation<'a>(
             Instruction::Mod(dst, a, b) => try_fold_math(dst, a, b, &registers, |x, y| {
                 if y.is_zero() { Decimal::ZERO } else { x % y }
             }),
+            Instruction::And(dst, a, b) => try_fold_bitwise(dst, a, b, &registers, |x, y| x & y),
+            Instruction::Or(dst, a, b) => try_fold_bitwise(dst, a, b, &registers, |x, y| x | y),
+            Instruction::Xor(dst, a, b) => try_fold_bitwise(dst, a, b, &registers, |x, y| x ^ y),
+            Instruction::Sll(dst, a, b) => try_fold_bitwise(dst, a, b, &registers, |x, y| {
+                if y >= 64 { 0 } else { x << y as u32 }
+            }),
+            Instruction::Sra(dst, a, b) => try_fold_bitwise(dst, a, b, &registers, |x, y| {
+                if y >= 64 {
+                    (if x < 0 { -1 } else { 0 })
+                } else {
+                    x >> y as u32
+                }
+            }),
+            Instruction::Srl(dst, a, b) => try_fold_bitwise(dst, a, b, &registers, |x, y| {
+                if y >= 64 {
+                    0
+                } else {
+                    (x as u64 >> y as u32) as i64
+                }
+            }),
             Instruction::BranchEq(a, b, l) => {
                 try_resolve_branch(a, b, l, &registers, |x, y| x == y)
             }
@@ -107,6 +127,43 @@ where
     Some(Instruction::Move(
         dst.clone(),
         Operand::Number(op(val_a, val_b)),
+    ))
+}
+
+fn decimal_to_i64(d: Decimal) -> i64 {
+    // Convert decimal to i64, truncating if needed
+    if let Ok(int_val) = d.try_into() {
+        int_val
+    } else {
+        // For very large or very small values, use a default
+        if d.is_sign_negative() {
+            i64::MIN
+        } else {
+            i64::MAX
+        }
+    }
+}
+
+fn i64_to_decimal(i: i64) -> Decimal {
+    Decimal::from(i)
+}
+
+fn try_fold_bitwise<'a, F>(
+    dst: &Operand<'a>,
+    a: &Operand<'a>,
+    b: &Operand<'a>,
+    regs: &[Option<Decimal>; 16],
+    op: F,
+) -> Option<Instruction<'a>>
+where
+    F: Fn(i64, i64) -> i64,
+{
+    let val_a = resolve_value(a, regs)?;
+    let val_b = resolve_value(b, regs)?;
+    let result = op(decimal_to_i64(val_a), decimal_to_i64(val_b));
+    Some(Instruction::Move(
+        dst.clone(),
+        Operand::Number(i64_to_decimal(result)),
     ))
 }
 
