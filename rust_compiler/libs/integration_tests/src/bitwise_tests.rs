@@ -74,4 +74,20 @@ mod bitwise_tests {
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
+
+    #[test]
+    fn test_sorter_bitwise_operations() {
+        let source = indoc! {r#"
+            device self = "db";
+            device sorter = "d0";
+
+            loop {
+                yield();
+                // allow Hay with an op_code of `1`
+                sorter[0] = (hash("ItemCropHay") << 8) | 1;
+            }
+        "#};
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
 }

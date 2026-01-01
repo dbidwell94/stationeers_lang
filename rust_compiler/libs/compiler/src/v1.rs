@@ -391,6 +391,26 @@ impl<'a> Compiler<'a> {
             }
             Expression::Ternary(tern) => Ok(Some(self.expression_ternary(tern.node, scope)?)),
             Expression::Invocation(expr_invoke) => {
+                // Special case: hash() with string literal can be evaluated at compile time
+                if expr_invoke.node.name.node == "hash" && expr_invoke.node.arguments.len() == 1 {
+                    if let Expression::Literal(Spanned {
+                        node: Literal::String(str_to_hash),
+                        ..
+                    }) = &expr_invoke.node.arguments[0].node
+                    {
+                        // Evaluate hash at compile time
+                        let hash_value = crc_hash_signed(str_to_hash);
+                        return Ok(Some(CompileLocation {
+                            location: VariableLocation::Constant(Literal::Number(Number::Integer(
+                                hash_value,
+                                Unit::None,
+                            ))),
+                            temp_name: None,
+                        }));
+                    }
+                }
+
+                // Non-constant hash calls or other function calls
                 self.expression_function_invocation(expr_invoke, scope)?;
                 // Invocation returns result in r15 (RETURN_REGISTER).
                 // If used as an expression, we must move it to a temp to avoid overwrite.
@@ -2359,7 +2379,19 @@ impl<'a> Compiler<'a> {
                 // 4. Handle Binary Ops: Recurse BOTH sides, then combine
                 Expression::Binary(bin) => fold_binary_expression(&bin.node),
 
-                // 5. Handle hash() macro - evaluates to a constant at compile time
+                // 5. Handle hash() syscall - evaluates to a constant at compile time
+                Expression::Syscall(Spanned {
+                    node:
+                        SysCall::System(System::Hash(Spanned {
+                            node: Literal::String(str_to_hash),
+                            ..
+                        })),
+                    ..
+                }) => {
+                    return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
+                }
+
+                // 6. Handle hash() macro as invocation - evaluates to a constant at compile time
                 Expression::Invocation(inv) => {
                     if inv.node.name.node == "hash" && inv.node.arguments.len() == 1 {
                         if let Expression::Literal(Spanned {
@@ -2374,7 +2406,7 @@ impl<'a> Compiler<'a> {
                     None
                 }
 
-                // 6. Anything else cannot be compile-time folded
+                // 7. Anything else cannot be compile-time folded
                 _ => None,
             }
         }
