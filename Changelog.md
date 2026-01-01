@@ -1,5 +1,13 @@
 # Changelog
 
+[0.5.1]
+
+- Fixed optimizer bug where `StoreBatch` and `StoreBatchNamed` instructions
+  were not recognized as reading operands, causing incorrect elimination of
+  necessary device property loads
+- Added comprehensive register read tracking for `StoreSlot`, `JumpRelative`,
+  and `Alias` instructions in the optimizer
+
 [0.5.0]
 
 - Added full tuple support: declarations, assignments, and returns

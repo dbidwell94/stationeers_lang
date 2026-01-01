@@ -18,6 +18,12 @@ mod tests {
         let compiler = Compiler::new(parser, None);
         let result = compiler.compile();
 
+        assert!(
+            result.errors.is_empty(),
+            "Compilation errors: {:?}",
+            result.errors
+        );
+
         // Get unoptimized output
         let mut unoptimized_writer = std::io::BufWriter::new(Vec::new());
         result
@@ -216,6 +222,22 @@ mod tests {
     #[test]
     fn test_reagent_processing() {
         let source = include_str!("./test_files/reagent_processing.stlg");
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
+
+    #[test]
+    fn test_setbatched_with_member_access() {
+        let source = indoc! {r#"
+            const SENSOR = 20088;
+            const PANELS = hash("StructureSolarPanelDual");
+            
+            loop {
+              setBatched(PANELS, "Horizontal", SENSOR.Horizontal);
+              setBatched(PANELS, "Vertical", SENSOR.Vertical + 90);
+              yield();
+            }
+        "#};
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
