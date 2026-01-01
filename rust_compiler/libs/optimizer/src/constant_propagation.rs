@@ -39,7 +39,7 @@ pub fn constant_propagation<'a>(
             }),
             Instruction::Sra(dst, a, b) => try_fold_bitwise(dst, a, b, &registers, |x, y| {
                 if y >= 64 {
-                    (if x < 0 { -1 } else { 0 })
+                    if x < 0 { -1 } else { 0 }
                 } else {
                     x >> y as u32
                 }
