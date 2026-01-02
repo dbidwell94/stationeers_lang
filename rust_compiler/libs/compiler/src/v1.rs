@@ -145,6 +145,7 @@ struct CompileLocation<'a> {
 pub struct CompilationResult<'a> {
     pub errors: Vec<Error<'a>>,
     pub instructions: Instructions<'a>,
+    pub metadata: crate::CompilationMetadata<'a>,
 }
 
 /// Metadata for the currently compiling function
@@ -202,6 +203,8 @@ pub struct Compiler<'a> {
     pub source_map: HashMap<usize, Vec<Span>>,
     /// Accumulative errors from the compilation process
     pub errors: Vec<Error<'a>>,
+    /// Metadata about symbols encountered during compilation
+    pub metadata: crate::CompilationMetadata<'a>,
 }
 
 impl<'a> Compiler<'a> {
@@ -219,6 +222,7 @@ impl<'a> Compiler<'a> {
             loop_stack: Vec::new(),
             source_map: HashMap::new(),
             errors: Vec::new(),
+            metadata: crate::CompilationMetadata::new(),
         }
     }
 
@@ -237,6 +241,7 @@ impl<'a> Compiler<'a> {
                 return CompilationResult {
                     errors: self.errors,
                     instructions: self.instructions,
+                    metadata: self.metadata,
                 };
             }
             Err(e) => {
@@ -245,6 +250,7 @@ impl<'a> Compiler<'a> {
                 return CompilationResult {
                     errors: self.errors,
                     instructions: self.instructions,
+                    metadata: self.metadata,
                 };
             }
         };
@@ -270,6 +276,7 @@ impl<'a> Compiler<'a> {
             return CompilationResult {
                 errors: self.errors,
                 instructions: self.instructions,
+                metadata: self.metadata,
             };
         }
 
@@ -283,6 +290,7 @@ impl<'a> Compiler<'a> {
         CompilationResult {
             errors: self.errors,
             instructions: self.instructions,
+            metadata: self.metadata,
         }
     }
 
