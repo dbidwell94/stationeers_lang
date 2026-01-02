@@ -2286,7 +2286,10 @@ impl<'a> Compiler<'a> {
         expr: Spanned<BinaryExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompileLocation<'a>, Error<'a>> {
-        fn fold_binary_expression<'a>(expr: &BinaryExpression<'a>) -> Option<Number> {
+        fn fold_binary_expression<'a>(
+            expr: &BinaryExpression<'a>,
+            scope: &VariableScope<'a, '_>,
+        ) -> Option<Number> {
             fn number_to_i64(n: Number) -> Option<i64> {
                 match n {
                     Number::Integer(i, _) => i64::try_from(i).ok(),
@@ -2315,7 +2318,7 @@ impl<'a> Compiler<'a> {
                 | BinaryExpression::LeftShift(l, r)
                 | BinaryExpression::RightShiftArithmetic(l, r)
                 | BinaryExpression::RightShiftLogical(l, r) => {
-                    (fold_expression(l)?, fold_expression(r)?)
+                    (fold_expression(l, scope)?, fold_expression(r, scope)?)
                 }
             };
 
@@ -2359,7 +2362,10 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        fn fold_expression<'a>(expr: &Expression<'a>) -> Option<Number> {
+        fn fold_expression<'a>(
+            expr: &Expression<'a>,
+            scope: &VariableScope<'a, '_>,
+        ) -> Option<Number> {
             match expr {
                 // 1. Base Case: It's already a number
                 Expression::Literal(lit) => match lit.node {
@@ -2368,18 +2374,28 @@ impl<'a> Compiler<'a> {
                 },
 
                 // 2. Handle Parentheses: Just recurse deeper
-                Expression::Priority(inner) => fold_expression(&inner.node),
+                Expression::Priority(inner) => fold_expression(&inner.node, scope),
 
                 // 3. Handle Negation: Recurse, then negate
                 Expression::Negation(inner) => {
-                    let val = fold_expression(&inner.node)?;
+                    let val = fold_expression(&inner.node, scope)?;
                     Some(-val) // Requires impl Neg for Number
                 }
 
                 // 4. Handle Binary Ops: Recurse BOTH sides, then combine
-                Expression::Binary(bin) => fold_binary_expression(&bin.node),
+                Expression::Binary(bin) => fold_binary_expression(&bin.node, scope),
 
-                // 5. Handle hash() syscall - evaluates to a constant at compile time
+                // 5. Handle Variable Reference: Check if it's a const
+                Expression::Variable(var_id) => {
+                    if let Ok(var_loc) = scope.get_location_of(var_id, None) {
+                        if let VariableLocation::Constant(Literal::Number(num)) = var_loc {
+                            return Some(num);
+                        }
+                    }
+                    None
+                }
+
+                // 6. Handle hash() syscall - evaluates to a constant at compile time
                 Expression::Syscall(Spanned {
                     node:
                         SysCall::System(System::Hash(Spanned {
@@ -2391,7 +2407,7 @@ impl<'a> Compiler<'a> {
                     return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
                 }
 
-                // 6. Handle hash() macro as invocation - evaluates to a constant at compile time
+                // 7. Handle hash() macro as invocation - evaluates to a constant at compile time
                 Expression::Invocation(inv) => {
                     if inv.node.name.node == "hash" && inv.node.arguments.len() == 1 {
                         if let Expression::Literal(Spanned {
@@ -2406,12 +2422,12 @@ impl<'a> Compiler<'a> {
                     None
                 }
 
-                // 7. Anything else cannot be compile-time folded
+                // 8. Anything else cannot be compile-time folded
                 _ => None,
             }
         }
 
-        if let Some(const_lit) = fold_binary_expression(&expr.node) {
+        if let Some(const_lit) = fold_binary_expression(&expr.node, scope) {
             return Ok(CompileLocation {
                 location: VariableLocation::Constant(Literal::Number(const_lit)),
                 temp_name: None,
@@ -2925,6 +2941,13 @@ impl<'a> Compiler<'a> {
                 cleanup!(var_cleanup);
                 Ok(None)
             }
+            System::Clr(device) => {
+                let (op, var_cleanup) = self.compile_operand(*device, scope)?;
+                self.write_instruction(Instruction::Clr(op), Some(span))?;
+
+                cleanup!(var_cleanup);
+                Ok(None)
+            }
             System::Hash(hash_arg) => {
                 let Spanned {
                     node: Literal::String(str_lit),
@@ -3243,6 +3266,42 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 cleanup!(reagent_cleanup, reagent_hash_cleanup, device_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            System::Rmap(device, reagent_hash) => {
+                let Spanned {
+                    node: LiteralOrVariable::Variable(device_spanned),
+                    ..
+                } = device
+                else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a variable".into(),
+                        span,
+                    ));
+                };
+
+                let (device, device_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Variable(device_spanned),
+                    scope,
+                )?;
+
+                let (reagent_hash, reagent_hash_cleanup) =
+                    self.compile_operand(*reagent_hash, scope)?;
+
+                self.write_instruction(
+                    Instruction::Rmap(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        device,
+                        reagent_hash,
+                    ),
+                    Some(span),
+                )?;
+
+                cleanup!(reagent_hash_cleanup, device_cleanup);
 
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),

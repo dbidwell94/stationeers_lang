@@ -142,6 +142,12 @@ documented! {
         /// ## Slang
         /// `sleep(number|var);`
         Sleep(Box<Spanned<Expression<'a>>>),
+        /// Clears stack memory on the provided device.
+        /// ## IC10
+        /// `clr d?`
+        /// ## Slang
+        /// `clr(device);`
+        Clr(Box<Spanned<Expression<'a>>>),
         /// Gets the in-game hash for a specific prefab name. NOTE! This call is COMPLETELY
         /// optimized away unless you bind it to a `let` variable. If you use a `const` variable
         /// however, the hash is correctly computed at compile time and substitued automatically.
@@ -249,6 +255,17 @@ documented! {
             Spanned<LiteralOrVariable<'a>>,
             Spanned<Literal<'a>>,
             Box<Spanned<Expression<'a>>>
+        ),
+        /// Maps a reagent hash to the item hash that fulfills it on a device
+        ///
+        /// ## IC10
+        /// `rmap r? d? reagentHash(r?|num)`
+        /// ## Slang
+        /// `let itemHash = rmap(device, reagentHash);`
+        /// `let itemHash = rmap(device, reagentHashValue);`
+        Rmap(
+            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>
         )
     }
 }
@@ -258,6 +275,7 @@ impl<'a> std::fmt::Display for System<'a> {
         match self {
             System::Yield => write!(f, "yield()"),
             System::Sleep(a) => write!(f, "sleep({})", a),
+            System::Clr(a) => write!(f, "clr({})", a),
             System::Hash(a) => write!(f, "hash({})", a),
             System::LoadFromDevice(a, b) => write!(f, "loadFromDevice({}, {})", a, b),
             System::LoadBatch(a, b, c) => write!(f, "loadBatch({}, {}, {})", a, b, c),
@@ -274,6 +292,7 @@ impl<'a> std::fmt::Display for System<'a> {
             System::LoadSlot(a, b, c) => write!(f, "loadSlot({}, {}, {})", a, b, c),
             System::SetSlot(a, b, c, d) => write!(f, "setSlot({}, {}, {}, {})", a, b, c, d),
             System::LoadReagent(a, b, c) => write!(f, "loadReagent({}, {}, {})", a, b, c),
+            System::Rmap(a, b) => write!(f, "rmap({}, {})", a, b),
         }
     }
 }

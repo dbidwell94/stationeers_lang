@@ -1,0 +1,21 @@
+---
+source: libs/integration_tests/src/bitwise_tests.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+__internal_L1:
+yield
+clr d0
+put d0 0 1245187
+j __internal_L1
+__internal_L2:
+
+## Optimized Output
+
+yield
+clr d0
+put d0 0 1245187
+j 0

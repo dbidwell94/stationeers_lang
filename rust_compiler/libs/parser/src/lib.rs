@@ -1960,6 +1960,11 @@ impl<'a> Parser<'a> {
                 let expr = args.next().ok_or_else(|| self.unexpected_eof())?;
                 Ok(SysCall::System(System::Sleep(boxed!(expr))))
             }
+            "clr" => {
+                let mut args = args!(1);
+                let expr = args.next().ok_or_else(|| self.unexpected_eof())?;
+                Ok(SysCall::System(System::Clr(boxed!(expr))))
+            }
             "hash" => {
                 let mut args = args!(1);
                 let lit_str = literal_or_variable!(args.next());
@@ -2188,6 +2193,17 @@ impl<'a> Parser<'a> {
                 Ok(SysCall::System(System::LoadReagent(
                     device,
                     reagent_mode,
+                    Box::new(reagent_hash),
+                )))
+            }
+            "rmap" => {
+                let mut args = args!(2);
+                let next = args.next();
+                let device = literal_or_variable!(next);
+                let reagent_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
+
+                Ok(SysCall::System(System::Rmap(
+                    device,
                     Box::new(reagent_hash),
                 )))
             }

@@ -43,6 +43,7 @@ pub fn get_destination_reg(instr: &Instruction) -> Option<u8> {
         | Instruction::Tan(Operand::Register(r), _)
         | Instruction::Trunc(Operand::Register(r), _)
         | Instruction::LoadReagent(Operand::Register(r), _, _, _)
+        | Instruction::Rmap(Operand::Register(r), _, _)
         | Instruction::Pop(Operand::Register(r)) => Some(*r),
         _ => None,
     }
@@ -107,6 +108,7 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
         Instruction::Sqrt(_, a) => Some(Instruction::Sqrt(r, a.clone())),
         Instruction::Tan(_, a) => Some(Instruction::Tan(r, a.clone())),
         Instruction::Trunc(_, a) => Some(Instruction::Trunc(r, a.clone())),
+        Instruction::Rmap(_, a, b) => Some(Instruction::Rmap(r, a.clone(), b.clone())),
         _ => None,
     }
 }
@@ -136,6 +138,7 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
         | Instruction::BranchLe(a, b, _) => check(a) || check(b),
         Instruction::BranchEqZero(a, _) | Instruction::BranchNeZero(a, _) => check(a),
         Instruction::LoadReagent(_, device, _, item_hash) => check(device) || check(item_hash),
+        Instruction::Rmap(_, device, reagent_hash) => check(device) || check(reagent_hash),
         Instruction::LoadSlot(_, dev, slot, _) => check(dev) || check(slot),
         Instruction::LoadBatch(_, dev, _, mode) => check(dev) || check(mode),
         Instruction::LoadBatchNamed(_, d_hash, n_hash, _, mode) => {

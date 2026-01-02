@@ -195,6 +195,9 @@ pub enum Instruction<'a> {
     /// `lr register device reagentMode int`
     LoadReagent(Operand<'a>, Operand<'a>, Operand<'a>, Operand<'a>),
 
+    /// `rmap register device reagentHash` - Resolve Reagent to Item Hash
+    Rmap(Operand<'a>, Operand<'a>, Operand<'a>),
+
     /// `j label` - Unconditional Jump
     Jump(Operand<'a>),
     /// `jal label` - Jump and Link (Function Call)
@@ -267,6 +270,8 @@ pub enum Instruction<'a> {
     Yield,
     /// `sleep val` - Sleep for seconds
     Sleep(Operand<'a>),
+    /// `clr val` - Clear stack memory on device
+    Clr(Operand<'a>),
 
     /// `alias name target` - Define Alias (Usually handled by compiler, but good for IR)
     Alias(Cow<'a, str>, Operand<'a>),
@@ -328,6 +333,9 @@ impl<'a> fmt::Display for Instruction<'a> {
             Instruction::LoadReagent(reg, device, reagent_mode, reagent_hash) => {
                 write!(f, "lr {} {} {} {}", reg, device, reagent_mode, reagent_hash)
             }
+            Instruction::Rmap(reg, device, reagent_hash) => {
+                write!(f, "rmap {} {} {}", reg, device, reagent_hash)
+            }
             Instruction::Jump(lbl) => write!(f, "j {}", lbl),
             Instruction::JumpAndLink(lbl) => write!(f, "jal {}", lbl),
             Instruction::JumpRelative(off) => write!(f, "jr {}", off),
@@ -363,6 +371,7 @@ impl<'a> fmt::Display for Instruction<'a> {
             }
             Instruction::Yield => write!(f, "yield"),
             Instruction::Sleep(val) => write!(f, "sleep {}", val),
+            Instruction::Clr(val) => write!(f, "clr {}", val),
             Instruction::Alias(name, target) => write!(f, "alias {} {}", name, target),
             Instruction::Define(name, val) => write!(f, "define {} {}", name, val),
             Instruction::LabelDef(lbl) => write!(f, "{}:", lbl),

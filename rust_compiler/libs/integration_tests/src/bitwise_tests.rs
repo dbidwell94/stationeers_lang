@@ -90,4 +90,23 @@ mod bitwise_tests {
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
+
+    #[test]
+    fn test_bitwise_with_const() {
+        let source = indoc! {r#"
+        device sorterOutput = "d0";
+
+        const ingotSortClass = 19;
+        const equals = 0;
+
+        loop {
+            yield();
+            clr(sorterOutput);
+            sorterOutput[0] = (ingotSortClass << 16) | (equals << 8) | 3;
+        }
+        "#};
+
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
 }
