@@ -150,6 +150,23 @@ fn test_const_hash_expression() -> Result<()> {
 }
 
 #[test]
+fn test_const_hash() -> Result<()> {
+    // This test explicitly validates the tokenizer rewind logic.
+    // When parsing "const h = hash(...)", the parser:
+    // 1. Consumes "const", identifier, "="
+    // 2. Attempts to parse "hash(...)" as a literal - this fails
+    // 3. Must rewind the tokenizer to before "hash"
+    // 4. Then parse it as a syscall
+    // If the rewind offset is wrong (e.g., positive instead of negative),
+    // the tokenizer will be at the wrong position and parsing will fail.
+    let expr = parser!(r#"const h = hash("ComponentComputer")"#)
+        .parse()?
+        .unwrap();
+    assert_eq!(r#"(const h = hash("ComponentComputer"))"#, expr.to_string());
+    Ok(())
+}
+
+#[test]
 fn test_negative_literal_const() -> Result<()> {
     let expr = parser!(r#"const i = -123"#).parse()?.unwrap();
 

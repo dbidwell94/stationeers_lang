@@ -1589,7 +1589,7 @@ impl<'a> Parser<'a> {
         } else {
             // we need to rewind our tokenizer to our previous location
             self.tokenizer.seek(SeekFrom::Current(
-                self.tokenizer.loc() - current_token_index,
+                current_token_index - self.tokenizer.loc(),
             ))?;
             let syscall = self.spanned(|p| p.syscall())?;
 
