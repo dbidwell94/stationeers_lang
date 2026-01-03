@@ -163,6 +163,17 @@ impl<'a> CompilationMetadata<'a> {
         parameters: Vec<Cow<'a, str>>,
         span: Option<Span>,
     ) {
+        self.add_function_with_doc(name, parameters, span, None);
+    }
+
+    /// Adds a function symbol with optional doc comment.
+    pub fn add_function_with_doc(
+        &mut self,
+        name: Cow<'a, str>,
+        parameters: Vec<Cow<'a, str>>,
+        span: Option<Span>,
+        description: Option<Cow<'a, str>>,
+    ) {
         self.add_symbol(SymbolInfo {
             name,
             kind: SymbolKind::Function {
@@ -170,7 +181,7 @@ impl<'a> CompilationMetadata<'a> {
                 return_type: None,
             },
             span,
-            description: None,
+            description,
         });
     }
 
@@ -182,6 +193,18 @@ impl<'a> CompilationMetadata<'a> {
         argument_count: usize,
         span: Option<Span>,
     ) {
+        self.add_syscall_with_doc(name, syscall_type, argument_count, span, None);
+    }
+
+    /// Adds a syscall symbol with optional doc comment.
+    pub fn add_syscall_with_doc(
+        &mut self,
+        name: Cow<'a, str>,
+        syscall_type: SyscallType,
+        argument_count: usize,
+        span: Option<Span>,
+        description: Option<Cow<'a, str>>,
+    ) {
         self.add_symbol(SymbolInfo {
             name,
             kind: SymbolKind::Syscall {
@@ -189,17 +212,27 @@ impl<'a> CompilationMetadata<'a> {
                 argument_count,
             },
             span,
-            description: None,
+            description,
         });
     }
 
     /// Adds a variable symbol.
     pub fn add_variable(&mut self, name: Cow<'a, str>, span: Option<Span>) {
+        self.add_variable_with_doc(name, span, None);
+    }
+
+    /// Adds a variable symbol with optional doc comment.
+    pub fn add_variable_with_doc(
+        &mut self,
+        name: Cow<'a, str>,
+        span: Option<Span>,
+        description: Option<Cow<'a, str>>,
+    ) {
         self.add_symbol(SymbolInfo {
             name,
             kind: SymbolKind::Variable { type_hint: None },
             span,
-            description: None,
+            description,
         });
     }
 
@@ -274,16 +307,6 @@ mod tests {
 
         let variables = metadata.symbols_of_kind("variable");
         assert_eq!(variables.len(), 1);
-    }
-
-    #[test]
-    #[ignore] // Requires complex Uri construction
-    fn test_lsp_symbol_conversion() {
-        let mut metadata = CompilationMetadata::new();
-        metadata.add_function("test_func".into(), vec!["a".into(), "b".into()], None);
-
-        // In real usage with LSP, Uri would be passed from the server
-        // This test demonstrates the conversion method exists and is type-safe
     }
 
     #[test]

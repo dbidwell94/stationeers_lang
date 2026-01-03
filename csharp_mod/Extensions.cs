@@ -207,4 +207,34 @@ public static unsafe class SlangExtensions
         Ffi.free_docs_vec(vec);
         return toReturn;
     }
+
+    public static unsafe List<Symbol> ToList(this Vec_FfiSymbolInfo_t vec)
+    {
+        var toReturn = new List<Symbol>((int)vec.len);
+
+        var currentPtr = vec.ptr;
+
+        for (int i = 0; i < (int)vec.len; i++)
+        {
+            var item = currentPtr[i];
+
+            toReturn.Add(
+                new Slang.Symbol
+                {
+                    Name = item.name.AsString(),
+                    Kind = (SymbolKind)item.kind_data.kind,
+                    Span = new Slang.Range
+                    {
+                        StartLine = item.span.start_line,
+                        StartCol = item.span.start_col,
+                        EndLine = item.span.end_line,
+                        EndCol = item.span.end_col,
+                    },
+                    Description = item.description.AsString(),
+                }
+            );
+        }
+
+        return toReturn;
+    }
 }

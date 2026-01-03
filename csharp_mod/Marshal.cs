@@ -47,6 +47,33 @@ public struct SourceMapEntry
     }
 }
 
+public struct Symbol
+{
+    public string Name;
+    public Range Span;
+    public SymbolKind Kind;
+    public string Description;
+
+    public override string ToString()
+    {
+        return $"{Kind}: {Name} at {Span}";
+    }
+}
+
+public enum SymbolKind
+{
+    Function = 0,
+    Syscall = 1,
+    Variable = 2,
+}
+
+public struct SymbolData
+{
+    public uint Kind;
+    public uint ArgCount;
+    public uint SyscallType; // 0=System, 1=Math
+}
+
 public static class Marshal
 {
     private static IntPtr _libraryHandle = IntPtr.Zero;
@@ -161,6 +188,59 @@ public static class Marshal
             };
 
             return Ffi.diagnose_source(input).ToList();
+        }
+    }
+
+    public static unsafe (List<Diagnostic>, List<Symbol>) DiagnoseSourceWithSymbols(string inputString)
+    {
+        if (string.IsNullOrEmpty(inputString) || !EnsureLibLoaded())
+        {
+            return (new(), new());
+        }
+
+        fixed (char* ptrInput = inputString)
+        {
+            var input = new slice_ref_uint16_t
+            {
+                ptr = (ushort*)ptrInput,
+                len = (UIntPtr)inputString.Length,
+            };
+
+            var result = Ffi.diagnose_source_with_symbols(input);
+
+            // Convert diagnostics
+            var diagnostics = result.diagnostics.ToList();
+
+            // Convert symbols
+            var symbols = new List<Symbol>();
+            var symbolPtr = result.symbols.ptr;
+            var symbolCount = (int)result.symbols.len;
+
+            for (int i = 0; i < symbolCount; i++)
+            {
+                var ffiSymbol = symbolPtr[i];
+                var kind = (SymbolKind)ffiSymbol.kind_data.kind;
+
+                // Use the actual description from the FFI (includes doc comments and syscall docs)
+                var description = ffiSymbol.description.AsString();
+
+                symbols.Add(new Symbol
+                {
+                    Name = ffiSymbol.name.AsString(),
+                    Kind = kind,
+                    Span = new Range(
+                        ffiSymbol.span.start_line,
+                        ffiSymbol.span.start_col,
+                        ffiSymbol.span.end_line,
+                        ffiSymbol.span.end_col
+                    ),
+                    Description = description,
+                });
+            }
+
+            Ffi.free_ffi_diagnostics_and_symbols(result);
+
+            return (diagnostics, symbols);
         }
     }
 

@@ -117,6 +117,10 @@ pub struct Parser<'a> {
     current_token: Option<Token<'a>>,
     last_token_span: Option<Span>,
     pub errors: Vec<Error<'a>>,
+    /// Caches the most recent doc comment for attaching to the next declaration
+    cached_doc_comment: Option<String>,
+    /// Maps variable/declaration names to their doc comments
+    pub declaration_docs: std::collections::HashMap<String, String>,
 }
 
 impl<'a> Parser<'a> {
@@ -126,6 +130,8 @@ impl<'a> Parser<'a> {
             current_token: None,
             last_token_span: None,
             errors: Vec::new(),
+            cached_doc_comment: None,
+            declaration_docs: std::collections::HashMap::new(),
         }
     }
 
@@ -149,6 +155,26 @@ impl<'a> Parser<'a> {
                 end_line: 0,
                 end_col: 0,
             })
+    }
+
+    /// Pops and returns the cached doc comment, if any
+    pub fn pop_doc_comment(&mut self) -> Option<String> {
+        self.cached_doc_comment.take()
+    }
+
+    /// Caches a doc comment for attachment to the next declaration
+    pub fn cache_doc_comment(&mut self, comment: String) {
+        self.cached_doc_comment = Some(comment);
+    }
+
+    /// Stores a doc comment for a declaration (by name)
+    pub fn store_declaration_doc(&mut self, name: String, doc: String) {
+        self.declaration_docs.insert(name, doc);
+    }
+
+    /// Retrieves and removes a doc comment for a declaration
+    pub fn get_declaration_doc(&mut self, name: &str) -> Option<String> {
+        self.declaration_docs.get(name).cloned()
     }
 
     fn unexpected_eof(&self) -> Error<'a> {
@@ -288,7 +314,36 @@ impl<'a> Parser<'a> {
         if let Some(token) = &self.current_token {
             self.last_token_span = Some(Self::token_to_span(token));
         }
-        self.current_token = self.tokenizer.next_token()?;
+
+        // Keep reading tokens, caching doc comments and skipping them
+        loop {
+            self.current_token = self.tokenizer.next_token_with_comments()?;
+
+            match &self.current_token {
+                Some(token) => {
+                    if let TokenType::Comment(comment) = &token.token_type {
+                        // Cache doc comments for attachment to the next declaration
+                        if let tokenizer::token::Comment::Doc(doc_text) = comment {
+                            self.cache_doc_comment(doc_text.to_string());
+                        }
+                        // Skip all comments (both doc and regular)
+                        continue;
+                    }
+
+                    // If we have a cached doc comment and encounter an identifier, associate them
+                    if let TokenType::Identifier(ref id) = token.token_type {
+                        if let Some(doc) = self.cached_doc_comment.take() {
+                            self.store_declaration_doc(id.to_string(), doc);
+                        }
+                    }
+
+                    // Non-comment token, use it as current
+                    break;
+                }
+                None => break, // EOF
+            }
+        }
+
         Ok(())
     }
 
@@ -511,7 +566,6 @@ impl<'a> Parser<'a> {
 
             TokenType::Keyword(Keyword::Const) => {
                 let spanned_const = self.spanned(|p| p.const_declaration())?;
-
                 Some(Spanned {
                     span: spanned_const.span,
                     node: Expression::ConstDeclaration(spanned_const),

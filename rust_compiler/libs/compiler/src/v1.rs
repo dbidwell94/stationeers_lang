@@ -465,10 +465,23 @@ impl<'a> Compiler<'a> {
             },
             Expression::Variable(name) => {
                 match scope.get_location_of(&name.node, Some(name.span)) {
-                    Ok(loc) => Ok(Some(CompileLocation {
-                        location: loc,
-                        temp_name: None, // User variable, do not free
-                    })),
+                    Ok(loc) => {
+                        // Track this variable reference in metadata (for tooltips on all usages, not just declaration)
+                        let doc_comment: Option<Cow<'a, str>> = self
+                            .parser
+                            .get_declaration_doc(name.node.as_ref())
+                            .map(|s| Cow::Owned(s) as Cow<'a, str>);
+                        self.metadata.add_variable_with_doc(
+                            name.node.clone(),
+                            Some(name.span),
+                            doc_comment,
+                        );
+
+                        Ok(Some(CompileLocation {
+                            location: loc,
+                            temp_name: None, // User variable, do not free
+                        }))
+                    }
                     Err(_) => {
                         // fallback, check devices
                         if let Some(device) = self.devices.get(&name.node) {
@@ -652,6 +665,14 @@ impl<'a> Compiler<'a> {
         if let Expression::Variable(ref name) = expr.node
             && let Some(device_id) = self.devices.get(&name.node)
         {
+            // Track this device reference in metadata (for tooltips on all usages, not just declaration)
+            let doc_comment = self
+                .parser
+                .get_declaration_doc(name.node.as_ref())
+                .map(Cow::Owned);
+            self.metadata
+                .add_variable_with_doc(name.node.clone(), Some(expr.span), doc_comment);
+
             return Ok((Operand::Device(device_id.clone()), None));
         }
 
@@ -705,8 +726,12 @@ impl<'a> Compiler<'a> {
         let name_span = var_name.span;
 
         // Track the variable in metadata
+        let doc_comment = self
+            .parser
+            .get_declaration_doc(name_str.as_ref())
+            .map(Cow::Owned);
         self.metadata
-            .add_variable(name_str.clone(), Some(name_span));
+            .add_variable_with_doc(name_str.clone(), Some(name_span), doc_comment);
 
         // optimization. Check for a negated numeric literal (including nested negations)
         // e.g., -5, -(-5), -(-(5)), etc.
@@ -1068,8 +1093,15 @@ impl<'a> Compiler<'a> {
         } = expr;
 
         // Track the const variable in metadata
-        self.metadata
-            .add_variable(const_name.node.clone(), Some(const_name.span));
+        let doc_comment = self
+            .parser
+            .get_declaration_doc(const_name.node.as_ref())
+            .map(Cow::Owned);
+        self.metadata.add_variable_with_doc(
+            const_name.node.clone(),
+            Some(const_name.span),
+            doc_comment,
+        );
 
         // check for a hash expression or a literal
         let value = match const_value {
@@ -1495,10 +1527,25 @@ impl<'a> Compiler<'a> {
         let TupleDeclarationExpression { names, value } = tuple_decl;
 
         // Track each variable in the tuple declaration
-        for name_spanned in &names {
+        // Get doc for the first variable
+        let first_var_name = names
+            .iter()
+            .find(|n| n.node.as_ref() != "_")
+            .map(|n| n.node.to_string());
+        let doc_comment = first_var_name
+            .as_ref()
+            .and_then(|name| self.parser.get_declaration_doc(name))
+            .map(Cow::Owned);
+
+        for (i, name_spanned) in names.iter().enumerate() {
             if name_spanned.node.as_ref() != "_" {
-                self.metadata
-                    .add_variable(name_spanned.node.clone(), Some(name_spanned.span));
+                // Only attach doc comment to the first variable
+                let comment = if i == 0 { doc_comment.clone() } else { None };
+                self.metadata.add_variable_with_doc(
+                    name_spanned.node.clone(),
+                    Some(name_spanned.span),
+                    comment,
+                );
             }
         }
 
@@ -1941,8 +1988,15 @@ impl<'a> Compiler<'a> {
         expr: DeviceDeclarationExpression<'a>,
     ) -> Result<(), Error<'a>> {
         // Track the device declaration in metadata
-        self.metadata
-            .add_variable(expr.name.node.clone(), Some(expr.name.span));
+        let doc_comment = self
+            .parser
+            .get_declaration_doc(expr.name.node.as_ref())
+            .map(Cow::Owned);
+        self.metadata.add_variable_with_doc(
+            expr.name.node.clone(),
+            Some(expr.name.span),
+            doc_comment,
+        );
 
         if self.devices.contains_key(&expr.name.node) {
             self.errors.push(Error::DuplicateIdentifier(
@@ -2950,11 +3004,13 @@ impl<'a> Compiler<'a> {
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
         // Track the syscall in metadata
         let syscall_name = expr.name();
-        self.metadata.add_syscall(
+        let doc = expr.docs().into();
+        self.metadata.add_syscall_with_doc(
             Cow::Borrowed(syscall_name),
             crate::SyscallType::System,
             expr.arg_count(),
             Some(span),
+            Some(doc),
         );
 
         macro_rules! cleanup {
@@ -3356,11 +3412,13 @@ impl<'a> Compiler<'a> {
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
         // Track the syscall in metadata
         let syscall_name = expr.name();
-        self.metadata.add_syscall(
+        let doc = expr.docs().into();
+        self.metadata.add_syscall_with_doc(
             Cow::Borrowed(syscall_name),
             crate::SyscallType::Math,
             expr.arg_count(),
             Some(span),
+            Some(doc),
         );
 
         macro_rules! cleanup {
@@ -3625,8 +3683,16 @@ impl<'a> Compiler<'a> {
 
         // Track the function definition in metadata
         let param_names: Vec<Cow<'a, str>> = arguments.iter().map(|a| a.node.clone()).collect();
-        self.metadata
-            .add_function(name.node.clone(), param_names, Some(name.span));
+        let doc_comment = self
+            .parser
+            .get_declaration_doc(name.node.as_ref())
+            .map(Cow::Owned);
+        self.metadata.add_function_with_doc(
+            name.node.clone(),
+            param_names,
+            Some(name.span),
+            doc_comment,
+        );
 
         if self.function_meta.locations.contains_key(&name.node) {
             self.errors

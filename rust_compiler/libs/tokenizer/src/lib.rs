@@ -68,6 +68,12 @@ impl<'a> Tokenizer<'a> {
 
         Ok(current.map(|t| t.map(|t| self.get_token(t)))?)
     }
+
+    /// Returns the next token, including comments. Used to preserve doc comments.
+    pub fn next_token_with_comments(&mut self) -> Result<Option<Token<'a>>, Error> {
+        let current = self.lexer.next().transpose();
+        Ok(current.map(|t| t.map(|t| self.get_token(t)))?)
+    }
 }
 
 // ... Iterator and TokenizerBuffer implementations remain unchanged ...
@@ -127,12 +133,28 @@ impl<'a> TokenizerBuffer<'a> {
         self.index += 1;
         Ok(token)
     }
+
+    pub fn next_token_with_comments(&mut self) -> Result<Option<Token<'a>>, Error> {
+        if let Some(token) = self.buffer.pop_front() {
+            self.history.push_back(token.clone());
+            self.index += 1;
+            return Ok(Some(token));
+        }
+        let token = self.tokenizer.next_token_with_comments()?;
+
+        if let Some(ref token) = token {
+            self.history.push_back(token.clone());
+        }
+
+        self.index += 1;
+        Ok(token)
+    }
     pub fn peek(&mut self) -> Result<Option<Token<'a>>, Error> {
         if let Some(token) = self.buffer.front() {
             return Ok(Some(token.clone()));
         }
 
-        let Some(new_token) = self.tokenizer.next_token()? else {
+        let Some(new_token) = self.tokenizer.next_token_with_comments()? else {
             return Ok(None);
         };
         self.buffer.push_front(new_token.clone());

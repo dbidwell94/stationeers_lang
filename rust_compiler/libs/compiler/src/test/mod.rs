@@ -47,6 +47,15 @@ macro_rules! compile {
             output,
         }
     }};
+
+    (metadata $source:expr) => {{
+        let compiler = crate::Compiler::new(
+            parser::Parser::new(tokenizer::Tokenizer::from($source)),
+            None,
+        );
+        let res = compiler.compile();
+        res.metadata
+    }};
 }
 mod binary_expression;
 mod branching;
@@ -61,5 +70,6 @@ mod loops;
 mod math_syscall;
 mod negation_priority;
 mod scoping;
+mod symbol_documentation;
 mod syscall;
 mod tuple_literals;
