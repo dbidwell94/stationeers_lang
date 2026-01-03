@@ -21,6 +21,7 @@ impl<'a> SymbolInfo<'a> {
         lsp_types::SymbolInformation {
             name: self.name.to_string(),
             kind: self.kind.to_lsp_symbol_kind(),
+            #[allow(deprecated)]
             deprecated: None,
             location: lsp_types::Location {
                 uri,

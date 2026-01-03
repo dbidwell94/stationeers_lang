@@ -704,6 +704,10 @@ impl<'a> Compiler<'a> {
         let name_str = var_name.node;
         let name_span = var_name.span;
 
+        // Track the variable in metadata
+        self.metadata
+            .add_variable(name_str.clone(), Some(name_span));
+
         // optimization. Check for a negated numeric literal (including nested negations)
         // e.g., -5, -(-5), -(-(5)), etc.
         if let Some(num) = self.try_fold_negation(&expr.node) {
@@ -1062,6 +1066,10 @@ impl<'a> Compiler<'a> {
             name: const_name,
             value: const_value,
         } = expr;
+
+        // Track the const variable in metadata
+        self.metadata
+            .add_variable(const_name.node.clone(), Some(const_name.span));
 
         // check for a hash expression or a literal
         let value = match const_value {
@@ -1485,6 +1493,14 @@ impl<'a> Compiler<'a> {
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let TupleDeclarationExpression { names, value } = tuple_decl;
+
+        // Track each variable in the tuple declaration
+        for name_spanned in &names {
+            if name_spanned.node.as_ref() != "_" {
+                self.metadata
+                    .add_variable(name_spanned.node.clone(), Some(name_spanned.span));
+            }
+        }
 
         match value.node {
             Expression::Invocation(invoke_expr) => {
@@ -1924,6 +1940,10 @@ impl<'a> Compiler<'a> {
         &mut self,
         expr: DeviceDeclarationExpression<'a>,
     ) -> Result<(), Error<'a>> {
+        // Track the device declaration in metadata
+        self.metadata
+            .add_variable(expr.name.node.clone(), Some(expr.name.span));
+
         if self.devices.contains_key(&expr.name.node) {
             self.errors.push(Error::DuplicateIdentifier(
                 expr.name.node.clone(),
@@ -2928,6 +2948,15 @@ impl<'a> Compiler<'a> {
         span: Span,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
+        // Track the syscall in metadata
+        let syscall_name = expr.name();
+        self.metadata.add_syscall(
+            Cow::Borrowed(syscall_name),
+            crate::SyscallType::System,
+            expr.arg_count(),
+            Some(span),
+        );
+
         macro_rules! cleanup {
             ($($to_clean:expr),*) => {
                 $(
@@ -3325,6 +3354,15 @@ impl<'a> Compiler<'a> {
         span: Span,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
+        // Track the syscall in metadata
+        let syscall_name = expr.name();
+        self.metadata.add_syscall(
+            Cow::Borrowed(syscall_name),
+            crate::SyscallType::Math,
+            expr.arg_count(),
+            Some(span),
+        );
+
         macro_rules! cleanup {
             ($($to_clean:expr),*) => {
                 $(
@@ -3584,6 +3622,11 @@ impl<'a> Compiler<'a> {
         } = expr.node;
 
         let span = expr.span;
+
+        // Track the function definition in metadata
+        let param_names: Vec<Cow<'a, str>> = arguments.iter().map(|a| a.node.clone()).collect();
+        self.metadata
+            .add_function(name.node.clone(), param_names, Some(name.span));
 
         if self.function_meta.locations.contains_key(&name.node) {
             self.errors
