@@ -150,6 +150,23 @@ fn test_const_hash_expression() -> Result<()> {
 }
 
 #[test]
+fn test_const_hash() -> Result<()> {
+    // This test explicitly validates the tokenizer rewind logic.
+    // When parsing "const h = hash(...)", the parser:
+    // 1. Consumes "const", identifier, "="
+    // 2. Attempts to parse "hash(...)" as a literal - this fails
+    // 3. Must rewind the tokenizer to before "hash"
+    // 4. Then parse it as a syscall
+    // If the rewind offset is wrong (e.g., positive instead of negative),
+    // the tokenizer will be at the wrong position and parsing will fail.
+    let expr = parser!(r#"const h = hash("ComponentComputer")"#)
+        .parse()?
+        .unwrap();
+    assert_eq!(r#"(const h = hash("ComponentComputer"))"#, expr.to_string());
+    Ok(())
+}
+
+#[test]
 fn test_negative_literal_const() -> Result<()> {
     let expr = parser!(r#"const i = -123"#).parse()?.unwrap();
 
@@ -284,6 +301,39 @@ fn test_tuple_declaration_all_complex_expressions() -> Result<()> {
     let expr = parser!("let (x, y) = (a + b, c * d);").parse()?.unwrap();
 
     assert_eq!("(let (x, y) = ((a + b), (c * d)))", expr.to_string());
+
+    Ok(())
+}
+#[test]
+fn test_eof_error_has_span() -> Result<()> {
+    // Test that UnexpectedEOF errors capture the span of the last token
+    let mut parser = parser!("let x = 5");
+    let result = parser.parse();
+
+    // Should have an error
+    assert!(result.is_err());
+
+    let err = result.unwrap_err();
+
+    // Check that it's an UnexpectedEOF error
+    match err {
+        super::Error::UnexpectedEOF(Some(span)) => {
+            // Verify the span points to somewhere in the code (not zero defaults)
+            assert!(
+                span.start_line > 0 || span.start_col > 0 || span.end_line > 0 || span.end_col > 0,
+                "Span should not be all zeros: {:?}",
+                span
+            );
+        }
+        super::Error::UnexpectedEOF(None) => {
+            eprintln!("ERROR: UnexpectedEOF captured None span instead of previous token span");
+            eprintln!("This means unexpected_eof() is being called when current_token is None");
+            panic!("UnexpectedEOF should have captured the previous token's span");
+        }
+        other => {
+            panic!("Expected UnexpectedEOF error, got: {:?}", other);
+        }
+    }
 
     Ok(())
 }

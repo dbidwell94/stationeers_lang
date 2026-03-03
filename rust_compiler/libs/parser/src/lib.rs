@@ -43,8 +43,11 @@ pub enum Error<'a> {
     #[error("Unsupported Keyword: {1}")]
     UnsupportedKeyword(Span, Token<'a>),
 
+    #[error("Expected semicolon")]
+    MissingSemicolon(Span),
+
     #[error("Unexpected End of File")]
-    UnexpectedEOF,
+    UnexpectedEOF(Option<Span>),
 }
 
 impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
@@ -56,17 +59,22 @@ impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
             UnexpectedToken(span, _)
             | DuplicateIdentifier(span, _)
             | InvalidSyntax(span, _)
-            | UnsupportedKeyword(span, _) => Diagnostic {
+            | UnsupportedKeyword(span, _)
+            | MissingSemicolon(span) => Diagnostic {
                 message: value.to_string(),
                 severity: Some(DiagnosticSeverity::ERROR),
                 range: span.into(),
                 ..Default::default()
             },
-            UnexpectedEOF => Diagnostic {
-                message: value.to_string(),
-                severity: Some(DiagnosticSeverity::ERROR),
-                ..Default::default()
-            },
+            UnexpectedEOF(span) => {
+                let range = span.map(|s| s.into()).unwrap_or_default();
+                Diagnostic {
+                    message: value.to_string(),
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    range,
+                    ..Default::default()
+                }
+            }
         }
     }
 }
@@ -107,7 +115,12 @@ macro_rules! self_matches_current {
 pub struct Parser<'a> {
     tokenizer: TokenizerBuffer<'a>,
     current_token: Option<Token<'a>>,
+    last_token_span: Option<Span>,
     pub errors: Vec<Error<'a>>,
+    /// Caches the most recent doc comment for attaching to the next declaration
+    cached_doc_comment: Option<String>,
+    /// Maps variable/declaration names to their doc comments
+    pub declaration_docs: std::collections::HashMap<String, String>,
 }
 
 impl<'a> Parser<'a> {
@@ -115,7 +128,10 @@ impl<'a> Parser<'a> {
         Parser {
             tokenizer: TokenizerBuffer::new(tokenizer),
             current_token: None,
+            last_token_span: None,
             errors: Vec::new(),
+            cached_doc_comment: None,
+            declaration_docs: std::collections::HashMap::new(),
         }
     }
 
@@ -139,6 +155,30 @@ impl<'a> Parser<'a> {
                 end_line: 0,
                 end_col: 0,
             })
+    }
+
+    /// Pops and returns the cached doc comment, if any
+    pub fn pop_doc_comment(&mut self) -> Option<String> {
+        self.cached_doc_comment.take()
+    }
+
+    /// Caches a doc comment for attachment to the next declaration
+    pub fn cache_doc_comment(&mut self, comment: String) {
+        self.cached_doc_comment = Some(comment);
+    }
+
+    /// Stores a doc comment for a declaration (by name)
+    pub fn store_declaration_doc(&mut self, name: String, doc: String) {
+        self.declaration_docs.insert(name, doc);
+    }
+
+    /// Retrieves and removes a doc comment for a declaration
+    pub fn get_declaration_doc(&mut self, name: &str) -> Option<String> {
+        self.declaration_docs.get(name).cloned()
+    }
+
+    fn unexpected_eof(&self) -> Error<'a> {
+        Error::UnexpectedEOF(self.last_token_span)
     }
 
     /// Helper to run a parsing closure and wrap the result in a Spanned struct
@@ -271,7 +311,39 @@ impl<'a> Parser<'a> {
     }
 
     fn assign_next(&mut self) -> Result<(), Error<'a>> {
-        self.current_token = self.tokenizer.next_token()?;
+        if let Some(token) = &self.current_token {
+            self.last_token_span = Some(Self::token_to_span(token));
+        }
+
+        // Keep reading tokens, caching doc comments and skipping them
+        loop {
+            self.current_token = self.tokenizer.next_token_with_comments()?;
+
+            match &self.current_token {
+                Some(token) => {
+                    if let TokenType::Comment(comment) = &token.token_type {
+                        // Cache doc comments for attachment to the next declaration
+                        if let tokenizer::token::Comment::Doc(doc_text) = comment {
+                            self.cache_doc_comment(doc_text.to_string());
+                        }
+                        // Skip all comments (both doc and regular)
+                        continue;
+                    }
+
+                    // If we have a cached doc comment and encounter an identifier, associate them
+                    if let TokenType::Identifier(ref id) = token.token_type {
+                        if let Some(doc) = self.cached_doc_comment.take() {
+                            self.store_declaration_doc(id.to_string(), doc);
+                        }
+                    }
+
+                    // Non-comment token, use it as current
+                    break;
+                }
+                None => break, // EOF
+            }
+        }
+
         Ok(())
     }
 
@@ -294,12 +366,12 @@ impl<'a> Parser<'a> {
         // Handle Infix operators (Binary, Logical, Assignment)
         if self_matches_peek!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question)
         ) {
             return Ok(Some(self.infix(lhs)?));
         } else if self_matches_current!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question)
         ) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
             return Ok(Some(self.infix(lhs)?));
@@ -308,7 +380,7 @@ impl<'a> Parser<'a> {
         Ok(Some(lhs))
     }
 
-    /// Handles dot notation chains: x.y.z()
+    /// Handles dot notation chains: x.y.z() and bracket notation: x[i]
     fn parse_postfix(
         &mut self,
         mut lhs: Spanned<Expression<'a>>,
@@ -317,7 +389,7 @@ impl<'a> Parser<'a> {
             if self_matches_peek!(self, TokenType::Symbol(Symbol::Dot)) {
                 self.assign_next()?; // consume Dot
 
-                let identifier_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let identifier_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
                 let identifier_span = Self::token_to_span(&identifier_token);
                 let identifier = match identifier_token.token_type {
                     TokenType::Identifier(ref id) => id.clone(),
@@ -336,10 +408,10 @@ impl<'a> Parser<'a> {
                     let mut arguments = Vec::<Spanned<Expression<'a>>>::new();
 
                     while !token_matches!(
-                        self.get_next()?.ok_or(Error::UnexpectedEOF)?,
+                        self.get_next()?.ok_or_else(|| self.unexpected_eof())?,
                         TokenType::Symbol(Symbol::RParen)
                     ) {
-                        let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+                        let expression = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
 
                         // Block expressions not allowed in args
                         if let Expression::Block(_) = expression.node {
@@ -353,7 +425,8 @@ impl<'a> Parser<'a> {
                         if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                             && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
                         {
-                            let next_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                            let next_token =
+                                self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
                             return Err(Error::UnexpectedToken(
                                 Self::token_to_span(&next_token),
                                 next_token,
@@ -411,6 +484,40 @@ impl<'a> Parser<'a> {
                         }),
                     };
                 }
+            } else if self_matches_peek!(self, TokenType::Symbol(Symbol::LBracket)) {
+                // Index Access
+                self.assign_next()?; // consume '[', now current is '['
+                self.assign_next()?; // advance to the expression, now current is first token of index expr
+                let index = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
+
+                // After expression(), current is still on the last token of the index expression
+                // We need to get the next token and verify it's ']'
+                let rbracket_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
+                if !token_matches!(rbracket_token, TokenType::Symbol(Symbol::RBracket)) {
+                    return Err(Error::UnexpectedToken(
+                        Self::token_to_span(&rbracket_token),
+                        rbracket_token.clone(),
+                    ));
+                }
+
+                let end_span = Self::token_to_span(&rbracket_token);
+                let combined_span = Span {
+                    start_line: lhs.span.start_line,
+                    start_col: lhs.span.start_col,
+                    end_line: end_span.end_line,
+                    end_col: end_span.end_col,
+                };
+
+                lhs = Spanned {
+                    span: combined_span,
+                    node: Expression::IndexAccess(Spanned {
+                        span: combined_span,
+                        node: IndexAccessExpression {
+                            object: boxed!(lhs),
+                            index: boxed!(index),
+                        },
+                    }),
+                };
             } else {
                 break;
             }
@@ -459,7 +566,6 @@ impl<'a> Parser<'a> {
 
             TokenType::Keyword(Keyword::Const) => {
                 let spanned_const = self.spanned(|p| p.const_declaration())?;
-
                 Some(Spanned {
                     span: spanned_const.span,
                     node: Expression::ConstDeclaration(spanned_const),
@@ -500,9 +606,9 @@ impl<'a> Parser<'a> {
 
             TokenType::Keyword(Keyword::Break) => {
                 let span = self.current_span();
-                let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
                 if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
-                    return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
+                    return Err(Error::MissingSemicolon(span));
                 }
                 Some(Spanned {
                     span,
@@ -512,9 +618,9 @@ impl<'a> Parser<'a> {
 
             TokenType::Keyword(Keyword::Continue) => {
                 let span = self.current_span();
-                let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
                 if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
-                    return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
+                    return Err(Error::MissingSemicolon(span));
                 }
                 Some(Spanned {
                     span,
@@ -572,7 +678,7 @@ impl<'a> Parser<'a> {
             TokenType::Symbol(Symbol::Minus) => {
                 let start_span = self.current_span();
                 self.assign_next()?;
-                let inner_expr = self.unary()?.ok_or(Error::UnexpectedEOF)?;
+                let inner_expr = self.unary()?.ok_or_else(|| self.unexpected_eof())?;
 
                 let inner_with_postfix = self.parse_postfix(inner_expr)?;
 
@@ -591,7 +697,7 @@ impl<'a> Parser<'a> {
             TokenType::Symbol(Symbol::LogicalNot) => {
                 let start_span = self.current_span();
                 self.assign_next()?;
-                let inner_expr = self.unary()?.ok_or(Error::UnexpectedEOF)?;
+                let inner_expr = self.unary()?.ok_or_else(|| self.unexpected_eof())?;
                 let inner_with_postfix = self.parse_postfix(inner_expr)?;
                 let combined_span = Span {
                     start_line: start_span.start_line,
@@ -608,6 +714,23 @@ impl<'a> Parser<'a> {
                 })
             }
 
+            TokenType::Symbol(Symbol::BitwiseNot) => {
+                let start_span = self.current_span();
+                self.assign_next()?;
+                let inner_expr = self.unary()?.ok_or_else(|| self.unexpected_eof())?;
+                let inner_with_postfix = self.parse_postfix(inner_expr)?;
+                let combined_span = Span {
+                    start_line: start_span.start_line,
+                    start_col: start_span.start_col,
+                    end_line: inner_with_postfix.span.end_line,
+                    end_col: inner_with_postfix.span.end_col,
+                };
+                Some(Spanned {
+                    span: combined_span,
+                    node: Expression::BitwiseNot(boxed!(inner_with_postfix)),
+                })
+            }
+
             _ => {
                 return Err(Error::UnexpectedToken(
                     self.current_span(),
@@ -620,7 +743,10 @@ impl<'a> Parser<'a> {
     }
 
     fn get_infix_child_node(&mut self) -> Result<Spanned<tree_node::Expression<'a>>, Error<'a>> {
-        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let current_token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| self.unexpected_eof())?;
 
         let start_span = self.current_span();
 
@@ -648,7 +774,7 @@ impl<'a> Parser<'a> {
             TokenType::Symbol(Symbol::LParen) => *self
                 .parenthesized_or_tuple()?
                 .map(Box::new)
-                .ok_or(Error::UnexpectedEOF)?,
+                .ok_or_else(|| self.unexpected_eof())?,
 
             TokenType::Identifier(ref id) if SysCall::is_syscall(id) => {
                 let spanned_call = self.spanned(|p| p.syscall())?;
@@ -699,6 +825,20 @@ impl<'a> Parser<'a> {
                     }),
                 }
             }
+            TokenType::Symbol(Symbol::BitwiseNot) => {
+                self.assign_next()?;
+                let inner = self.get_infix_child_node()?;
+                let span = Span {
+                    start_line: start_span.start_line,
+                    start_col: start_span.start_col,
+                    end_line: inner.span.end_line,
+                    end_col: inner.span.end_col,
+                };
+                Spanned {
+                    span,
+                    node: Expression::BitwiseNot(boxed!(inner)),
+                }
+            }
             _ => {
                 return Err(Error::UnexpectedToken(
                     self.current_span(),
@@ -713,7 +853,10 @@ impl<'a> Parser<'a> {
     }
 
     fn device(&mut self) -> Result<DeviceDeclarationExpression<'a>, Error<'a>> {
-        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let current_token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| self.unexpected_eof())?;
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Device)) {
             return Err(Error::UnexpectedToken(
                 self.current_span(),
@@ -721,7 +864,7 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let identifier_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let identifier_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         let identifier_span = Self::token_to_span(&identifier_token);
         let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
@@ -733,7 +876,7 @@ impl<'a> Parser<'a> {
             }
         };
 
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let current_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
             return Err(Error::UnexpectedToken(
                 Self::token_to_span(&current_token),
@@ -741,7 +884,7 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let device_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let device_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         let device = match device_token.token_type {
             TokenType::String(ref id) => id.clone(),
             _ => {
@@ -765,7 +908,10 @@ impl<'a> Parser<'a> {
         &mut self,
         previous: Spanned<Expression<'a>>,
     ) -> Result<Spanned<Expression<'a>>, Error<'a>> {
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?.clone();
+        let current_token = self
+            .get_next()?
+            .ok_or_else(|| self.unexpected_eof())?
+            .clone();
 
         match previous.node {
             Expression::Binary(_)
@@ -777,8 +923,10 @@ impl<'a> Parser<'a> {
             | Expression::Variable(_)
             | Expression::Ternary(_)
             | Expression::Negation(_)
+            | Expression::BitwiseNot(_)
             | Expression::MemberAccess(_)
             | Expression::MethodCall(_)
+            | Expression::IndexAccess(_)
             | Expression::Tuple(_) => {}
             _ => {
                 return Err(Error::InvalidSyntax(
@@ -796,7 +944,7 @@ impl<'a> Parser<'a> {
         // Include Assign in the operator loop
         while token_matches!(
             temp_token,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || matches!(s, Symbol::Assign | Symbol::Question | Symbol::Colon)
+            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question | Symbol::Colon)
         ) {
             let operator = match temp_token.token_type {
                 TokenType::Symbol(s) => s,
@@ -806,7 +954,10 @@ impl<'a> Parser<'a> {
             self.assign_next()?;
             expressions.push(self.get_infix_child_node()?);
 
-            temp_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?.clone();
+            temp_token = self
+                .get_next()?
+                .ok_or_else(|| self.unexpected_eof())?
+                .clone();
         }
 
         if operators.len() != expressions.len() - 1 {
@@ -869,6 +1020,24 @@ impl<'a> Parser<'a> {
                             Symbol::Minus => {
                                 BinaryExpression::Subtract(boxed!(left), boxed!(right))
                             }
+                            Symbol::LeftShift => {
+                                BinaryExpression::LeftShift(boxed!(left), boxed!(right))
+                            }
+                            Symbol::RightShiftArithmetic => {
+                                BinaryExpression::RightShiftArithmetic(boxed!(left), boxed!(right))
+                            }
+                            Symbol::RightShiftLogical => {
+                                BinaryExpression::RightShiftLogical(boxed!(left), boxed!(right))
+                            }
+                            Symbol::BitwiseAnd => {
+                                BinaryExpression::BitwiseAnd(boxed!(left), boxed!(right))
+                            }
+                            Symbol::BitwiseOr => {
+                                BinaryExpression::BitwiseOr(boxed!(left), boxed!(right))
+                            }
+                            Symbol::Caret => {
+                                BinaryExpression::BitwiseXor(boxed!(left), boxed!(right))
+                            }
                             _ => unreachable!(),
                         };
 
@@ -895,7 +1064,22 @@ impl<'a> Parser<'a> {
         // --- PRECEDENCE LEVEL 3: Additive (+, -) ---
         process_binary_ops!(Symbol::Plus | Symbol::Minus, BinaryExpression);
 
-        // --- PRECEDENCE LEVEL 4: Comparison (<, >, <=, >=) ---
+        // --- PRECEDENCE LEVEL 4: Shift Operations (<<, >>, >>>) ---
+        process_binary_ops!(
+            Symbol::LeftShift | Symbol::RightShiftArithmetic | Symbol::RightShiftLogical,
+            BinaryExpression
+        );
+
+        // --- PRECEDENCE LEVEL 5: Bitwise AND (&) ---
+        process_binary_ops!(Symbol::BitwiseAnd, BinaryExpression);
+
+        // --- PRECEDENCE LEVEL 6: Bitwise XOR (^) ---
+        process_binary_ops!(Symbol::Caret, BinaryExpression);
+
+        // --- PRECEDENCE LEVEL 7: Bitwise OR (|) ---
+        process_binary_ops!(Symbol::BitwiseOr, BinaryExpression);
+
+        // --- PRECEDENCE LEVEL 8: Comparison (<, >, <=, >=) ---
         let mut current_iteration = 0;
         for (i, operator) in operators.iter().enumerate() {
             if operator.is_comparison() && !matches!(operator, Symbol::Equal | Symbol::NotEqual) {
@@ -1139,14 +1323,17 @@ impl<'a> Parser<'a> {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
         }
 
-        expressions.pop().ok_or(Error::UnexpectedEOF)
+        expressions.pop().ok_or_else(|| self.unexpected_eof())
     }
 
     fn parenthesized_or_tuple(
         &mut self,
     ) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {
         let start_span = self.current_span();
-        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let current_token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| self.unexpected_eof())?;
 
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
             return Err(Error::UnexpectedToken(
@@ -1173,7 +1360,7 @@ impl<'a> Parser<'a> {
             }));
         }
 
-        let first_expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+        let first_expression = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
 
         if self_matches_peek!(self, TokenType::Symbol(Symbol::Comma)) {
             // It is a tuple
@@ -1182,10 +1369,10 @@ impl<'a> Parser<'a> {
                 // Next toekn is a comma, we need to consume it and advance 1 more time.
                 self.assign_next()?;
                 self.assign_next()?;
-                items.push(self.expression()?.ok_or(Error::UnexpectedEOF)?);
+                items.push(self.expression()?.ok_or_else(|| self.unexpected_eof())?);
             }
 
-            let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+            let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
             if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
                 return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
             }
@@ -1204,7 +1391,7 @@ impl<'a> Parser<'a> {
             }))
         } else {
             // It is just priority
-            let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+            let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
             if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
                 return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
             }
@@ -1219,14 +1406,14 @@ impl<'a> Parser<'a> {
     fn tuple_declaration(&mut self) -> Result<Expression<'a>, Error<'a>> {
         // 'let' is consumed before this call
         // expect '('
-        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::LParen)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
 
         let mut names = Vec::new();
         while !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen)) {
-            let token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+            let token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
             let span = Self::token_to_span(&token);
             if let TokenType::Identifier(id) = token.token_type {
                 names.push(Spanned { span, node: id });
@@ -1240,7 +1427,7 @@ impl<'a> Parser<'a> {
         }
         self.assign_next()?; // consume ')'
 
-        let assign = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let assign = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
 
         if !token_matches!(assign, TokenType::Symbol(Symbol::Assign)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&assign), assign));
@@ -1248,11 +1435,12 @@ impl<'a> Parser<'a> {
 
         self.assign_next()?; // Consume the `=`
 
-        let value = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+        let value = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
+        let value_span = value.span;
 
-        let semi = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let semi = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(semi, TokenType::Symbol(Symbol::Semicolon)) {
-            return Err(Error::UnexpectedToken(Self::token_to_span(&semi), semi));
+            return Err(Error::MissingSemicolon(value_span));
         }
 
         Ok(Expression::TupleDeclaration(Spanned {
@@ -1265,19 +1453,24 @@ impl<'a> Parser<'a> {
     }
 
     fn invocation(&mut self) -> Result<InvocationExpression<'a>, Error<'a>> {
-        let identifier_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let identifier_token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| self.unexpected_eof())?;
         let identifier_span = Self::token_to_span(identifier_token);
         let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
             _ => {
                 return Err(Error::UnexpectedToken(
                     self.current_span(),
-                    self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                    self.current_token
+                        .clone()
+                        .ok_or_else(|| self.unexpected_eof())?,
                 ));
             }
         };
 
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let current_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
             return Err(Error::UnexpectedToken(
                 Self::token_to_span(&current_token),
@@ -1288,10 +1481,10 @@ impl<'a> Parser<'a> {
         let mut arguments = Vec::<Spanned<Expression>>::new();
 
         while !token_matches!(
-            self.get_next()?.ok_or(Error::UnexpectedEOF)?,
+            self.get_next()?.ok_or_else(|| self.unexpected_eof())?,
             TokenType::Symbol(Symbol::RParen)
         ) {
-            let expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+            let expression = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
 
             if let Expression::Block(_) = expression.node {
                 return Err(Error::InvalidSyntax(
@@ -1305,7 +1498,7 @@ impl<'a> Parser<'a> {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                let next_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let next_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
                 return Err(Error::UnexpectedToken(
                     Self::token_to_span(&next_token),
                     next_token,
@@ -1328,7 +1521,10 @@ impl<'a> Parser<'a> {
 
     fn block(&mut self) -> Result<BlockExpression<'a>, Error<'a>> {
         let mut expressions = Vec::<Spanned<Expression>>::new();
-        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let current_token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| self.unexpected_eof())?;
 
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
             return Err(Error::UnexpectedToken(
@@ -1341,11 +1537,11 @@ impl<'a> Parser<'a> {
             self,
             TokenType::Symbol(Symbol::RBrace) | TokenType::Keyword(Keyword::Return)
         ) {
-            let expression = self.parse()?.ok_or(Error::UnexpectedEOF)?;
+            let expression = self.parse()?.ok_or_else(|| self.unexpected_eof())?;
             expressions.push(expression);
         }
 
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let current_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
 
         if token_matches!(current_token, TokenType::Keyword(Keyword::Return)) {
             // Need to capture return span
@@ -1353,14 +1549,16 @@ impl<'a> Parser<'a> {
             self.assign_next()?;
 
             let expr = if token_matches!(
-                self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?,
+                self.current_token
+                    .as_ref()
+                    .ok_or_else(|| self.unexpected_eof())?,
                 TokenType::Symbol(Symbol::Semicolon)
             ) {
                 // rewind 1 token so we can check for the semicolon at the bottom of this function.
                 self.tokenizer.seek(SeekFrom::Current(-1))?;
                 None
             } else {
-                Some(self.expression()?.ok_or(Error::UnexpectedEOF)?)
+                Some(self.expression()?.ok_or_else(|| self.unexpected_eof())?)
             };
 
             let ret_span = Span {
@@ -1382,12 +1580,12 @@ impl<'a> Parser<'a> {
             };
             expressions.push(return_expr);
 
-            let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+            let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
             if !token_matches!(next, TokenType::Symbol(Symbol::Semicolon)) {
-                return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
+                return Err(Error::MissingSemicolon(ret_span));
             }
 
-            let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+            let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
             if !token_matches!(next, TokenType::Symbol(Symbol::RBrace)) {
                 return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
             }
@@ -1398,7 +1596,10 @@ impl<'a> Parser<'a> {
 
     fn const_declaration(&mut self) -> Result<ConstDeclarationExpression<'a>, Error<'a>> {
         // const
-        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let current_token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| self.unexpected_eof())?;
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Const)) {
             return Err(Error::UnexpectedToken(
                 self.current_span(),
@@ -1407,7 +1608,7 @@ impl<'a> Parser<'a> {
         }
 
         // variable_name
-        let ident_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let ident_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         let ident_span = Self::token_to_span(&ident_token);
         let ident = match ident_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
@@ -1415,7 +1616,10 @@ impl<'a> Parser<'a> {
         };
 
         // `=`
-        let assign_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?.clone();
+        let assign_token = self
+            .get_next()?
+            .ok_or_else(|| self.unexpected_eof())?
+            .clone();
         if !token_matches!(assign_token, TokenType::Symbol(Symbol::Assign)) {
             return Err(Error::UnexpectedToken(
                 Self::token_to_span(&assign_token),
@@ -1439,7 +1643,7 @@ impl<'a> Parser<'a> {
         } else {
             // we need to rewind our tokenizer to our previous location
             self.tokenizer.seek(SeekFrom::Current(
-                self.tokenizer.loc() - current_token_index,
+                current_token_index - self.tokenizer.loc(),
             ))?;
             let syscall = self.spanned(|p| p.syscall())?;
 
@@ -1452,7 +1656,9 @@ impl<'a> Parser<'a> {
             ) {
                 return Err(Error::UnexpectedToken(
                     syscall.span,
-                    self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                    self.current_token
+                        .clone()
+                        .ok_or_else(|| self.unexpected_eof())?,
                 ));
             }
 
@@ -1467,14 +1673,17 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> Result<Expression<'a>, Error<'a>> {
-        let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+        let current_token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| self.unexpected_eof())?;
         if !self_matches_current!(self, TokenType::Keyword(Keyword::Let)) {
             return Err(Error::UnexpectedToken(
                 self.current_span(),
                 current_token.clone(),
             ));
         }
-        let identifier_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let identifier_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         let identifier_span = Self::token_to_span(&identifier_token);
         let identifier = match identifier_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
@@ -1486,7 +1695,10 @@ impl<'a> Parser<'a> {
             }
         };
 
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?.clone();
+        let current_token = self
+            .get_next()?
+            .ok_or_else(|| self.unexpected_eof())?
+            .clone();
 
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Assign)) {
             return Err(Error::UnexpectedToken(
@@ -1496,14 +1708,12 @@ impl<'a> Parser<'a> {
         }
 
         self.assign_next()?;
-        let assignment_expression = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+        let assignment_expression = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
+        let expr_span = assignment_expression.span;
 
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let current_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(current_token, TokenType::Symbol(Symbol::Semicolon)) {
-            return Err(Error::UnexpectedToken(
-                Self::token_to_span(&current_token),
-                current_token,
-            ));
+            return Err(Error::MissingSemicolon(expr_span));
         }
 
         Ok(Expression::Declaration(
@@ -1516,7 +1726,10 @@ impl<'a> Parser<'a> {
     }
 
     fn literal(&mut self) -> Result<Literal<'a>, Error<'a>> {
-        let current_token = self.current_token.clone().ok_or(Error::UnexpectedEOF)?;
+        let current_token = self
+            .current_token
+            .clone()
+            .ok_or_else(|| self.unexpected_eof())?;
         let literal = match current_token.token_type {
             TokenType::Number(num) => Literal::Number(num),
             TokenType::String(ref string) => Literal::String(string.clone()),
@@ -1532,7 +1745,7 @@ impl<'a> Parser<'a> {
                         wrong_token,
                     ));
                 }
-                None => return Err(Error::UnexpectedEOF),
+                None => return Err(self.unexpected_eof()),
             },
             _ => {
                 return Err(Error::UnexpectedToken(
@@ -1547,20 +1760,20 @@ impl<'a> Parser<'a> {
 
     fn if_expression(&mut self) -> Result<IfExpression<'a>, Error<'a>> {
         // 'if' is current
-        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::LParen)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
         self.assign_next()?;
 
-        let condition = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+        let condition = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
 
-        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
 
-        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
@@ -1586,7 +1799,7 @@ impl<'a> Parser<'a> {
                     node: Expression::Block(block),
                 }))
             } else {
-                let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
                 return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
             }
         } else {
@@ -1601,7 +1814,7 @@ impl<'a> Parser<'a> {
     }
 
     fn loop_expression(&mut self) -> Result<LoopExpression<'a>, Error<'a>> {
-        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
@@ -1612,20 +1825,20 @@ impl<'a> Parser<'a> {
     }
 
     fn while_expression(&mut self) -> Result<WhileExpression<'a>, Error<'a>> {
-        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::LParen)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
         self.assign_next()?;
 
-        let condition = self.expression()?.ok_or(Error::UnexpectedEOF)?;
+        let condition = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
 
-        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
 
-        let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::LBrace)) {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
@@ -1640,7 +1853,7 @@ impl<'a> Parser<'a> {
 
     fn function(&mut self) -> Result<FunctionExpression<'a>, Error<'a>> {
         // 'fn' is current
-        let fn_ident_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let fn_ident_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         let fn_ident_span = Self::token_to_span(&fn_ident_token);
         let fn_ident = match fn_ident_token.token_type {
             TokenType::Identifier(ref id) => id.clone(),
@@ -1649,7 +1862,7 @@ impl<'a> Parser<'a> {
             }
         };
 
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let current_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LParen)) {
             return Err(Error::UnexpectedToken(
                 Self::token_to_span(&current_token),
@@ -1660,10 +1873,13 @@ impl<'a> Parser<'a> {
         let mut arguments = Vec::<Spanned<Cow<'a, str>>>::new();
 
         while !token_matches!(
-            self.get_next()?.ok_or(Error::UnexpectedEOF)?,
+            self.get_next()?.ok_or_else(|| self.unexpected_eof())?,
             TokenType::Symbol(Symbol::RParen)
         ) {
-            let current_token = self.current_token.as_ref().ok_or(Error::UnexpectedEOF)?;
+            let current_token = self
+                .current_token
+                .as_ref()
+                .ok_or_else(|| self.unexpected_eof())?;
             let arg_span = Self::token_to_span(current_token);
             let argument = match current_token.token_type {
                 TokenType::Identifier(ref id) => id.clone(),
@@ -1689,7 +1905,7 @@ impl<'a> Parser<'a> {
             if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
                 && !self_matches_peek!(self, TokenType::Symbol(Symbol::RParen))
             {
-                let next = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+                let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
                 return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
             }
 
@@ -1698,7 +1914,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let current_token = self.get_next()?.ok_or(Error::UnexpectedEOF)?;
+        let current_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(current_token, TokenType::Symbol(Symbol::LBrace)) {
             return Err(Error::UnexpectedToken(
                 Self::token_to_span(&current_token),
@@ -1761,7 +1977,9 @@ impl<'a> Parser<'a> {
                     _ => {
                         return Err(Error::UnexpectedToken(
                             self.current_span(),
-                            self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                            self.current_token
+                                .clone()
+                                .ok_or_else(|| self.unexpected_eof())?,
                         ))
                     }
                 }
@@ -1793,8 +2011,13 @@ impl<'a> Parser<'a> {
             }
             "sleep" => {
                 let mut args = args!(1);
-                let expr = args.next().ok_or(Error::UnexpectedEOF)?;
+                let expr = args.next().ok_or_else(|| self.unexpected_eof())?;
                 Ok(SysCall::System(System::Sleep(boxed!(expr))))
+            }
+            "clr" => {
+                let mut args = args!(1);
+                let expr = args.next().ok_or_else(|| self.unexpected_eof())?;
+                Ok(SysCall::System(System::Clr(boxed!(expr))))
             }
             "hash" => {
                 let mut args = args!(1);
@@ -1847,7 +2070,9 @@ impl<'a> Parser<'a> {
                     _ => {
                         return Err(Error::UnexpectedToken(
                             self.current_span(),
-                            self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                            self.current_token
+                                .clone()
+                                .ok_or_else(|| self.unexpected_eof())?,
                         ));
                     }
                 };
@@ -1903,7 +2128,7 @@ impl<'a> Parser<'a> {
                 let tmp = args.next();
                 let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
 
-                let variable = args.next().ok_or(Error::UnexpectedEOF)?;
+                let variable = args.next().ok_or_else(|| self.unexpected_eof())?;
                 Ok(SysCall::System(sys_call::System::SetOnDevice(
                     device,
                     Spanned {
@@ -1922,7 +2147,7 @@ impl<'a> Parser<'a> {
 
                 let tmp = args.next();
                 let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
-                let variable = args.next().ok_or(Error::UnexpectedEOF)?;
+                let variable = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::System(sys_call::System::SetOnDeviceBatched(
                     device_hash,
@@ -1945,7 +2170,7 @@ impl<'a> Parser<'a> {
                 let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
 
                 let tmp = args.next();
-                let expr = Box::new(tmp.ok_or(Error::UnexpectedEOF)?);
+                let expr = Box::new(tmp.ok_or_else(|| self.unexpected_eof())?);
 
                 Ok(SysCall::System(System::SetOnDeviceBatchedNamed(
                     device_hash,
@@ -1958,7 +2183,7 @@ impl<'a> Parser<'a> {
                 let mut args = args!(3);
                 let next = args.next();
                 let dev_name = literal_or_variable!(next);
-                let slot_index = args.next().ok_or(Error::UnexpectedEOF)?;
+                let slot_index = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 let next = args.next();
                 let slot_logic = get_arg!(Literal, literal_or_variable!(next));
@@ -1985,7 +2210,7 @@ impl<'a> Parser<'a> {
                 let mut args = args!(4);
                 let next = args.next();
                 let dev_name = literal_or_variable!(next);
-                let slot_index = args.next().ok_or(Error::UnexpectedEOF)?;
+                let slot_index = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 let next = args.next();
                 let slot_logic = get_arg!(Literal, literal_or_variable!(next));
@@ -2002,7 +2227,7 @@ impl<'a> Parser<'a> {
                     ));
                 }
                 let next = args.next();
-                let expr = next.ok_or(Error::UnexpectedEOF)?;
+                let expr = next.ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::System(System::SetSlot(
                     dev_name,
@@ -2017,11 +2242,22 @@ impl<'a> Parser<'a> {
                 let device = literal_or_variable!(next);
                 let next = args.next();
                 let reagent_mode = get_arg!(Literal, literal_or_variable!(next));
-                let reagent_hash = args.next().ok_or(Error::UnexpectedEOF)?;
+                let reagent_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::System(System::LoadReagent(
                     device,
                     reagent_mode,
+                    Box::new(reagent_hash),
+                )))
+            }
+            "rmap" => {
+                let mut args = args!(2);
+                let next = args.next();
+                let device = literal_or_variable!(next);
+                let reagent_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
+
+                Ok(SysCall::System(System::Rmap(
+                    device,
                     Box::new(reagent_hash),
                 )))
             }
@@ -2030,80 +2266,80 @@ impl<'a> Parser<'a> {
             "acos" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let tmp = args.next().ok_or(Error::UnexpectedEOF)?;
+                let tmp = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Acos(boxed!(tmp))))
             }
             "asin" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let tmp = args.next().ok_or(Error::UnexpectedEOF)?;
+                let tmp = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Asin(boxed!(tmp))))
             }
             "atan" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let expr = args.next().ok_or(Error::UnexpectedEOF)?;
+                let expr = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Atan(boxed!(expr))))
             }
             "atan2" => {
                 check_length(2)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg1 = args.next().ok_or(Error::UnexpectedEOF)?;
-                let arg2 = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg1 = args.next().ok_or_else(|| self.unexpected_eof())?;
+                let arg2 = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Atan2(boxed!(arg1), boxed!(arg2))))
             }
             "abs" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let expr = args.next().ok_or(Error::UnexpectedEOF)?;
+                let expr = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Abs(boxed!(expr))))
             }
             "ceil" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Ceil(boxed!(arg))))
             }
             "cos" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Cos(boxed!(arg))))
             }
             "floor" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Floor(boxed!(arg))))
             }
             "log" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Log(boxed!(arg))))
             }
             "max" => {
                 check_length(2)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg1 = args.next().ok_or(Error::UnexpectedEOF)?;
-                let arg2 = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg1 = args.next().ok_or_else(|| self.unexpected_eof())?;
+                let arg2 = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Max(boxed!(arg1), boxed!(arg2))))
             }
             "min" => {
                 check_length(2)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg1 = args.next().ok_or(Error::UnexpectedEOF)?;
-                let arg2 = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg1 = args.next().ok_or_else(|| self.unexpected_eof())?;
+                let arg2 = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Min(boxed!(arg1), boxed!(arg2))))
             }
@@ -2114,34 +2350,36 @@ impl<'a> Parser<'a> {
             "sin" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Sin(boxed!(arg))))
             }
             "sqrt" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Sqrt(boxed!(arg))))
             }
             "tan" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Tan(boxed!(arg))))
             }
             "trunc" => {
                 check_length(1)?;
                 let mut args = invocation.arguments.into_iter();
-                let arg = args.next().ok_or(Error::UnexpectedEOF)?;
+                let arg = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::Math(Math::Trunc(boxed!(arg))))
             }
             _ => Err(Error::UnsupportedKeyword(
                 self.current_span(),
-                self.current_token.clone().ok_or(Error::UnexpectedEOF)?,
+                self.current_token
+                    .clone()
+                    .ok_or_else(|| self.unexpected_eof())?,
             )),
         }
     }

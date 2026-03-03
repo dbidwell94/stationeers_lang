@@ -287,3 +287,68 @@ fn test_load_reagent() -> anyhow::Result<()> {
 
     Ok(())
 }
+#[test]
+fn test_clr() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        "
+        device stackDevice = \"d0\";
+        clr(stackDevice);
+        let deviceRef = 5;
+        clr(deviceRef);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            clr d0
+            move r8 5
+            clr r8
+            "
+        }
+    );
+
+    Ok(())
+}
+#[test]
+fn test_rmap() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        "
+        device printer = \"d0\";
+        let reagentHash = 12345;
+        let itemHash = rmap(printer, reagentHash);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 12345
+            rmap r15 d0 r8
+            move r9 r15
+            "
+        }
+    );
+
+    Ok(())
+}

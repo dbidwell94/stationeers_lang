@@ -1,0 +1,32 @@
+---
+source: libs/integration_tests/src/optimization_tests.rs
+assertion_line: 36
+expression: output
+---
+## Unoptimized Output
+
+j main
+compute:
+pop r8
+push sp
+push ra
+move r9 20
+add r1 r8 1
+move r15 r1
+j __internal_L1
+__internal_L1:
+pop ra
+pop sp
+j ra
+
+## Optimized Output
+
+j main
+pop r8
+push sp
+push ra
+move r9 20
+add r15 r8 1
+pop ra
+pop sp
+j ra

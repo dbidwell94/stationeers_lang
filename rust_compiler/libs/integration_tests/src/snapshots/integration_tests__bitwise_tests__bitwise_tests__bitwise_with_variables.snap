@@ -1,0 +1,67 @@
+---
+source: libs/integration_tests/src/bitwise_tests.rs
+assertion_line: 57
+expression: output
+---
+## Unoptimized Output
+
+j main
+pack_bits:
+pop r8
+pop r9
+push sp
+push ra
+sll r1 r9 8
+or r2 r1 r8
+move r10 r2
+move r15 r10
+j __internal_L1
+__internal_L1:
+pop ra
+pop sp
+j ra
+extract_bits:
+pop r8
+push sp
+push ra
+sra r1 r8 8
+and r2 r1 255
+move r9 r2
+and r3 r8 255
+move r10 r3
+push r9
+push r10
+sub r0 sp 4
+get r0 db r0
+move r15 r0
+j __internal_L2
+__internal_L2:
+sub r0 sp 3
+get ra db r0
+j ra
+
+## Optimized Output
+
+j main
+pop r8
+pop r9
+push sp
+push ra
+sll r1 r9 8
+or r15 r1 r8
+pop ra
+pop sp
+j ra
+pop r8
+push sp
+push ra
+sra r1 r8 8
+and r9 r1 255
+and r10 r8 255
+push r9
+push r10
+sub r0 sp 4
+get r15 db r0
+sub r0 sp 3
+get ra db r0
+j ra

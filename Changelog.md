@@ -1,5 +1,17 @@
 # Changelog
 
+[0.6.0]
+
+- Added support for bitwise operations with binary (0b...), hex (0x...), and octal (0o...) literals
+- Implemented bitwise constant folding and expression optimization
+- Added initial array indexing support
+- Enhanced LSP integration for better IDE support
+- Added beta user documentation visible directly in the IDE
+- Improved symbol tracking during parse stage (variables, functions, devices)
+- Enhanced constant folding for improved code generation
+- Improved CLI error handling with better span information
+- Updated Rust dependencies and IC10Editor DLL compatibility
+
 [0.5.1]
 
 - Fixed optimizer bug where `StoreBatch` and `StoreBatchNamed` instructions

@@ -65,8 +65,8 @@ fn run_logic<'a>() -> Result<(), Error<'a>> {
     let input_string = match input_file {
         Some(input_path) => {
             let mut buf = String::new();
-            let mut file = std::fs::File::open(input_path).unwrap();
-            file.read_to_string(&mut buf).unwrap();
+            let mut file = std::fs::File::open(input_path)?;
+            file.read_to_string(&mut buf)?;
             buf
         }
         None => {

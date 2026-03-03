@@ -1,0 +1,19 @@
+---
+source: libs/integration_tests/src/device_indexing_tests.rs
+assertion_line: 105
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+move r8 -62440604628430
+put d0 255 r8
+get r1 d0 255
+move r9 r1
+
+## Optimized Output
+
+move r8 -62440604628430
+put d0 255 r8
+get r9 d0 255

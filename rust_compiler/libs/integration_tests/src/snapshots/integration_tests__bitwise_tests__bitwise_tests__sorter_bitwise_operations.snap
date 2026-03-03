@@ -1,0 +1,20 @@
+---
+source: libs/integration_tests/src/bitwise_tests.rs
+assertion_line: 91
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+__internal_L1:
+yield
+put d0 0 55164456193
+j __internal_L1
+__internal_L2:
+
+## Optimized Output
+
+yield
+put d0 0 55164456193
+j 0

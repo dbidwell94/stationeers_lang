@@ -1,19 +1,15 @@
 ---
-source: libs/integration_tests/src/lib.rs
-assertion_line: 103
+source: libs/integration_tests/src/function_tests.rs
+assertion_line: 10
 expression: output
 ---
 ## Unoptimized Output
 
 j main
-compute:
-pop r8
+test:
 push sp
 push ra
-move r9 20
-add r1 r8 1
-move r15 r1
-j __internal_L1
+move r8 10
 __internal_L1:
 pop ra
 pop sp
@@ -22,11 +18,9 @@ j ra
 ## Optimized Output
 
 j main
-pop r8
 push sp
 push ra
-move r9 20
-add r15 r8 1
+move r8 10
 pop ra
 pop sp
 j ra

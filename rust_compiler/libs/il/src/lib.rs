@@ -195,6 +195,9 @@ pub enum Instruction<'a> {
     /// `lr register device reagentMode int`
     LoadReagent(Operand<'a>, Operand<'a>, Operand<'a>, Operand<'a>),
 
+    /// `rmap register device reagentHash` - Resolve Reagent to Item Hash
+    Rmap(Operand<'a>, Operand<'a>, Operand<'a>),
+
     /// `j label` - Unconditional Jump
     Jump(Operand<'a>),
     /// `jal label` - Jump and Link (Function Call)
@@ -232,12 +235,22 @@ pub enum Instruction<'a> {
     /// `sle dst a b` - Set if Less or Equal
     SetLe(Operand<'a>, Operand<'a>, Operand<'a>),
 
-    /// `and dst a b` - Logical AND
+    /// `and dst a b` - Bitwise AND
     And(Operand<'a>, Operand<'a>, Operand<'a>),
-    /// `or dst a b` - Logical OR
+    /// `or dst a b` - Bitwise OR
     Or(Operand<'a>, Operand<'a>, Operand<'a>),
-    /// `xor dst a b` - Logical XOR
+    /// `xor dst a b` - Bitwise XOR
     Xor(Operand<'a>, Operand<'a>, Operand<'a>),
+    /// `nor dst a b` - Bitwise NOR
+    Nor(Operand<'a>, Operand<'a>, Operand<'a>),
+    /// `not dst a` - Bitwise NOT
+    Not(Operand<'a>, Operand<'a>),
+    /// `sll dst a b` - Logical Left Shift
+    Sll(Operand<'a>, Operand<'a>, Operand<'a>),
+    /// `sra dst a b` - Arithmetic Right Shift
+    Sra(Operand<'a>, Operand<'a>, Operand<'a>),
+    /// `srl dst a b` - Logical Right Shift
+    Srl(Operand<'a>, Operand<'a>, Operand<'a>),
 
     /// `push val` - Push to Stack
     Push(Operand<'a>),
@@ -257,6 +270,8 @@ pub enum Instruction<'a> {
     Yield,
     /// `sleep val` - Sleep for seconds
     Sleep(Operand<'a>),
+    /// `clr val` - Clear stack memory on device
+    Clr(Operand<'a>),
 
     /// `alias name target` - Define Alias (Usually handled by compiler, but good for IR)
     Alias(Cow<'a, str>, Operand<'a>),
@@ -318,6 +333,9 @@ impl<'a> fmt::Display for Instruction<'a> {
             Instruction::LoadReagent(reg, device, reagent_mode, reagent_hash) => {
                 write!(f, "lr {} {} {} {}", reg, device, reagent_mode, reagent_hash)
             }
+            Instruction::Rmap(reg, device, reagent_hash) => {
+                write!(f, "rmap {} {} {}", reg, device, reagent_hash)
+            }
             Instruction::Jump(lbl) => write!(f, "j {}", lbl),
             Instruction::JumpAndLink(lbl) => write!(f, "jal {}", lbl),
             Instruction::JumpRelative(off) => write!(f, "jr {}", off),
@@ -338,6 +356,11 @@ impl<'a> fmt::Display for Instruction<'a> {
             Instruction::And(dst, a, b) => write!(f, "and {} {} {}", dst, a, b),
             Instruction::Or(dst, a, b) => write!(f, "or {} {} {}", dst, a, b),
             Instruction::Xor(dst, a, b) => write!(f, "xor {} {} {}", dst, a, b),
+            Instruction::Nor(dst, a, b) => write!(f, "nor {} {} {}", dst, a, b),
+            Instruction::Not(dst, a) => write!(f, "not {} {}", dst, a),
+            Instruction::Sll(dst, a, b) => write!(f, "sll {} {} {}", dst, a, b),
+            Instruction::Sra(dst, a, b) => write!(f, "sra {} {} {}", dst, a, b),
+            Instruction::Srl(dst, a, b) => write!(f, "srl {} {} {}", dst, a, b),
             Instruction::Push(val) => write!(f, "push {}", val),
             Instruction::Pop(dst) => write!(f, "pop {}", dst),
             Instruction::Peek(dst) => write!(f, "peek {}", dst),
@@ -348,6 +371,7 @@ impl<'a> fmt::Display for Instruction<'a> {
             }
             Instruction::Yield => write!(f, "yield"),
             Instruction::Sleep(val) => write!(f, "sleep {}", val),
+            Instruction::Clr(val) => write!(f, "clr {}", val),
             Instruction::Alias(name, target) => write!(f, "alias {} {}", name, target),
             Instruction::Define(name, val) => write!(f, "define {} {}", name, val),
             Instruction::LabelDef(lbl) => write!(f, "{}:", lbl),

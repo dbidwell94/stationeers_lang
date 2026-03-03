@@ -171,18 +171,17 @@ public class SlangFormatter : ICodeFormatter
                 return;
 
             // Running this potentially CPU intensive work on a background thread.
-            var dict = await Task.Run(
+            var (diagnostics, symbols) = await Task.Run(
                 () =>
                 {
-                    return Marshal
-                        .DiagnoseSource(inputSrc)
-                        .GroupBy(d => d.Range.StartLine)
-                        .ToDictionary(g => g.Key);
+                    return Marshal.DiagnoseSourceWithSymbols(inputSrc);
                 },
                 cancellationToken
             );
 
-            ApplyDiagnostics(dict);
+            var dict = diagnostics.GroupBy(d => d.Range.StartLine).ToDictionary(g => g.Key);
+
+            ApplyDiagnosticsAndSymbols(dict, symbols);
 
             // If we have valid code, update the IC10 output
             if (dict.Count > 0)
@@ -266,11 +265,11 @@ public class SlangFormatter : ICodeFormatter
     }
 
     /// <summary>
-    /// Takes diagnostics from the Rust FFI compiler and applies it as semantic tokens to the
+    /// Takes diagnostics and symbols from the Rust FFI compiler and applies them as semantic tokens to the
     /// source in this editor.
     /// This runs on the Main Thread
     /// </summary>
-    private void ApplyDiagnostics(Dictionary<uint, IGrouping<uint, Diagnostic>> dict)
+    private void ApplyDiagnosticsAndSymbols(Dictionary<uint, IGrouping<uint, Diagnostic>> dict, List<Symbol> symbols)
     {
         HashSet<uint> linesToRefresh;
 
@@ -289,6 +288,12 @@ public class SlangFormatter : ICodeFormatter
         {
             linesToRefresh = new HashSet<uint>(dict.Keys);
             linesToRefresh.UnionWith(_linesWithErrors);
+
+            // Also add lines with symbols that may have been modified
+            foreach (var symbol in symbols)
+            {
+                linesToRefresh.Add(symbol.Span.StartLine);
+            }
         }
 
         _lastLineCount = this.Lines.Count;
@@ -328,15 +333,65 @@ public class SlangFormatter : ICodeFormatter
                 }
             }
 
+            // 3. Add symbol tooltips for symbols on this line
+            foreach (var symbol in symbols)
+            {
+                if (symbol.Span.StartLine == lineIndex)
+                {
+                    var column = (int)symbol.Span.StartCol;
+                    var length = Math.Max(1, (int)(symbol.Span.EndCol - symbol.Span.StartCol));
+
+                    // If there's already a token at this position (from syntax highlighting), use it
+                    // Otherwise, create a new token for the symbol
+                    if (allTokensDict.ContainsKey(column))
+                    {
+                        // Update existing token with symbol tooltip
+                        var existingToken = allTokensDict[column];
+                        allTokensDict[column] = new SemanticToken(
+                            line: existingToken.Line,
+                            column: existingToken.Column,
+                            length: existingToken.Length,
+                            type: existingToken.Type,
+                            style: existingToken.Style,
+                            data: symbol.Description, // Use symbol description as tooltip
+                            isError: existingToken.IsError
+                        );
+                    }
+                    else
+                    {
+                        // Create new token for symbol
+                        allTokensDict[column] = new SemanticToken(
+                            line: (int)lineIndex,
+                            column,
+                            length,
+                            type: 0,
+                            style: ColorIdentifier,
+                            data: symbol.Description,
+                            isError: false
+                        );
+                    }
+                }
+            }
+
             var allTokens = allTokensDict.Values.ToList();
 
-            // 3. Update the line (this clears existing tokens and uses the list we just built)
+            // 4. Update the line (this clears existing tokens and uses the list we just built)
             line.Update(allTokens);
 
             ReattachMetadata(line, allTokens);
         }
 
         _linesWithErrors = new HashSet<uint>(dict.Keys);
+    }
+
+    /// <summary>
+    /// Takes diagnostics from the Rust FFI compiler and applies it as semantic tokens to the
+    /// source in this editor.
+    /// This runs on the Main Thread
+    /// </summary>
+    private void ApplyDiagnostics(Dictionary<uint, IGrouping<uint, Diagnostic>> dict)
+    {
+        ApplyDiagnosticsAndSymbols(dict, new List<Symbol>());
     }
 
     // Helper to map SemanticToken data (tooltips/errors) back to the tokens in the line

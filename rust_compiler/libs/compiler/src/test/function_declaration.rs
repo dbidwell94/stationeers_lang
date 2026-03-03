@@ -152,3 +152,93 @@ fn test_function_declaration_with_register_params() -> anyhow::Result<()> {
 
     Ok(())
 }
+#[test]
+fn test_nested_function_invocations() -> anyhow::Result<()> {
+    let compiled = compile!(check r#"
+        fn getValue() {
+            return 5;
+        }
+        
+        fn doSomething(val) {
+            return val + 1;
+        }
+        
+        let result = doSomething(getValue());
+    "#);
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            getValue:
+            push sp
+            push ra
+            move r15 5
+            j __internal_L1
+            __internal_L1:
+            pop ra
+            pop sp
+            j ra
+            doSomething:
+            pop r8
+            push sp
+            push ra
+            add r1 r8 1
+            move r15 r1
+            j __internal_L2
+            __internal_L2:
+            pop ra
+            pop sp
+            j ra
+            main:
+            jal getValue
+            move r1 r15
+            push r1
+            jal doSomething
+            move r8 r15
+        "}
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_deeply_nested_function_invocations() -> anyhow::Result<()> {
+    let compiled = compile!(check r#"
+        fn add(a, b) {
+            return a + b;
+        }
+        
+        fn mul(x, y) {
+            return x * y;
+        }
+        
+        fn getTwo() {
+            return 2;
+        }
+        
+        fn getThree() {
+            return 3;
+        }
+        
+        let result = add(mul(getTwo(), getThree()), 4);
+    "#);
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    // Just verify it compiles without errors
+    assert!(!compiled.output.is_empty());
+
+    Ok(())
+}

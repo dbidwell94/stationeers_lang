@@ -94,6 +94,30 @@ impl From<lsp_types::Diagnostic> for FfiDiagnostic {
     }
 }
 
+#[derive_ReprC]
+#[repr(C)]
+pub struct FfiSymbolKindData {
+    pub kind: u32, // 0=Function, 1=Syscall, 2=Variable
+    pub arg_count: u32,
+    pub syscall_type: u32, // 0=System, 1=Math (only for Syscall kind)
+}
+
+#[derive_ReprC]
+#[repr(C)]
+pub struct FfiSymbolInfo {
+    pub name: safer_ffi::String,
+    pub kind_data: FfiSymbolKindData,
+    pub span: FfiRange,
+    pub description: safer_ffi::String,
+}
+
+#[derive_ReprC]
+#[repr(C)]
+pub struct FfiDiagnosticsAndSymbols {
+    pub diagnostics: safer_ffi::Vec<FfiDiagnostic>,
+    pub symbols: safer_ffi::Vec<FfiSymbolInfo>,
+}
+
 #[ffi_export]
 pub fn free_ffi_compilation_result(input: FfiCompilationResult) {
     drop(input)
@@ -106,6 +130,11 @@ pub fn free_ffi_token_vec(v: safer_ffi::Vec<FfiToken>) {
 
 #[ffi_export]
 pub fn free_ffi_diagnostic_vec(v: safer_ffi::Vec<FfiDiagnostic>) {
+    drop(v)
+}
+
+#[ffi_export]
+pub fn free_ffi_diagnostics_and_symbols(v: FfiDiagnosticsAndSymbols) {
     drop(v)
 }
 
@@ -182,6 +211,10 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
         let input = String::from_utf16_lossy(input.as_slice());
         let tokenizer = Tokenizer::from(input.as_str());
 
+        // Build a lookup table for syscall documentation
+        let syscall_docs: std::collections::HashMap<&'static str, String> =
+            SysCall::get_all_documentation().into_iter().collect();
+
         let mut tokens = Vec::new();
 
         for token in tokenizer {
@@ -217,13 +250,26 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
                 }
                 Ok(Token {
                     span, token_type, ..
-                }) => tokens.push(FfiToken {
-                    column: span.start as i32,
-                    error: "".into(),
-                    length: (span.end - span.start) as i32,
-                    tooltip: token_type.docs().into(),
-                    token_kind: token_type.into(),
-                }),
+                }) => {
+                    let mut tooltip = token_type.docs();
+
+                    // If no docs from token type, check if it's a syscall
+                    if tooltip.is_empty() {
+                        if let TokenType::Identifier(id) = &token_type {
+                            if let Some(doc) = syscall_docs.get(id.as_ref()) {
+                                tooltip = doc.clone();
+                            }
+                        }
+                    }
+
+                    tokens.push(FfiToken {
+                        column: span.start as i32,
+                        error: "".into(),
+                        length: (span.end - span.start) as i32,
+                        tooltip: tooltip.into(),
+                        token_kind: token_type.into(),
+                    })
+                }
             }
         }
 
@@ -255,6 +301,88 @@ pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<
     });
 
     res.unwrap_or(vec![].into())
+}
+
+#[ffi_export]
+pub fn diagnose_source_with_symbols(
+    input: safer_ffi::slice::Ref<'_, u16>,
+) -> FfiDiagnosticsAndSymbols {
+    let res = std::panic::catch_unwind(|| {
+        let input = String::from_utf16_lossy(input.as_slice());
+
+        let tokenizer = Tokenizer::from(input.as_str());
+        let compiler = Compiler::new(Parser::new(tokenizer), None);
+
+        let CompilationResult {
+            errors: diagnosis,
+            metadata,
+            ..
+        } = compiler.compile();
+
+        // Convert diagnostics
+        let mut diagnostics_vec: Vec<FfiDiagnostic> = Vec::with_capacity(diagnosis.len());
+        for err in diagnosis {
+            diagnostics_vec.push(lsp_types::Diagnostic::from(err).into());
+        }
+
+        // Convert symbols
+        let mut symbols_vec: Vec<FfiSymbolInfo> = Vec::with_capacity(metadata.symbols.len());
+        for symbol in &metadata.symbols {
+            let (kind, arg_count, syscall_type) = match &symbol.kind {
+                compiler::SymbolKind::Function { parameters, .. } => {
+                    (0, parameters.len() as u32, 0)
+                }
+                compiler::SymbolKind::Syscall {
+                    syscall_type,
+                    argument_count,
+                } => {
+                    let sc_type = match syscall_type {
+                        compiler::SyscallType::System => 0,
+                        compiler::SyscallType::Math => 1,
+                    };
+                    (1, *argument_count as u32, sc_type)
+                }
+                compiler::SymbolKind::Variable { .. } => (2, 0, 0),
+            };
+
+            let span = symbol
+                .span
+                .as_ref()
+                .map(|s| (*s).into())
+                .unwrap_or(FfiRange {
+                    start_line: 0,
+                    end_line: 0,
+                    start_col: 0,
+                    end_col: 0,
+                });
+
+            symbols_vec.push(FfiSymbolInfo {
+                name: symbol.name.to_string().into(),
+                kind_data: FfiSymbolKindData {
+                    kind,
+                    arg_count,
+                    syscall_type,
+                },
+                span,
+                description: symbol
+                    .description
+                    .as_ref()
+                    .map(|d| d.to_string())
+                    .unwrap_or_default()
+                    .into(),
+            });
+        }
+
+        FfiDiagnosticsAndSymbols {
+            diagnostics: diagnostics_vec.into(),
+            symbols: symbols_vec.into(),
+        }
+    });
+
+    res.unwrap_or(FfiDiagnosticsAndSymbols {
+        diagnostics: vec![].into(),
+        symbols: vec![].into(),
+    })
 }
 
 #[ffi_export]

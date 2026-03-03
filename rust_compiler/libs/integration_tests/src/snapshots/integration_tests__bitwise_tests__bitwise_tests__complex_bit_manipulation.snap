@@ -1,0 +1,80 @@
+---
+source: libs/integration_tests/src/bitwise_tests.rs
+assertion_line: 75
+expression: output
+---
+## Unoptimized Output
+
+j main
+encode_flags:
+pop r8
+pop r9
+pop r10
+push sp
+push ra
+sll r1 r10 7
+sll r2 r9 4
+or r3 r1 r2
+or r4 r3 r8
+move r11 r4
+move r15 r11
+j __internal_L1
+__internal_L1:
+pop ra
+pop sp
+j ra
+decode_flags:
+pop r8
+push sp
+push ra
+sra r1 r8 7
+and r2 r1 1
+move r9 r2
+sra r3 r8 4
+and r4 r3 7
+move r10 r4
+and r5 r8 15
+move r11 r5
+push r9
+push r10
+push r11
+sub r0 sp 5
+get r0 db r0
+move r15 r0
+j __internal_L2
+__internal_L2:
+sub r0 sp 4
+get ra db r0
+j ra
+
+## Optimized Output
+
+j main
+pop r8
+pop r9
+pop r10
+push sp
+push ra
+sll r1 r10 7
+sll r2 r9 4
+or r3 r1 r2
+or r15 r3 r8
+pop ra
+pop sp
+j ra
+pop r8
+push sp
+push ra
+sra r1 r8 7
+and r9 r1 1
+sra r3 r8 4
+and r10 r3 7
+and r11 r8 15
+push r9
+push r10
+push r11
+sub r0 sp 5
+get r15 db r0
+sub r0 sp 4
+get ra db r0
+j ra

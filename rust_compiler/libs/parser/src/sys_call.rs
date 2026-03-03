@@ -127,6 +127,52 @@ impl<'a> std::fmt::Display for Math<'a> {
     }
 }
 
+impl<'a> Math<'a> {
+    /// Returns the name of this math function (e.g., "acos", "sin", "sqrt", etc.)
+    pub fn name(&self) -> &'static str {
+        match self {
+            Math::Acos(_) => "acos",
+            Math::Asin(_) => "asin",
+            Math::Atan(_) => "atan",
+            Math::Atan2(_, _) => "atan2",
+            Math::Abs(_) => "abs",
+            Math::Ceil(_) => "ceil",
+            Math::Cos(_) => "cos",
+            Math::Floor(_) => "floor",
+            Math::Log(_) => "log",
+            Math::Max(_, _) => "max",
+            Math::Min(_, _) => "min",
+            Math::Rand => "rand",
+            Math::Sin(_) => "sin",
+            Math::Sqrt(_) => "sqrt",
+            Math::Tan(_) => "tan",
+            Math::Trunc(_) => "trunc",
+        }
+    }
+
+    /// Returns the number of arguments this math function expects
+    pub fn arg_count(&self) -> usize {
+        match self {
+            Math::Acos(_) => 1,
+            Math::Asin(_) => 1,
+            Math::Atan(_) => 1,
+            Math::Atan2(_, _) => 2,
+            Math::Abs(_) => 1,
+            Math::Ceil(_) => 1,
+            Math::Cos(_) => 1,
+            Math::Floor(_) => 1,
+            Math::Log(_) => 1,
+            Math::Max(_, _) => 2,
+            Math::Min(_, _) => 2,
+            Math::Rand => 0,
+            Math::Sin(_) => 1,
+            Math::Sqrt(_) => 1,
+            Math::Tan(_) => 1,
+            Math::Trunc(_) => 1,
+        }
+    }
+}
+
 documented! {
     #[derive(Debug, PartialEq, Eq)]
     pub enum System<'a> {
@@ -142,6 +188,12 @@ documented! {
         /// ## Slang
         /// `sleep(number|var);`
         Sleep(Box<Spanned<Expression<'a>>>),
+        /// Clears stack memory on the provided device.
+        /// ## IC10
+        /// `clr d?`
+        /// ## Slang
+        /// `clr(device);`
+        Clr(Box<Spanned<Expression<'a>>>),
         /// Gets the in-game hash for a specific prefab name. NOTE! This call is COMPLETELY
         /// optimized away unless you bind it to a `let` variable. If you use a `const` variable
         /// however, the hash is correctly computed at compile time and substitued automatically.
@@ -249,6 +301,17 @@ documented! {
             Spanned<LiteralOrVariable<'a>>,
             Spanned<Literal<'a>>,
             Box<Spanned<Expression<'a>>>
+        ),
+        /// Maps a reagent hash to the item hash that fulfills it on a device
+        ///
+        /// ## IC10
+        /// `rmap r? d? reagentHash(r?|num)`
+        /// ## Slang
+        /// `let itemHash = rmap(device, reagentHash);`
+        /// `let itemHash = rmap(device, reagentHashValue);`
+        Rmap(
+            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>
         )
     }
 }
@@ -258,6 +321,7 @@ impl<'a> std::fmt::Display for System<'a> {
         match self {
             System::Yield => write!(f, "yield()"),
             System::Sleep(a) => write!(f, "sleep({})", a),
+            System::Clr(a) => write!(f, "clr({})", a),
             System::Hash(a) => write!(f, "hash({})", a),
             System::LoadFromDevice(a, b) => write!(f, "loadFromDevice({}, {})", a, b),
             System::LoadBatch(a, b, c) => write!(f, "loadBatch({}, {}, {})", a, b, c),
@@ -274,6 +338,49 @@ impl<'a> std::fmt::Display for System<'a> {
             System::LoadSlot(a, b, c) => write!(f, "loadSlot({}, {}, {})", a, b, c),
             System::SetSlot(a, b, c, d) => write!(f, "setSlot({}, {}, {}, {})", a, b, c, d),
             System::LoadReagent(a, b, c) => write!(f, "loadReagent({}, {}, {})", a, b, c),
+            System::Rmap(a, b) => write!(f, "rmap({}, {})", a, b),
+        }
+    }
+}
+
+impl<'a> System<'a> {
+    /// Returns the name of this syscall (e.g., "yield", "sleep", "hash", etc.)
+    pub fn name(&self) -> &'static str {
+        match self {
+            System::Yield => "yield",
+            System::Sleep(_) => "sleep",
+            System::Clr(_) => "clr",
+            System::Hash(_) => "hash",
+            System::LoadFromDevice(_, _) => "loadFromDevice",
+            System::LoadBatch(_, _, _) => "loadBatch",
+            System::LoadBatchNamed(_, _, _, _) => "loadBatchNamed",
+            System::SetOnDevice(_, _, _) => "setOnDevice",
+            System::SetOnDeviceBatched(_, _, _) => "setOnDeviceBatched",
+            System::SetOnDeviceBatchedNamed(_, _, _, _) => "setOnDeviceBatchedNamed",
+            System::LoadSlot(_, _, _) => "loadSlot",
+            System::SetSlot(_, _, _, _) => "setSlot",
+            System::LoadReagent(_, _, _) => "loadReagent",
+            System::Rmap(_, _) => "rmap",
+        }
+    }
+
+    /// Returns the number of arguments this syscall expects
+    pub fn arg_count(&self) -> usize {
+        match self {
+            System::Yield => 0,
+            System::Sleep(_) => 1,
+            System::Clr(_) => 1,
+            System::Hash(_) => 1,
+            System::LoadFromDevice(_, _) => 2,
+            System::LoadBatch(_, _, _) => 3,
+            System::LoadBatchNamed(_, _, _, _) => 4,
+            System::SetOnDevice(_, _, _) => 3,
+            System::SetOnDeviceBatched(_, _, _) => 3,
+            System::SetOnDeviceBatchedNamed(_, _, _, _) => 4,
+            System::LoadSlot(_, _, _) => 3,
+            System::SetSlot(_, _, _, _) => 4,
+            System::LoadReagent(_, _, _) => 3,
+            System::Rmap(_, _) => 2,
         }
     }
 }

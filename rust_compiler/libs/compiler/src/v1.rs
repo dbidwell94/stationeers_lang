@@ -8,8 +8,8 @@ use parser::{
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
-        InvocationExpression, Literal, LiteralOr, LiteralOrVariable, LogicalExpression,
-        LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
+        IndexAccessExpression, InvocationExpression, Literal, LiteralOr, LiteralOrVariable,
+        LogicalExpression, LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
         TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
     },
 };
@@ -68,6 +68,9 @@ pub enum Error<'a> {
     TupleSizeMismatch(usize, usize, Span),
 
     #[error("{0}")]
+    OperationNotSupported(String, Span),
+
+    #[error("{0}")]
     Unknown(String, Option<Span>),
 }
 
@@ -89,7 +92,8 @@ impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
             | ConstAssignment(_, span)
             | DeviceAssignment(_, span)
             | AgrumentMismatch(_, span)
-            | TupleSizeMismatch(_, _, span) => Diagnostic {
+            | TupleSizeMismatch(_, _, span)
+            | OperationNotSupported(_, span) => Diagnostic {
                 range: span.into(),
                 message: value.to_string(),
                 severity: Some(DiagnosticSeverity::ERROR),
@@ -141,6 +145,7 @@ struct CompileLocation<'a> {
 pub struct CompilationResult<'a> {
     pub errors: Vec<Error<'a>>,
     pub instructions: Instructions<'a>,
+    pub metadata: crate::CompilationMetadata<'a>,
 }
 
 /// Metadata for the currently compiling function
@@ -198,6 +203,8 @@ pub struct Compiler<'a> {
     pub source_map: HashMap<usize, Vec<Span>>,
     /// Accumulative errors from the compilation process
     pub errors: Vec<Error<'a>>,
+    /// Metadata about symbols encountered during compilation
+    pub metadata: crate::CompilationMetadata<'a>,
 }
 
 impl<'a> Compiler<'a> {
@@ -215,6 +222,7 @@ impl<'a> Compiler<'a> {
             loop_stack: Vec::new(),
             source_map: HashMap::new(),
             errors: Vec::new(),
+            metadata: crate::CompilationMetadata::new(),
         }
     }
 
@@ -233,6 +241,7 @@ impl<'a> Compiler<'a> {
                 return CompilationResult {
                     errors: self.errors,
                     instructions: self.instructions,
+                    metadata: self.metadata,
                 };
             }
             Err(e) => {
@@ -241,6 +250,7 @@ impl<'a> Compiler<'a> {
                 return CompilationResult {
                     errors: self.errors,
                     instructions: self.instructions,
+                    metadata: self.metadata,
                 };
             }
         };
@@ -266,6 +276,7 @@ impl<'a> Compiler<'a> {
             return CompilationResult {
                 errors: self.errors,
                 instructions: self.instructions,
+                metadata: self.metadata,
             };
         }
 
@@ -279,6 +290,7 @@ impl<'a> Compiler<'a> {
         CompilationResult {
             errors: self.errors,
             instructions: self.instructions,
+            metadata: self.metadata,
         }
     }
 
@@ -387,6 +399,26 @@ impl<'a> Compiler<'a> {
             }
             Expression::Ternary(tern) => Ok(Some(self.expression_ternary(tern.node, scope)?)),
             Expression::Invocation(expr_invoke) => {
+                // Special case: hash() with string literal can be evaluated at compile time
+                if expr_invoke.node.name.node == "hash" && expr_invoke.node.arguments.len() == 1 {
+                    if let Expression::Literal(Spanned {
+                        node: Literal::String(str_to_hash),
+                        ..
+                    }) = &expr_invoke.node.arguments[0].node
+                    {
+                        // Evaluate hash at compile time
+                        let hash_value = crc_hash_signed(str_to_hash);
+                        return Ok(Some(CompileLocation {
+                            location: VariableLocation::Constant(Literal::Number(Number::Integer(
+                                hash_value,
+                                Unit::None,
+                            ))),
+                            temp_name: None,
+                        }));
+                    }
+                }
+
+                // Non-constant hash calls or other function calls
                 self.expression_function_invocation(expr_invoke, scope)?;
                 // Invocation returns result in r15 (RETURN_REGISTER).
                 // If used as an expression, we must move it to a temp to avoid overwrite.
@@ -433,10 +465,23 @@ impl<'a> Compiler<'a> {
             },
             Expression::Variable(name) => {
                 match scope.get_location_of(&name.node, Some(name.span)) {
-                    Ok(loc) => Ok(Some(CompileLocation {
-                        location: loc,
-                        temp_name: None, // User variable, do not free
-                    })),
+                    Ok(loc) => {
+                        // Track this variable reference in metadata (for tooltips on all usages, not just declaration)
+                        let doc_comment: Option<Cow<'a, str>> = self
+                            .parser
+                            .get_declaration_doc(name.node.as_ref())
+                            .map(|s| Cow::Owned(s) as Cow<'a, str>);
+                        self.metadata.add_variable_with_doc(
+                            name.node.clone(),
+                            Some(name.span),
+                            doc_comment,
+                        );
+
+                        Ok(Some(CompileLocation {
+                            location: loc,
+                            temp_name: None, // User variable, do not free
+                        }))
+                    }
                     Err(_) => {
                         // fallback, check devices
                         if let Some(device) = self.devices.get(&name.node) {
@@ -487,6 +532,50 @@ impl<'a> Compiler<'a> {
                     temp_name: Some(result_name),
                 }))
             }
+            Expression::IndexAccess(access) => {
+                // "get" behavior (e.g. `let x = d0[255]`)
+                let IndexAccessExpression { object, index } = access.node;
+
+                // 1. Resolve the object to a device string
+                let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
+
+                // Check if device is "db" (not allowed)
+                if let Operand::Device(ref dev_str) = device {
+                    if dev_str.as_ref() == "db" {
+                        return Err(Error::OperationNotSupported(
+                            "Direct stack access on 'db' is not yet supported".to_string(),
+                            expr.span,
+                        ));
+                    }
+                }
+
+                // 2. Compile the index expression to get the address
+                let (addr, addr_cleanup) = self.compile_operand(*index, scope)?;
+
+                // 3. Allocate a temp register for the result
+                let result_name = self.next_temp_name();
+                let loc = scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
+                let reg = self.resolve_register(&loc)?;
+
+                // 4. Emit get instruction: get rX device address
+                self.write_instruction(
+                    Instruction::Get(Operand::Register(reg), device, addr),
+                    Some(expr.span),
+                )?;
+
+                // 5. Cleanup
+                if let Some(c) = dev_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+                if let Some(c) = addr_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+
+                Ok(Some(CompileLocation {
+                    location: loc,
+                    temp_name: Some(result_name),
+                }))
+            }
             Expression::MethodCall(call) => {
                 // Methods are not yet fully supported (e.g. `d0.SomeFunc()`).
                 // This would likely map to specialized syscalls or batch instructions.
@@ -513,6 +602,28 @@ impl<'a> Compiler<'a> {
                         Operand::Number(0.into()),
                         inner_str,
                     ),
+                    Some(expr.span),
+                )?;
+
+                if let Some(name) = cleanup {
+                    scope.free_temp(name, None)?;
+                }
+
+                Ok(Some(CompileLocation {
+                    location: result_loc,
+                    temp_name: Some(result_name),
+                }))
+            }
+            Expression::BitwiseNot(inner_expr) => {
+                // Compile bitwise NOT using the NOT instruction
+                let (inner_str, cleanup) = self.compile_operand(*inner_expr, scope)?;
+                let result_name = self.next_temp_name();
+                let result_loc =
+                    scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
+                let result_reg = self.resolve_register(&result_loc)?;
+
+                self.write_instruction(
+                    Instruction::Not(Operand::Register(result_reg), inner_str),
                     Some(expr.span),
                 )?;
 
@@ -554,6 +665,14 @@ impl<'a> Compiler<'a> {
         if let Expression::Variable(ref name) = expr.node
             && let Some(device_id) = self.devices.get(&name.node)
         {
+            // Track this device reference in metadata (for tooltips on all usages, not just declaration)
+            let doc_comment = self
+                .parser
+                .get_declaration_doc(name.node.as_ref())
+                .map(Cow::Owned);
+            self.metadata
+                .add_variable_with_doc(name.node.clone(), Some(expr.span), doc_comment);
+
             return Ok((Operand::Device(device_id.clone()), None));
         }
 
@@ -605,6 +724,14 @@ impl<'a> Compiler<'a> {
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
         let name_str = var_name.node;
         let name_span = var_name.span;
+
+        // Track the variable in metadata
+        let doc_comment = self
+            .parser
+            .get_declaration_doc(name_str.as_ref())
+            .map(Cow::Owned);
+        self.metadata
+            .add_variable_with_doc(name_str.clone(), Some(name_span), doc_comment);
 
         // optimization. Check for a negated numeric literal (including nested negations)
         // e.g., -5, -(-5), -(-(5)), etc.
@@ -889,6 +1016,58 @@ impl<'a> Compiler<'a> {
                 }
                 (var_loc, None)
             }
+            Expression::BitwiseNot(_) => {
+                // Compile the bitwise NOT expression
+                let result = self.expression(expr, scope)?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
+
+                if let Some(res) = result {
+                    // Move result from temp to new persistent variable
+                    let result_reg = self.resolve_register(&res.location)?;
+                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+
+                    // Free the temp result
+                    if let Some(name) = res.temp_name {
+                        scope.free_temp(name, None)?;
+                    }
+                } else {
+                    return Err(Error::Unknown(
+                        format!("`{name_str}` bitwise NOT expression did not produce a value"),
+                        Some(name_span),
+                    ));
+                }
+                (var_loc, None)
+            }
+            Expression::IndexAccess(_) => {
+                // Compile the index access expression
+                let result = self.expression(expr, scope)?;
+                let var_loc = scope.add_variable(
+                    name_str.clone(),
+                    LocationRequest::Persist,
+                    Some(name_span),
+                )?;
+
+                if let Some(res) = result {
+                    // Move result from temp to new persistent variable
+                    let result_reg = self.resolve_register(&res.location)?;
+                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+
+                    // Free the temp result
+                    if let Some(name) = res.temp_name {
+                        scope.free_temp(name, None)?;
+                    }
+                } else {
+                    return Err(Error::Unknown(
+                        format!("`{name_str}` index access expression did not produce a value"),
+                        Some(name_span),
+                    ));
+                }
+                (var_loc, None)
+            }
             _ => {
                 return Err(Error::Unknown(
                     format!("`{name_str}` declaration of this type is not supported/implemented."),
@@ -912,6 +1091,17 @@ impl<'a> Compiler<'a> {
             name: const_name,
             value: const_value,
         } = expr;
+
+        // Track the const variable in metadata
+        let doc_comment = self
+            .parser
+            .get_declaration_doc(const_name.node.as_ref())
+            .map(Cow::Owned);
+        self.metadata.add_variable_with_doc(
+            const_name.node.clone(),
+            Some(const_name.span),
+            doc_comment,
+        );
 
         // check for a hash expression or a literal
         let value = match const_value {
@@ -1019,6 +1209,37 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 if let Some(c) = dev_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+                if let Some(c) = val_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+            }
+            Expression::IndexAccess(access) => {
+                // Put instruction: put device address value
+                let IndexAccessExpression { object, index } = access.node;
+
+                let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
+
+                // Check if device is "db" (not allowed)
+                if let Operand::Device(ref dev_str) = device {
+                    if dev_str.as_ref() == "db" {
+                        return Err(Error::OperationNotSupported(
+                            "Direct stack access on 'db' is not yet supported".to_string(),
+                            assignee.span,
+                        ));
+                    }
+                }
+
+                let (addr, addr_cleanup) = self.compile_operand(*index, scope)?;
+                let (val, val_cleanup) = self.compile_operand(*expression, scope)?;
+
+                self.write_instruction(Instruction::Put(device, addr, val), Some(assignee.span))?;
+
+                if let Some(c) = dev_cleanup {
+                    scope.free_temp(c, None)?;
+                }
+                if let Some(c) = addr_cleanup {
                     scope.free_temp(c, None)?;
                 }
                 if let Some(c) = val_cleanup {
@@ -1305,6 +1526,29 @@ impl<'a> Compiler<'a> {
     ) -> Result<(), Error<'a>> {
         let TupleDeclarationExpression { names, value } = tuple_decl;
 
+        // Track each variable in the tuple declaration
+        // Get doc for the first variable
+        let first_var_name = names
+            .iter()
+            .find(|n| n.node.as_ref() != "_")
+            .map(|n| n.node.to_string());
+        let doc_comment = first_var_name
+            .as_ref()
+            .and_then(|name| self.parser.get_declaration_doc(name))
+            .map(Cow::Owned);
+
+        for (i, name_spanned) in names.iter().enumerate() {
+            if name_spanned.node.as_ref() != "_" {
+                // Only attach doc comment to the first variable
+                let comment = if i == 0 { doc_comment.clone() } else { None };
+                self.metadata.add_variable_with_doc(
+                    name_spanned.node.clone(),
+                    Some(name_spanned.span),
+                    comment,
+                );
+            }
+        }
+
         match value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call - tuple values will be on the stack
@@ -1569,140 +1813,54 @@ impl<'a> Compiler<'a> {
             )?;
         }
         for arg in arguments {
-            match arg.node {
-                Expression::Literal(spanned_lit) => match spanned_lit.node {
-                    Literal::Number(num) => {
-                        self.write_instruction(
-                            Instruction::Push(Operand::Number(num.into())),
-                            Some(spanned_lit.span),
-                        )?;
-                    }
-                    Literal::Boolean(b) => {
-                        self.write_instruction(
-                            Instruction::Push(Operand::Number(Number::from(b).into())),
-                            Some(spanned_lit.span),
-                        )?;
-                    }
-                    _ => {}
-                },
-                Expression::Variable(var_name) => {
-                    let loc = match stack.get_location_of(&var_name.node, Some(var_name.span)) {
-                        Ok(l) => l,
-                        Err(_) => {
-                            self.errors
-                                .push(Error::UnknownIdentifier(var_name.node, var_name.span));
-                            VariableLocation::Temporary(0)
-                        }
-                    };
+            let arg_span = arg.span;
+            // Use compile_operand to handle all expression types uniformly
+            // This handles literals, variables, binaries, logicals, and importantly INVOCATIONS
+            let (operand, temp_cleanup) = self.compile_operand(arg, &mut stack)?;
 
-                    match loc {
-                        VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
-                            self.write_instruction(
-                                Instruction::Push(Operand::Register(reg)),
-                                Some(var_name.span),
-                            )?;
-                        }
-                        VariableLocation::Constant(lit) => {
-                            self.write_instruction(
-                                Instruction::Push(extract_literal(lit, false)?),
-                                Some(var_name.span),
-                            )?;
-                        }
-                        VariableLocation::Stack(stack_offset) => {
-                            self.write_instruction(
-                                Instruction::Sub(
-                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::StackPointer,
-                                    Operand::Number(stack_offset.into()),
-                                ),
-                                Some(var_name.span),
-                            )?;
-
-                            self.write_instruction(
-                                Instruction::Get(
-                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::Device(Cow::from("db")),
-                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                ),
-                                Some(var_name.span),
-                            )?;
-
-                            self.write_instruction(
-                                Instruction::Push(Operand::Register(
-                                    VariableScope::TEMP_STACK_REGISTER,
-                                )),
-                                Some(var_name.span),
-                            )?;
-                        }
-                        VariableLocation::Device(_) => {
-                            return Err(Error::Unknown(
-                                r#"Attempted to pass a device contant into a function argument. These values can be used without scope."#.into(),
-                                Some(arg.span),
-                            ));
-                        }
-                    }
+            // Convert operand to a pushable form
+            match operand {
+                Operand::Number(n) => {
+                    self.write_instruction(Instruction::Push(Operand::Number(n)), Some(arg_span))?;
                 }
-                Expression::Binary(bin_expr) => {
-                    let span = bin_expr.span;
-                    // Compile the binary expression to a temp register
-                    let result = self.expression_binary(bin_expr, &mut stack)?;
-                    let reg = self.resolve_register(&result.location)?;
-                    self.write_instruction(Instruction::Push(Operand::Register(reg)), Some(span))?;
-                    if let Some(name) = result.temp_name {
-                        stack.free_temp(name, None)?;
-                    }
-                }
-                Expression::Logical(log_expr) => {
-                    let span = log_expr.span;
-                    // Compile the logical expression to a temp register
-                    let result = self.expression_logical(log_expr, &mut stack)?;
-                    let reg = self.resolve_register(&result.location)?;
-                    self.write_instruction(Instruction::Push(Operand::Register(reg)), Some(span))?;
-                    if let Some(name) = result.temp_name {
-                        stack.free_temp(name, None)?;
-                    }
-                }
-                Expression::MemberAccess(access) => {
-                    let span = access.span;
-                    // Compile member access to temp and push
-                    let result_opt = self.expression(
-                        Spanned {
-                            node: Expression::MemberAccess(access),
-                            span: Span {
-                                start_col: 0,
-                                end_col: 0,
-                                start_line: 0,
-                                end_line: 0,
-                            }, // Dummy span
-                        },
-                        &mut stack,
+                Operand::Register(reg) => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::Register(reg)),
+                        Some(arg_span),
                     )?;
-
-                    if let Some(result) = result_opt {
-                        let reg_str = self.resolve_register(&result.location)?;
-                        self.write_instruction(
-                            Instruction::Push(Operand::Register(reg_str)),
-                            Some(span),
-                        )?;
-                        if let Some(name) = result.temp_name {
-                            stack.free_temp(name, None)?;
-                        }
-                    } else {
-                        self.write_instruction(
-                            Instruction::Push(Operand::Number(Decimal::from(0))),
-                            Some(span),
-                        )?;
-                    }
                 }
-                _ => {
+                Operand::Device(_) => {
                     return Err(Error::Unknown(
-                        format!(
-                            "Attempted to call `{}` with an unsupported argument type",
-                            name.node
-                        ),
-                        Some(name.span),
+                        r#"Attempted to pass a device constant into a function argument. These values can be used without scope."#.into(),
+                        Some(arg_span),
                     ));
                 }
+                Operand::Label(l) => {
+                    self.write_instruction(Instruction::Push(Operand::Label(l)), Some(arg_span))?;
+                }
+                Operand::LogicType(l) => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::LogicType(l)),
+                        Some(arg_span),
+                    )?;
+                }
+                Operand::StackPointer => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::StackPointer),
+                        Some(arg_span),
+                    )?;
+                }
+                Operand::ReturnAddress => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::ReturnAddress),
+                        Some(arg_span),
+                    )?;
+                }
+            }
+
+            // Clean up any temporary variables created during operand compilation
+            if let Some(temp_name) = temp_cleanup {
+                stack.free_temp(temp_name, None)?;
             }
         }
 
@@ -1743,6 +1901,17 @@ impl<'a> Compiler<'a> {
         &mut self,
         expr: DeviceDeclarationExpression<'a>,
     ) -> Result<(), Error<'a>> {
+        // Track the device declaration in metadata
+        let doc_comment = self
+            .parser
+            .get_declaration_doc(expr.name.node.as_ref())
+            .map(Cow::Owned);
+        self.metadata.add_variable_with_doc(
+            expr.name.node.clone(),
+            Some(expr.name.span),
+            doc_comment,
+        );
+
         if self.devices.contains_key(&expr.name.node) {
             self.errors.push(Error::DuplicateIdentifier(
                 expr.name.node.clone(),
@@ -2113,14 +2282,40 @@ impl<'a> Compiler<'a> {
         expr: Spanned<BinaryExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompileLocation<'a>, Error<'a>> {
-        fn fold_binary_expression<'a>(expr: &BinaryExpression<'a>) -> Option<Number> {
+        fn fold_binary_expression<'a>(
+            expr: &BinaryExpression<'a>,
+            scope: &VariableScope<'a, '_>,
+        ) -> Option<Number> {
+            fn number_to_i64(n: Number) -> Option<i64> {
+                match n {
+                    Number::Integer(i, _) => i64::try_from(i).ok(),
+                    Number::Decimal(d, _) => {
+                        // Convert decimal to i64 by truncating
+                        let int_part = d.trunc();
+                        i64::try_from(int_part.mantissa() / 10_i128.pow(int_part.scale())).ok()
+                    }
+                }
+            }
+
+            fn i64_to_number(i: i64) -> Number {
+                Number::Integer(i as i128, Unit::None)
+            }
+
             let (lhs, rhs) = match &expr {
                 BinaryExpression::Add(l, r)
                 | BinaryExpression::Subtract(l, r)
                 | BinaryExpression::Multiply(l, r)
                 | BinaryExpression::Divide(l, r)
                 | BinaryExpression::Exponent(l, r)
-                | BinaryExpression::Modulo(l, r) => (fold_expression(l)?, fold_expression(r)?),
+                | BinaryExpression::Modulo(l, r)
+                | BinaryExpression::BitwiseAnd(l, r)
+                | BinaryExpression::BitwiseOr(l, r)
+                | BinaryExpression::BitwiseXor(l, r)
+                | BinaryExpression::LeftShift(l, r)
+                | BinaryExpression::RightShiftArithmetic(l, r)
+                | BinaryExpression::RightShiftLogical(l, r) => {
+                    (fold_expression(l, scope)?, fold_expression(r, scope)?)
+                }
             };
 
             match expr {
@@ -2129,11 +2324,44 @@ impl<'a> Compiler<'a> {
                 BinaryExpression::Multiply(..) => Some(lhs * rhs),
                 BinaryExpression::Divide(..) => Some(lhs / rhs), // Watch out for div by zero panics!
                 BinaryExpression::Modulo(..) => Some(lhs % rhs),
-                _ => None, // Handle Exponent separately or implement pow
+                BinaryExpression::BitwiseAnd(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int & rhs_int))
+                }
+                BinaryExpression::BitwiseOr(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int | rhs_int))
+                }
+                BinaryExpression::BitwiseXor(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int ^ rhs_int))
+                }
+                BinaryExpression::LeftShift(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int << rhs_int))
+                }
+                BinaryExpression::RightShiftArithmetic(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int >> rhs_int))
+                }
+                BinaryExpression::RightShiftLogical(..) => {
+                    let lhs_int = number_to_i64(lhs)?;
+                    let rhs_int = number_to_i64(rhs)?;
+                    Some(i64_to_number(lhs_int >> rhs_int))
+                }
+                _ => None, // Exponent not handled in compile-time folding
             }
         }
 
-        fn fold_expression<'a>(expr: &Expression<'a>) -> Option<Number> {
+        fn fold_expression<'a>(
+            expr: &Expression<'a>,
+            scope: &VariableScope<'a, '_>,
+        ) -> Option<Number> {
             match expr {
                 // 1. Base Case: It's already a number
                 Expression::Literal(lit) => match lit.node {
@@ -2142,23 +2370,60 @@ impl<'a> Compiler<'a> {
                 },
 
                 // 2. Handle Parentheses: Just recurse deeper
-                Expression::Priority(inner) => fold_expression(&inner.node),
+                Expression::Priority(inner) => fold_expression(&inner.node, scope),
 
                 // 3. Handle Negation: Recurse, then negate
                 Expression::Negation(inner) => {
-                    let val = fold_expression(&inner.node)?;
+                    let val = fold_expression(&inner.node, scope)?;
                     Some(-val) // Requires impl Neg for Number
                 }
 
                 // 4. Handle Binary Ops: Recurse BOTH sides, then combine
-                Expression::Binary(bin) => fold_binary_expression(&bin.node),
+                Expression::Binary(bin) => fold_binary_expression(&bin.node, scope),
 
-                // 5. Anything else (Variables, Function Calls) cannot be compile-time folded
+                // 5. Handle Variable Reference: Check if it's a const
+                Expression::Variable(var_id) => {
+                    if let Ok(var_loc) = scope.get_location_of(var_id, None) {
+                        if let VariableLocation::Constant(Literal::Number(num)) = var_loc {
+                            return Some(num);
+                        }
+                    }
+                    None
+                }
+
+                // 6. Handle hash() syscall - evaluates to a constant at compile time
+                Expression::Syscall(Spanned {
+                    node:
+                        SysCall::System(System::Hash(Spanned {
+                            node: Literal::String(str_to_hash),
+                            ..
+                        })),
+                    ..
+                }) => {
+                    return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
+                }
+
+                // 7. Handle hash() macro as invocation - evaluates to a constant at compile time
+                Expression::Invocation(inv) => {
+                    if inv.node.name.node == "hash" && inv.node.arguments.len() == 1 {
+                        if let Expression::Literal(Spanned {
+                            node: Literal::String(str_to_hash),
+                            ..
+                        }) = &inv.node.arguments[0].node
+                        {
+                            // hash() takes a string literal and returns a signed integer
+                            return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
+                        }
+                    }
+                    None
+                }
+
+                // 8. Anything else cannot be compile-time folded
                 _ => None,
             }
         }
 
-        if let Some(const_lit) = fold_binary_expression(&expr.node) {
+        if let Some(const_lit) = fold_binary_expression(&expr.node, scope) {
             return Ok(CompileLocation {
                 location: VariableLocation::Constant(Literal::Number(const_lit)),
                 temp_name: None,
@@ -2188,6 +2453,24 @@ impl<'a> Compiler<'a> {
             }
             BinaryExpression::Modulo(l, r) => {
                 (|into, lhs, rhs| Instruction::Mod(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::BitwiseAnd(l, r) => {
+                (|into, lhs, rhs| Instruction::And(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::BitwiseOr(l, r) => {
+                (|into, lhs, rhs| Instruction::Or(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::BitwiseXor(l, r) => {
+                (|into, lhs, rhs| Instruction::Xor(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::LeftShift(l, r) => {
+                (|into, lhs, rhs| Instruction::Sll(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::RightShiftArithmetic(l, r) => {
+                (|into, lhs, rhs| Instruction::Sra(into, lhs, rhs), l, r)
+            }
+            BinaryExpression::RightShiftLogical(l, r) => {
+                (|into, lhs, rhs| Instruction::Srl(into, lhs, rhs), l, r)
             }
         };
 
@@ -2633,6 +2916,17 @@ impl<'a> Compiler<'a> {
         span: Span,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
+        // Track the syscall in metadata
+        let syscall_name = expr.name();
+        let doc = expr.docs().into();
+        self.metadata.add_syscall_with_doc(
+            Cow::Borrowed(syscall_name),
+            crate::SyscallType::System,
+            expr.arg_count(),
+            Some(span),
+            Some(doc),
+        );
+
         macro_rules! cleanup {
             ($($to_clean:expr),*) => {
                 $(
@@ -2650,6 +2944,13 @@ impl<'a> Compiler<'a> {
             System::Sleep(amt) => {
                 let (op, var_cleanup) = self.compile_operand(*amt, scope)?;
                 self.write_instruction(Instruction::Sleep(op), Some(span))?;
+
+                cleanup!(var_cleanup);
+                Ok(None)
+            }
+            System::Clr(device) => {
+                let (op, var_cleanup) = self.compile_operand(*device, scope)?;
+                self.write_instruction(Instruction::Clr(op), Some(span))?;
 
                 cleanup!(var_cleanup);
                 Ok(None)
@@ -2978,6 +3279,42 @@ impl<'a> Compiler<'a> {
                     temp_name: None,
                 }))
             }
+            System::Rmap(device, reagent_hash) => {
+                let Spanned {
+                    node: LiteralOrVariable::Variable(device_spanned),
+                    ..
+                } = device
+                else {
+                    return Err(Error::AgrumentMismatch(
+                        "Arg1 expected to be a variable".into(),
+                        span,
+                    ));
+                };
+
+                let (device, device_cleanup) = self.compile_literal_or_variable(
+                    LiteralOrVariable::Variable(device_spanned),
+                    scope,
+                )?;
+
+                let (reagent_hash, reagent_hash_cleanup) =
+                    self.compile_operand(*reagent_hash, scope)?;
+
+                self.write_instruction(
+                    Instruction::Rmap(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        device,
+                        reagent_hash,
+                    ),
+                    Some(span),
+                )?;
+
+                cleanup!(reagent_hash_cleanup, device_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
         }
     }
 
@@ -2987,6 +3324,17 @@ impl<'a> Compiler<'a> {
         span: Span,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
+        // Track the syscall in metadata
+        let syscall_name = expr.name();
+        let doc = expr.docs().into();
+        self.metadata.add_syscall_with_doc(
+            Cow::Borrowed(syscall_name),
+            crate::SyscallType::Math,
+            expr.arg_count(),
+            Some(span),
+            Some(doc),
+        );
+
         macro_rules! cleanup {
             ($($to_clean:expr),*) => {
                 $(
@@ -3246,6 +3594,19 @@ impl<'a> Compiler<'a> {
         } = expr.node;
 
         let span = expr.span;
+
+        // Track the function definition in metadata
+        let param_names: Vec<Cow<'a, str>> = arguments.iter().map(|a| a.node.clone()).collect();
+        let doc_comment = self
+            .parser
+            .get_declaration_doc(name.node.as_ref())
+            .map(Cow::Owned);
+        self.metadata.add_function_with_doc(
+            name.node.clone(),
+            param_names,
+            Some(name.span),
+            doc_comment,
+        );
 
         if self.function_meta.locations.contains_key(&name.node) {
             self.errors
