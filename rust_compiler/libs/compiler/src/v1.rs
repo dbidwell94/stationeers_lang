@@ -1813,140 +1813,54 @@ impl<'a> Compiler<'a> {
             )?;
         }
         for arg in arguments {
-            match arg.node {
-                Expression::Literal(spanned_lit) => match spanned_lit.node {
-                    Literal::Number(num) => {
-                        self.write_instruction(
-                            Instruction::Push(Operand::Number(num.into())),
-                            Some(spanned_lit.span),
-                        )?;
-                    }
-                    Literal::Boolean(b) => {
-                        self.write_instruction(
-                            Instruction::Push(Operand::Number(Number::from(b).into())),
-                            Some(spanned_lit.span),
-                        )?;
-                    }
-                    _ => {}
-                },
-                Expression::Variable(var_name) => {
-                    let loc = match stack.get_location_of(&var_name.node, Some(var_name.span)) {
-                        Ok(l) => l,
-                        Err(_) => {
-                            self.errors
-                                .push(Error::UnknownIdentifier(var_name.node, var_name.span));
-                            VariableLocation::Temporary(0)
-                        }
-                    };
+            let arg_span = arg.span;
+            // Use compile_operand to handle all expression types uniformly
+            // This handles literals, variables, binaries, logicals, and importantly INVOCATIONS
+            let (operand, temp_cleanup) = self.compile_operand(arg, &mut stack)?;
 
-                    match loc {
-                        VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
-                            self.write_instruction(
-                                Instruction::Push(Operand::Register(reg)),
-                                Some(var_name.span),
-                            )?;
-                        }
-                        VariableLocation::Constant(lit) => {
-                            self.write_instruction(
-                                Instruction::Push(extract_literal(lit, false)?),
-                                Some(var_name.span),
-                            )?;
-                        }
-                        VariableLocation::Stack(stack_offset) => {
-                            self.write_instruction(
-                                Instruction::Sub(
-                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::StackPointer,
-                                    Operand::Number(stack_offset.into()),
-                                ),
-                                Some(var_name.span),
-                            )?;
-
-                            self.write_instruction(
-                                Instruction::Get(
-                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::Device(Cow::from("db")),
-                                    Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                ),
-                                Some(var_name.span),
-                            )?;
-
-                            self.write_instruction(
-                                Instruction::Push(Operand::Register(
-                                    VariableScope::TEMP_STACK_REGISTER,
-                                )),
-                                Some(var_name.span),
-                            )?;
-                        }
-                        VariableLocation::Device(_) => {
-                            return Err(Error::Unknown(
-                                r#"Attempted to pass a device contant into a function argument. These values can be used without scope."#.into(),
-                                Some(arg.span),
-                            ));
-                        }
-                    }
+            // Convert operand to a pushable form
+            match operand {
+                Operand::Number(n) => {
+                    self.write_instruction(Instruction::Push(Operand::Number(n)), Some(arg_span))?;
                 }
-                Expression::Binary(bin_expr) => {
-                    let span = bin_expr.span;
-                    // Compile the binary expression to a temp register
-                    let result = self.expression_binary(bin_expr, &mut stack)?;
-                    let reg = self.resolve_register(&result.location)?;
-                    self.write_instruction(Instruction::Push(Operand::Register(reg)), Some(span))?;
-                    if let Some(name) = result.temp_name {
-                        stack.free_temp(name, None)?;
-                    }
-                }
-                Expression::Logical(log_expr) => {
-                    let span = log_expr.span;
-                    // Compile the logical expression to a temp register
-                    let result = self.expression_logical(log_expr, &mut stack)?;
-                    let reg = self.resolve_register(&result.location)?;
-                    self.write_instruction(Instruction::Push(Operand::Register(reg)), Some(span))?;
-                    if let Some(name) = result.temp_name {
-                        stack.free_temp(name, None)?;
-                    }
-                }
-                Expression::MemberAccess(access) => {
-                    let span = access.span;
-                    // Compile member access to temp and push
-                    let result_opt = self.expression(
-                        Spanned {
-                            node: Expression::MemberAccess(access),
-                            span: Span {
-                                start_col: 0,
-                                end_col: 0,
-                                start_line: 0,
-                                end_line: 0,
-                            }, // Dummy span
-                        },
-                        &mut stack,
+                Operand::Register(reg) => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::Register(reg)),
+                        Some(arg_span),
                     )?;
-
-                    if let Some(result) = result_opt {
-                        let reg_str = self.resolve_register(&result.location)?;
-                        self.write_instruction(
-                            Instruction::Push(Operand::Register(reg_str)),
-                            Some(span),
-                        )?;
-                        if let Some(name) = result.temp_name {
-                            stack.free_temp(name, None)?;
-                        }
-                    } else {
-                        self.write_instruction(
-                            Instruction::Push(Operand::Number(Decimal::from(0))),
-                            Some(span),
-                        )?;
-                    }
                 }
-                _ => {
+                Operand::Device(_) => {
                     return Err(Error::Unknown(
-                        format!(
-                            "Attempted to call `{}` with an unsupported argument type",
-                            name.node
-                        ),
-                        Some(name.span),
+                        r#"Attempted to pass a device constant into a function argument. These values can be used without scope."#.into(),
+                        Some(arg_span),
                     ));
                 }
+                Operand::Label(l) => {
+                    self.write_instruction(Instruction::Push(Operand::Label(l)), Some(arg_span))?;
+                }
+                Operand::LogicType(l) => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::LogicType(l)),
+                        Some(arg_span),
+                    )?;
+                }
+                Operand::StackPointer => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::StackPointer),
+                        Some(arg_span),
+                    )?;
+                }
+                Operand::ReturnAddress => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::ReturnAddress),
+                        Some(arg_span),
+                    )?;
+                }
+            }
+
+            // Clean up any temporary variables created during operand compilation
+            if let Some(temp_name) = temp_cleanup {
+                stack.free_temp(temp_name, None)?;
             }
         }
 
