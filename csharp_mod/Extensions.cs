@@ -10,6 +10,74 @@ public static unsafe class SlangExtensions
 {
     /**
      * <summary>
+     * Ownership note:
+     * - Use *AndFree() helpers when the vector is the top-level FFI return value
+     *   and this layer should free it.
+     * - Use *NoFree() helpers when the vector is nested inside a larger FFI struct
+     *   that must be released by a single aggregate free call.
+     * </summary>
+     */
+    public static unsafe List<Diagnostic> ToDiagnosticListNoFree(this Vec_FfiDiagnostic_t vec)
+    {
+        var toReturn = new List<Diagnostic>((int)vec.len);
+
+        var currentPtr = vec.ptr;
+
+        for (int i = 0; i < (int)vec.len; i++)
+        {
+            var item = currentPtr[i];
+
+            toReturn.Add(
+                new Slang.Diagnostic
+                {
+                    Message = item.message.AsString(),
+                    Severity = item.severity,
+                    Range = new Slang.Range
+                    {
+                        EndCol = Math.Max(item.range.end_col, 0),
+                        EndLine = item.range.end_line,
+                        StartCol = Math.Max(item.range.start_col, 0),
+                        StartLine = item.range.start_line,
+                    },
+                }
+            );
+        }
+
+        return toReturn;
+    }
+
+    public static unsafe List<Symbol> ToSymbolListNoFree(this Vec_FfiSymbolInfo_t vec)
+    {
+        var toReturn = new List<Symbol>((int)vec.len);
+
+        var currentPtr = vec.ptr;
+
+        for (int i = 0; i < (int)vec.len; i++)
+        {
+            var item = currentPtr[i];
+
+            toReturn.Add(
+                new Slang.Symbol
+                {
+                    Name = item.name.AsString(),
+                    Kind = (SymbolKind)item.kind_data.kind,
+                    Span = new Slang.Range
+                    {
+                        StartLine = item.span.start_line,
+                        StartCol = item.span.start_col,
+                        EndLine = item.span.end_line,
+                        EndCol = item.span.end_col,
+                    },
+                    Description = item.description.AsString(),
+                }
+            );
+        }
+
+        return toReturn;
+    }
+
+    /**
+     * <summary>
      * This is a helper method to convert a Rust struct for a string pointer
      * into a C# style string.
      * </summary>
@@ -42,78 +110,67 @@ public static unsafe class SlangExtensions
      * Rust allocation after the List is created, there is no need to Drop this memory.
      * </summary>
      */
-    public static List<SemanticToken> ToTokenList(this Vec_FfiToken_t vec)
+    public static List<SemanticToken> ToSemanticTokenListAndFree(this Vec_FfiToken_t vec)
     {
-        var tokens = new List<SemanticToken>();
-
-        var currentPtr = vec.ptr;
-
-        // Iterate through the raw memory array
-        for (int i = 0; i < (int)vec.len; i++)
+        try
         {
-            var token = currentPtr[i];
+            var tokens = new List<SemanticToken>();
 
-            var color = GetColorForKind(token.token_kind);
+            var currentPtr = vec.ptr;
 
-            int colIndex = token.column;
-            if (colIndex < 0)
-                colIndex = 0;
-
-            var semanticToken = new SemanticToken(
-                0,
-                colIndex,
-                token.length,
-                token.token_kind,
-                color,
-                token.tooltip.AsString()
-            );
-
-            string errMsg = token.error.AsString();
-            if (!string.IsNullOrEmpty(errMsg))
+            // Iterate through the raw memory array
+            for (int i = 0; i < (int)vec.len; i++)
             {
-                semanticToken.IsError = true;
-                semanticToken.Data = errMsg;
-                semanticToken.Color = ICodeFormatter.ColorError;
-            }
-            tokens.Add(semanticToken);
-        }
+                var token = currentPtr[i];
 
-        Ffi.free_ffi_token_vec(vec);
+                var color = GetColorForKind(token.token_kind);
 
-        return tokens;
-    }
+                int colIndex = token.column;
+                if (colIndex < 0)
+                    colIndex = 0;
 
-    public static unsafe List<Diagnostic> ToList(this Vec_FfiDiagnostic_t vec)
-    {
-        var toReturn = new List<Diagnostic>((int)vec.len);
+                var semanticToken = new SemanticToken(
+                    0,
+                    colIndex,
+                    token.length,
+                    token.token_kind,
+                    color,
+                    token.tooltip.AsString()
+                );
 
-        var currentPtr = vec.ptr;
-
-        for (int i = 0; i < (int)vec.len; i++)
-        {
-            var item = currentPtr[i];
-
-            toReturn.Add(
-                new Slang.Diagnostic
+                string errMsg = token.error.AsString();
+                if (!string.IsNullOrEmpty(errMsg))
                 {
-                    Message = item.message.AsString(),
-                    Severity = item.severity,
-                    Range = new Slang.Range
-                    {
-                        EndCol = Math.Max(item.range.end_col, 0),
-                        EndLine = item.range.end_line,
-                        StartCol = Math.Max(item.range.start_col, 0),
-                        StartLine = item.range.start_line,
-                    },
+                    semanticToken.IsError = true;
+                    semanticToken.Data = errMsg;
+                    semanticToken.Color = ICodeFormatter.ColorError;
                 }
-            );
-        }
+                tokens.Add(semanticToken);
+            }
 
-        Ffi.free_ffi_diagnostic_vec(vec);
-        return toReturn;
+            return tokens;
+        }
+        finally
+        {
+            Ffi.free_ffi_token_vec(vec);
+        }
     }
 
-    public static unsafe List<SourceMapEntry> ToList(this Vec_FfiSourceMapEntry_t vec)
+    public static unsafe List<Diagnostic> ToDiagnosticListAndFree(this Vec_FfiDiagnostic_t vec)
+    {
+        try
+        {
+            return vec.ToDiagnosticListNoFree();
+        }
+        finally
+        {
+            Ffi.free_ffi_diagnostic_vec(vec);
+        }
+    }
+
+    public static unsafe List<SourceMapEntry> ToSourceMapEntryListNoFree(
+        this Vec_FfiSourceMapEntry_t vec
+    )
     {
         var toReturn = new List<SourceMapEntry>((int)vec.len);
 
@@ -178,63 +235,41 @@ public static unsafe class SlangExtensions
         }
     }
 
-    public static unsafe List<StationpediaPage> ToList(this Vec_FfiDocumentedItem_t vec)
+    public static unsafe List<StationpediaPage> ToStationpediaPageListAndFree(
+        this Vec_FfiDocumentedItem_t vec
+    )
     {
-        var toReturn = new List<StationpediaPage>((int)vec.len);
-
-        var currentPtr = vec.ptr;
-
-        for (int i = 0; i < (int)vec.len; i++)
+        try
         {
-            var doc = currentPtr[i];
-            var docItemName = doc.item_name.AsString();
+            var toReturn = new List<StationpediaPage>((int)vec.len);
 
-            var formattedText = TextMeshProFormatter.FromMarkdown(doc.docs.AsString());
+            var currentPtr = vec.ptr;
 
-            var pediaPage = new StationpediaPage(
-                $"slang-item-{docItemName}",
-                docItemName,
-                formattedText
-            );
+            for (int i = 0; i < (int)vec.len; i++)
+            {
+                var doc = currentPtr[i];
+                var docItemName = doc.item_name.AsString();
 
-            pediaPage.Text = formattedText;
-            pediaPage.Description = formattedText;
-            pediaPage.ParsePage();
+                var formattedText = TextMeshProFormatter.FromMarkdown(doc.docs.AsString());
 
-            toReturn.Add(pediaPage);
+                var pediaPage = new StationpediaPage(
+                    $"slang-item-{docItemName}",
+                    docItemName,
+                    formattedText
+                );
+
+                pediaPage.Text = formattedText;
+                pediaPage.Description = formattedText;
+                pediaPage.ParsePage();
+
+                toReturn.Add(pediaPage);
+            }
+
+            return toReturn;
         }
-
-        Ffi.free_docs_vec(vec);
-        return toReturn;
-    }
-
-    public static unsafe List<Symbol> ToList(this Vec_FfiSymbolInfo_t vec)
-    {
-        var toReturn = new List<Symbol>((int)vec.len);
-
-        var currentPtr = vec.ptr;
-
-        for (int i = 0; i < (int)vec.len; i++)
+        finally
         {
-            var item = currentPtr[i];
-
-            toReturn.Add(
-                new Slang.Symbol
-                {
-                    Name = item.name.AsString(),
-                    Kind = (SymbolKind)item.kind_data.kind,
-                    Span = new Slang.Range
-                    {
-                        StartLine = item.span.start_line,
-                        StartCol = item.span.start_col,
-                        EndLine = item.span.end_line,
-                        EndCol = item.span.end_col,
-                    },
-                    Description = item.description.AsString(),
-                }
-            );
+            Ffi.free_docs_vec(vec);
         }
-
-        return toReturn;
     }
 }
