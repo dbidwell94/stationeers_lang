@@ -80,7 +80,7 @@ A: No! Slang compiles directly to IC10. Any valid Slang file will produce valid 
 [url=https://github.com/dbidwell94/stationeers_lang]Source Code on GitHub[/url]
 [url=https://discord.gg/stationeers]Stationeers Official Discord[/url]
 [url=https://discord.gg/M4sCfYMacs]Stationeers Modding Discord[/url]
-[url=https://github.com/dbidwell94/stationeers_lang/blob/master/docs/getting-started.md]Getting Started Guide[/url]
+[url=https://github.com/dbidwell94/stationeers_lang/wiki#getting-started]Getting Started Guide[/url]
   </Description>
   <ChangeLog xsi:nil="true" />
   <WorkshopHandle>3619985558</WorkshopHandle>
@@ -124,6 +124,6 @@ A: No! Slang compiles directly to IC10. Any valid Slang file will produce valid 
 
         Source Code: https://github.com/dbidwell94/stationeers_lang
 
-        Documentation: https://github.com/dbidwell94/stationeers_lang/blob/master/docs/getting-started.md
+        Documentation: https://github.com/dbidwell94/stationeers_lang/wiki#getting-started
         ]]></InGameDescription>
 </ModMetadata>

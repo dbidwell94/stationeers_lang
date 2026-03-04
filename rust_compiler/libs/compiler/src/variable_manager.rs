@@ -125,6 +125,16 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         self.stack_offset
     }
 
+    /// Returns the total stack offset including all parent scopes.
+    /// This is useful for calculating stack cleanup when jumping out of nested scopes.
+    pub fn total_stack_depth(&self) -> u16 {
+        let mut total = self.stack_offset;
+        if let Some(parent) = self.parent {
+            total += parent.total_stack_depth();
+        }
+        total
+    }
+
     /// Adds and tracks a new scoped variable. If the location you request is full, will fall back
     /// to the stack.
     pub fn add_variable(
