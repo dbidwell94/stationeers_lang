@@ -161,7 +161,7 @@ public static class Marshal
 
             try
             {
-                sourceMapEntries = result.source_map.ToList();
+                sourceMapEntries = result.source_map.ToSourceMapEntryListNoFree();
                 compiledString = result.output_code.AsString();
                 return true;
             }
@@ -187,7 +187,7 @@ public static class Marshal
                 len = (UIntPtr)inputString.Length,
             };
 
-            return Ffi.diagnose_source(input).ToList();
+            return Ffi.diagnose_source(input).ToDiagnosticListAndFree();
         }
     }
 
@@ -195,11 +195,13 @@ public static class Marshal
     {
         if (string.IsNullOrEmpty(inputString) || !EnsureLibLoaded())
         {
-            return (new(), new());
+            return ([], []);
         }
 
         fixed (char* ptrInput = inputString)
         {
+            // Ownership: this method owns the aggregate return value from Rust and must
+            // free it exactly once via free_ffi_diagnostics_and_symbols in finally.
             var input = new slice_ref_uint16_t
             {
                 ptr = (ushort*)ptrInput,
@@ -207,40 +209,17 @@ public static class Marshal
             };
 
             var result = Ffi.diagnose_source_with_symbols(input);
-
-            // Convert diagnostics
-            var diagnostics = result.diagnostics.ToList();
-
-            // Convert symbols
-            var symbols = new List<Symbol>();
-            var symbolPtr = result.symbols.ptr;
-            var symbolCount = (int)result.symbols.len;
-
-            for (int i = 0; i < symbolCount; i++)
+            try
             {
-                var ffiSymbol = symbolPtr[i];
-                var kind = (SymbolKind)ffiSymbol.kind_data.kind;
+                var diagnostics = result.diagnostics.ToDiagnosticListNoFree();
+                var symbols = result.symbols.ToSymbolListNoFree();
 
-                // Use the actual description from the FFI (includes doc comments and syscall docs)
-                var description = ffiSymbol.description.AsString();
-
-                symbols.Add(new Symbol
-                {
-                    Name = ffiSymbol.name.AsString(),
-                    Kind = kind,
-                    Span = new Range(
-                        ffiSymbol.span.start_line,
-                        ffiSymbol.span.start_col,
-                        ffiSymbol.span.end_line,
-                        ffiSymbol.span.end_col
-                    ),
-                    Description = description,
-                });
+                return (diagnostics, symbols);
             }
-
-            Ffi.free_ffi_diagnostics_and_symbols(result);
-
-            return (diagnostics, symbols);
+            finally
+            {
+                Ffi.free_ffi_diagnostics_and_symbols(result);
+            }
         }
     }
 
@@ -260,7 +239,7 @@ public static class Marshal
             };
 
             var tokens = Ffi.tokenize_line(strRef);
-            return tokens.ToTokenList();
+            return tokens.ToSemanticTokenListAndFree();
         }
     }
 
@@ -269,7 +248,7 @@ public static class Marshal
     /// </summary>
     public static unsafe List<StationpediaPage> GetSlangDocs()
     {
-        return Ffi.get_docs().ToList();
+        return Ffi.get_docs().ToStationpediaPageListAndFree();
     }
 
     private static string ExtractNativeLibrary(string libName)

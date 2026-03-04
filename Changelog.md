@@ -1,8 +1,15 @@
 # Changelog
 
+[0.6.1]
+
+- Update FFI Marshalling to better handle freeing Rust code
+  - Eliminated a double free memory corruption bug which caused
+    a crash-to-desktop in some cases
+
 [0.6.0]
 
-- Added support for bitwise operations with binary (0b...), hex (0x...), and octal (0o...) literals
+- Added support for bitwise operations with binary (0b...), hex (0x...),
+  and octal (0o...) literals
 - Implemented bitwise constant folding and expression optimization
 - Added initial array indexing support
 - Enhanced LSP integration for better IDE support
@@ -10,7 +17,7 @@
 - Improved symbol tracking during parse stage (variables, functions, devices)
 - Enhanced constant folding for improved code generation
 - Improved CLI error handling with better span information
-- Updated Rust dependencies and IC10Editor DLL compatibility
+- Updated Rust dependencies and `IC10Editor` DLL compatibility
 
 [0.5.1]
 
