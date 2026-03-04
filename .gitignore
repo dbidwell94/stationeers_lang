@@ -6,3 +6,4 @@ csharp_mod/bin
 obj
 ref
 .envrc
+.vscode

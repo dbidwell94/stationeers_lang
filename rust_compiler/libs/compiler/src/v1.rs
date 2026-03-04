@@ -149,7 +149,7 @@ pub struct CompilationResult<'a> {
 }
 
 /// Metadata for the currently compiling function
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct FunctionMetadata<'a> {
     /// Maps function name to its instruction location
     locations: HashMap<Cow<'a, str>, usize>,
@@ -169,21 +169,6 @@ struct FunctionMetadata<'a> {
     sp_backup_var: Option<Cow<'a, str>>,
 }
 
-impl<'a> Default for FunctionMetadata<'a> {
-    fn default() -> Self {
-        Self {
-            locations: HashMap::new(),
-            params: HashMap::new(),
-            tuple_return_sizes: HashMap::new(),
-            current_name: None,
-            return_label: None,
-            tuple_return_size: 0,
-            sp_saved: false,
-            sp_backup_var: None,
-        }
-    }
-}
-
 pub struct Compiler<'a> {
     pub parser: ASTParser<'a>,
     function_meta: FunctionMetadata<'a>,
@@ -198,7 +183,7 @@ pub struct Compiler<'a> {
     _config: CompilerConfig,
     temp_counter: usize,
     label_counter: usize,
-    loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>)>, // Stores (start_label, end_label)
+    loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>, u16)>, // Stores (start_label, end_label, stack_depth_at_entry)
     /// stores (IC10 `line_num`, `Vec<Span>`)
     pub source_map: HashMap<usize, Vec<Span>>,
     /// Accumulative errors from the compilation process
@@ -374,11 +359,11 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             Expression::Break(span) => {
-                self.expression_break(span)?;
+                self.expression_break(span, scope)?;
                 Ok(None)
             }
             Expression::Continue(span) => {
-                self.expression_continue(span)?;
+                self.expression_continue(span, scope)?;
                 Ok(None)
             }
             Expression::DeviceDeclaration(expr_dev) => {
@@ -1986,9 +1971,12 @@ impl<'a> Compiler<'a> {
         let start_label = self.next_label_name();
         let end_label = self.next_label_name();
 
-        // Push labels to stack for 'break' and 'continue'
+        // Track the stack depth before entering the loop body
+        let entry_stack_depth = scope.total_stack_depth();
+
+        // Push labels and stack depth to stack for 'break' and 'continue'
         self.loop_stack
-            .push((start_label.clone(), end_label.clone()));
+            .push((start_label.clone(), end_label.clone(), entry_stack_depth));
 
         self.write_instruction(
             Instruction::LabelDef(start_label.clone()),
@@ -2018,9 +2006,12 @@ impl<'a> Compiler<'a> {
         let start_label = self.next_label_name();
         let end_label = self.next_label_name();
 
-        // Push labels to stack for 'break' and 'continue'
+        // Track the stack depth before entering the loop body
+        let entry_stack_depth = scope.total_stack_depth();
+
+        // Push labels and stack depth to stack for 'break' and 'continue'
         self.loop_stack
-            .push((start_label.clone(), end_label.clone()));
+            .push((start_label.clone(), end_label.clone(), entry_stack_depth));
 
         let span = expr.condition.span;
         self.write_instruction(Instruction::LabelDef(start_label.clone()), Some(span))?;
@@ -2050,12 +2041,31 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn expression_break(&mut self, span: Span) -> Result<(), Error<'a>> {
-        if let Some((_, end_label)) = self.loop_stack.last() {
-            self.write_instruction(
-                Instruction::Jump(Operand::Label(end_label.clone())),
-                Some(span),
-            )?;
+    fn expression_break(
+        &mut self,
+        span: Span,
+        scope: &VariableScope<'a, '_>,
+    ) -> Result<(), Error<'a>> {
+        if let Some((_, end_label, entry_depth)) = self.loop_stack.last() {
+            let end_label = end_label.clone();
+            let entry_depth = *entry_depth;
+
+            // Calculate how much stack to clean up: current depth - depth at loop entry
+            let current_depth = scope.total_stack_depth();
+            let cleanup_amount = current_depth.saturating_sub(entry_depth);
+
+            // Clean up stack before jumping out of the loop
+            if cleanup_amount > 0 {
+                self.write_instruction(
+                    Instruction::Sub(
+                        Operand::StackPointer,
+                        Operand::StackPointer,
+                        Operand::Number(cleanup_amount.into()),
+                    ),
+                    Some(span),
+                )?;
+            }
+            self.write_instruction(Instruction::Jump(Operand::Label(end_label)), Some(span))?;
             Ok(())
         } else {
             Err(Error::Unknown(
@@ -2065,12 +2075,31 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn expression_continue(&mut self, span: Span) -> Result<(), Error<'a>> {
-        if let Some((start_label, _)) = self.loop_stack.last() {
-            self.write_instruction(
-                Instruction::Jump(Operand::Label(start_label.clone())),
-                Some(span),
-            )?;
+    fn expression_continue(
+        &mut self,
+        span: Span,
+        scope: &VariableScope<'a, '_>,
+    ) -> Result<(), Error<'a>> {
+        if let Some((start_label, _, entry_depth)) = self.loop_stack.last() {
+            let start_label = start_label.clone();
+            let entry_depth = *entry_depth;
+
+            // Calculate how much stack to clean up: current depth - depth at loop entry
+            let current_depth = scope.total_stack_depth();
+            let cleanup_amount = current_depth.saturating_sub(entry_depth);
+
+            // Clean up stack before jumping back to loop start
+            if cleanup_amount > 0 {
+                self.write_instruction(
+                    Instruction::Sub(
+                        Operand::StackPointer,
+                        Operand::StackPointer,
+                        Operand::Number(cleanup_amount.into()),
+                    ),
+                    Some(span),
+                )?;
+            }
+            self.write_instruction(Instruction::Jump(Operand::Label(start_label)), Some(span))?;
             Ok(())
         } else {
             Err(Error::Unknown(

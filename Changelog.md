@@ -1,5 +1,12 @@
 # Changelog
 
+[0.6.2]
+
+- Fixed stack overflow bug with `continue`/`break` in loops with stack spill
+  - When a loop body contained enough local variables to spill to stack,
+    `continue` and `break` statements would not clean up the stack before jumping,
+    causing unbounded stack growth and eventual stack overflow exceptions
+
 [0.6.1]
 
 - Update FFI Marshalling to better handle freeing Rust code
