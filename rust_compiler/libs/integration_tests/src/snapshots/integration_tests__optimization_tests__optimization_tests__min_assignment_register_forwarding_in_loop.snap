@@ -1,0 +1,20 @@
+---
+source: libs/integration_tests/src/optimization_tests.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+move r8 0
+__internal_L1:
+min r15 500 400
+move r8 r15
+j __internal_L1
+__internal_L2:
+
+## Optimized Output
+
+move r8 0
+min r8 500 400
+j 1

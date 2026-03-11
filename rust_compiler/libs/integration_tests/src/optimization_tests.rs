@@ -93,4 +93,16 @@ mod optimization_tests {
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
+
+    #[test]
+    fn test_min_assignment_register_forwarding_in_loop() {
+        let source = indoc! {r#"
+            let minimum = 0;
+            loop {
+                minimum = min(500, 400);
+            }
+        "#};
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
 }
