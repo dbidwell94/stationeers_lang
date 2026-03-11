@@ -1,5 +1,6 @@
 use crate::Error;
 use crate::variable_manager::Error as ScopeError;
+use parser::Error as ParserError;
 
 #[test]
 fn unknown_identifier_error() {
@@ -194,4 +195,48 @@ fn invalid_device_error() {
 
     // Device reassignment should fail
     assert!(!errors.is_empty(), "Expected error for device reassignment");
+}
+
+#[test]
+fn assignment_in_if_condition_error() {
+    let errors = compile! {
+        result "
+            let x = 0;
+            if (x = 1) {
+                x = 2;
+            }
+        "
+    };
+
+    assert_eq!(errors.len(), 1);
+    match &errors[0] {
+        Error::Parse(ParserError::InvalidSyntax(_, message)) => {
+            assert!(
+                message.contains("Assignment expressions are not allowed in condition expressions")
+            );
+        }
+        _ => panic!("Expected parser InvalidSyntax error, got {:?}", errors[0]),
+    }
+}
+
+#[test]
+fn assignment_in_while_condition_error() {
+    let errors = compile! {
+        result "
+            let x = 0;
+            while (x = 1) {
+                x = 2;
+            }
+        "
+    };
+
+    assert_eq!(errors.len(), 1);
+    match &errors[0] {
+        Error::Parse(ParserError::InvalidSyntax(_, message)) => {
+            assert!(
+                message.contains("Assignment expressions are not allowed in condition expressions")
+            );
+        }
+        _ => panic!("Expected parser InvalidSyntax error, got {:?}", errors[0]),
+    }
 }

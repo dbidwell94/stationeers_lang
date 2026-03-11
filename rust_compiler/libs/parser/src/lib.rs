@@ -1767,6 +1767,7 @@ impl<'a> Parser<'a> {
         self.assign_next()?;
 
         let condition = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
+        self.validate_condition_expression(&condition)?;
 
         let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
@@ -1832,6 +1833,7 @@ impl<'a> Parser<'a> {
         self.assign_next()?;
 
         let condition = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
+        self.validate_condition_expression(&condition)?;
 
         let next = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
         if !token_matches!(next, TokenType::Symbol(Symbol::RParen)) {
@@ -1843,12 +1845,112 @@ impl<'a> Parser<'a> {
             return Err(Error::UnexpectedToken(Self::token_to_span(&next), next));
         }
 
-        let body = self.block()?;
-
         Ok(WhileExpression {
             condition: boxed!(condition),
-            body,
+            body: self.block()?,
         })
+    }
+
+    fn validate_condition_expression(
+        &self,
+        expression: &Spanned<tree_node::Expression<'a>>,
+    ) -> Result<(), Error<'a>> {
+        if self.condition_contains_assignment(expression) {
+            return Err(Error::InvalidSyntax(
+                expression.span,
+                String::from("Assignment expressions are not allowed in condition expressions"),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn condition_contains_assignment(
+        &self,
+        expression: &Spanned<tree_node::Expression<'a>>,
+    ) -> bool {
+        match &expression.node {
+            Expression::Assignment(_) | Expression::TupleAssignment(_) => true,
+            Expression::Binary(binary) => match &binary.node {
+                BinaryExpression::Add(left, right)
+                | BinaryExpression::Multiply(left, right)
+                | BinaryExpression::Divide(left, right)
+                | BinaryExpression::Subtract(left, right)
+                | BinaryExpression::Exponent(left, right)
+                | BinaryExpression::Modulo(left, right)
+                | BinaryExpression::BitwiseAnd(left, right)
+                | BinaryExpression::BitwiseOr(left, right)
+                | BinaryExpression::BitwiseXor(left, right)
+                | BinaryExpression::LeftShift(left, right)
+                | BinaryExpression::RightShiftArithmetic(left, right)
+                | BinaryExpression::RightShiftLogical(left, right) => {
+                    self.condition_contains_assignment(left)
+                        || self.condition_contains_assignment(right)
+                }
+            },
+            Expression::Logical(logical) => match &logical.node {
+                LogicalExpression::And(left, right)
+                | LogicalExpression::Or(left, right)
+                | LogicalExpression::Equal(left, right)
+                | LogicalExpression::NotEqual(left, right)
+                | LogicalExpression::GreaterThan(left, right)
+                | LogicalExpression::GreaterThanOrEqual(left, right)
+                | LogicalExpression::LessThan(left, right)
+                | LogicalExpression::LessThanOrEqual(left, right) => {
+                    self.condition_contains_assignment(left)
+                        || self.condition_contains_assignment(right)
+                }
+                LogicalExpression::Not(inner) => self.condition_contains_assignment(inner),
+            },
+            Expression::BitwiseNot(inner)
+            | Expression::Negation(inner)
+            | Expression::Priority(inner) => self.condition_contains_assignment(inner),
+            Expression::Ternary(ternary) => {
+                self.condition_contains_assignment(&ternary.condition)
+                    || self.condition_contains_assignment(&ternary.true_value)
+                    || self.condition_contains_assignment(&ternary.false_value)
+            }
+            Expression::Tuple(tuple_items) => tuple_items
+                .node
+                .iter()
+                .any(|item| self.condition_contains_assignment(item)),
+            Expression::Invocation(invocation) => invocation
+                .arguments
+                .iter()
+                .any(|arg| self.condition_contains_assignment(arg)),
+            Expression::MethodCall(method_call) => {
+                self.condition_contains_assignment(&method_call.object)
+                    || method_call
+                        .arguments
+                        .iter()
+                        .any(|arg| self.condition_contains_assignment(arg))
+            }
+            Expression::MemberAccess(member_access) => {
+                self.condition_contains_assignment(&member_access.object)
+            }
+            Expression::IndexAccess(index_access) => {
+                self.condition_contains_assignment(&index_access.object)
+                    || self.condition_contains_assignment(&index_access.index)
+            }
+            Expression::Declaration(_, value) => self.condition_contains_assignment(value),
+            Expression::ConstDeclaration(_) => false,
+            Expression::TupleDeclaration(tuple_decl) => {
+                self.condition_contains_assignment(&tuple_decl.value)
+            }
+            Expression::Return(Some(value)) => self.condition_contains_assignment(value),
+            Expression::If(_)
+            | Expression::While(_)
+            | Expression::Loop(_)
+            | Expression::Function(_)
+            | Expression::Block(_)
+            | Expression::Break(_)
+            | Expression::Continue(_)
+            | Expression::Return(None)
+            | Expression::DeviceDeclaration(_)
+            | Expression::Syscall(_)
+            | Expression::Literal(_)
+            | Expression::Variable(_) => false,
+        }
     }
 
     fn function(&mut self) -> Result<FunctionExpression<'a>, Error<'a>> {
