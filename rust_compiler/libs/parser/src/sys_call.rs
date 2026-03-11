@@ -237,6 +237,33 @@ documented! {
         /// `loadBatched(deviceHash, "Variable", "LogicType");`
         /// `lb(deviceHash, "Variable", "LogicType");`
         LoadBatch(Box<Spanned<Expression<'a>>>, Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>),
+        /// Function which gets a LogicSlotType from slotIndex from all connected network devices
+        /// that match the provided type hash, aggregating them via a batchMode
+        /// ## IC10
+        /// `lbs r? deviceHash slotIndex logicSlotType batchMode`
+        /// ## Slang
+        /// `loadBatchedSlot(deviceHash, slotIndex, "LogicSlotType", "BatchMode");`
+        /// `lbs(deviceHash, slotIndex, "LogicSlotType", "BatchMode");`
+        LoadBatchSlot(
+            Box<Spanned<Expression<'a>>>,
+            Box<Spanned<Expression<'a>>>,
+            Spanned<LiteralOrVariable<'a>>,
+            Spanned<LiteralOrVariable<'a>>,
+        ),
+        /// Function which gets a LogicSlotType from slotIndex from all connected network devices
+        /// that match the provided type and name hashes, aggregating them via a batchMode
+        /// ## IC10
+        /// `lbns r? deviceHash nameHash slotIndex logicSlotType batchMode`
+        /// ## Slang
+        /// `loadBatchedNamedSlot(deviceHash, nameHash, slotIndex, "LogicSlotType", "BatchMode");`
+        /// `lbns(deviceHash, nameHash, slotIndex, "LogicSlotType", "BatchMode");`
+        LoadBatchNamedSlot(
+            Box<Spanned<Expression<'a>>>,
+            Box<Spanned<Expression<'a>>>,
+            Box<Spanned<Expression<'a>>>,
+            Spanned<LiteralOrVariable<'a>>,
+            Spanned<LiteralOrVariable<'a>>,
+        ),
         /// Represents a function which stores a setting into a specific device.
         /// ## IC10
         /// `s d? logicType r?`
@@ -325,6 +352,12 @@ impl<'a> std::fmt::Display for System<'a> {
             System::Hash(a) => write!(f, "hash({})", a),
             System::LoadFromDevice(a, b) => write!(f, "loadFromDevice({}, {})", a, b),
             System::LoadBatch(a, b, c) => write!(f, "loadBatch({}, {}, {})", a, b, c),
+            System::LoadBatchSlot(a, b, c, d) => {
+                write!(f, "loadBatchSlot({}, {}, {}, {})", a, b, c, d)
+            }
+            System::LoadBatchNamedSlot(a, b, c, d, e) => {
+                write!(f, "loadBatchNamedSlot({}, {}, {}, {}, {})", a, b, c, d, e)
+            }
             System::LoadBatchNamed(a, b, c, d) => {
                 write!(f, "loadBatchNamed({}, {}, {}, {})", a, b, c, d)
             }
@@ -353,6 +386,8 @@ impl<'a> System<'a> {
             System::Hash(_) => "hash",
             System::LoadFromDevice(_, _) => "loadFromDevice",
             System::LoadBatch(_, _, _) => "loadBatch",
+            System::LoadBatchSlot(_, _, _, _) => "loadBatchSlot",
+            System::LoadBatchNamedSlot(_, _, _, _, _) => "loadBatchNamedSlot",
             System::LoadBatchNamed(_, _, _, _) => "loadBatchNamed",
             System::SetOnDevice(_, _, _) => "setOnDevice",
             System::SetOnDeviceBatched(_, _, _) => "setOnDeviceBatched",
@@ -373,6 +408,8 @@ impl<'a> System<'a> {
             System::Hash(_) => 1,
             System::LoadFromDevice(_, _) => 2,
             System::LoadBatch(_, _, _) => 3,
+            System::LoadBatchSlot(_, _, _, _) => 4,
+            System::LoadBatchNamedSlot(_, _, _, _, _) => 5,
             System::LoadBatchNamed(_, _, _, _) => 4,
             System::SetOnDevice(_, _, _) => 3,
             System::SetOnDeviceBatched(_, _, _) => 3,

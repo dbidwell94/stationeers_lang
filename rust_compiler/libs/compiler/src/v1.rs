@@ -3372,6 +3372,122 @@ impl<'a> Compiler<'a> {
                     temp_name: None,
                 }))
             }
+            System::LoadBatchSlot(device_hash, slot_index, logic_slot_type, batch_mode) => {
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_operand(*device_hash, scope)?;
+                let (slot_index, slot_cleanup) = self.compile_operand(*slot_index, scope)?;
+
+                let logic_slot_type_expr = match logic_slot_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_slot_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_slot_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_slot_type_expr,
+                        span: logic_slot_type.span,
+                    },
+                    scope,
+                    span,
+                )?;
+
+                let batch_mode_expr = match batch_mode.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: batch_mode.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let batch_mode_str = self.compile_const_string(
+                    Spanned {
+                        node: batch_mode_expr,
+                        span: batch_mode.span,
+                    },
+                    scope,
+                    span,
+                )?;
+
+                self.write_instruction(
+                    Instruction::LoadBatchSlot(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        device_hash,
+                        slot_index,
+                        Operand::LogicType(logic_slot_type_str),
+                        Operand::LogicType(batch_mode_str),
+                    ),
+                    Some(span),
+                )?;
+                cleanup!(device_hash_cleanup, slot_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            System::LoadBatchNamedSlot(
+                device_hash,
+                name_hash,
+                slot_index,
+                logic_slot_type,
+                batch_mode,
+            ) => {
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_operand(*device_hash, scope)?;
+                let (name_hash, name_hash_cleanup) = self.compile_operand(*name_hash, scope)?;
+                let (slot_index, slot_cleanup) = self.compile_operand(*slot_index, scope)?;
+
+                let logic_slot_type_expr = match logic_slot_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_slot_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_slot_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_slot_type_expr,
+                        span: logic_slot_type.span,
+                    },
+                    scope,
+                    span,
+                )?;
+
+                let batch_mode_expr = match batch_mode.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: batch_mode.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let batch_mode_str = self.compile_const_string(
+                    Spanned {
+                        node: batch_mode_expr,
+                        span: batch_mode.span,
+                    },
+                    scope,
+                    span,
+                )?;
+
+                self.write_instruction(
+                    Instruction::LoadBatchNamedSlot(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        device_hash,
+                        name_hash,
+                        slot_index,
+                        Operand::LogicType(logic_slot_type_str),
+                        Operand::LogicType(batch_mode_str),
+                    ),
+                    Some(span),
+                )?;
+                cleanup!(device_hash_cleanup, name_hash_cleanup, slot_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
             System::LoadSlot(dev_name, slot_index, logic_type) => {
                 let (dev_hash, hash_cleanup) =
                     self.compile_literal_or_variable(dev_name.node, scope)?;

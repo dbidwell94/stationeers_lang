@@ -391,3 +391,69 @@ fn test_rmap() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_load_batched_slot() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        let typeHash = 12345;
+        let slotOccupied = lbs(typeHash, 0, "Occupied", "Average");
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 12345
+            lbs r15 r8 0 Occupied Average
+            move r9 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_load_batched_named_slot() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        let typeHash = 12345;
+        let nameHash = 67890;
+        let slotOccupied = lbns(typeHash, nameHash, 0, "Occupied", "Average");
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 12345
+            move r9 67890
+            lbns r15 r8 r9 0 Occupied Average
+            move r10 r15
+            "
+        }
+    );
+
+    Ok(())
+}

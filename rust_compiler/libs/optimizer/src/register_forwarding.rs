@@ -338,4 +338,105 @@ mod tests {
         assert_eq!(push_before, push_after);
         assert_eq!(pop_before, pop_after);
     }
+
+    #[test]
+    fn test_forward_load_batch_slot_result() {
+        // lbs writes to r15; move r8 r15 should be eliminated by forwarding the
+        // destination directly to r8.
+        let input = vec![
+            InstructionNode::new(
+                Instruction::LoadBatchSlot(
+                    Operand::Register(15),
+                    Operand::Number(12345.into()),
+                    Operand::Number(0.into()),
+                    Operand::LogicType("Occupied".into()),
+                    Operand::LogicType("Average".into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(8), Operand::Register(15)),
+                None,
+            ),
+        ];
+
+        let (output, changed) = register_forwarding(input);
+        assert!(changed);
+        assert_eq!(output.len(), 1);
+        assert!(matches!(
+            output[0].instruction,
+            Instruction::LoadBatchSlot(Operand::Register(8), _, _, _, _)
+        ));
+    }
+
+    #[test]
+    fn test_do_not_forward_load_batch_slot_when_reg_is_read() {
+        // r8 is used as the device hash operand in lbs, so forwarding the earlier
+        // Add result into r8 must not happen (the lbs would then read a wrong value).
+        let input = vec![
+            InstructionNode::new(Instruction::LabelDef("L".into()), None),
+            InstructionNode::new(
+                Instruction::Add(
+                    Operand::Register(1),
+                    Operand::Register(8),
+                    Operand::Number(1.into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::LoadBatchSlot(
+                    Operand::Register(15),
+                    Operand::Register(8),
+                    Operand::Number(0.into()),
+                    Operand::LogicType("Occupied".into()),
+                    Operand::LogicType("Average".into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(9), Operand::Register(1)),
+                None,
+            ),
+            InstructionNode::new(Instruction::Jump(Operand::Label("L".into())), None),
+        ];
+
+        let (output, _changed) = register_forwarding(input);
+        // The move r9 r1 can be forwarded, but r8 reads in lbs must block Add from
+        // being forwarded into r8.
+        // The important assertion: LoadBatchSlot still reads r8, not r1 or anything else.
+        assert!(matches!(
+            output[2].instruction,
+            Instruction::LoadBatchSlot(_, Operand::Register(8), _, _, _)
+        ));
+    }
+
+    #[test]
+    fn test_forward_load_batch_named_slot_result() {
+        // lbns writes to r15; move r8 r15 should be eliminated.
+        let input = vec![
+            InstructionNode::new(
+                Instruction::LoadBatchNamedSlot(
+                    Operand::Register(15),
+                    Operand::Number(12345.into()),
+                    Operand::Number(67890.into()),
+                    Operand::Number(0.into()),
+                    Operand::LogicType("Occupied".into()),
+                    Operand::LogicType("Maximum".into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(8), Operand::Register(15)),
+                None,
+            ),
+        ];
+
+        let (output, changed) = register_forwarding(input);
+        assert!(changed);
+        assert_eq!(output.len(), 1);
+        assert!(matches!(
+            output[0].instruction,
+            Instruction::LoadBatchNamedSlot(Operand::Register(8), _, _, _, _, _)
+        ));
+    }
 }

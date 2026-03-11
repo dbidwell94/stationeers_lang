@@ -2051,6 +2051,44 @@ impl<'a> Parser<'a> {
                     batch_mode,
                 )))
             }
+            "loadBatchedSlot" | "lbs" => {
+                let mut args = args!(4);
+                let device_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
+                let slot_index = args.next().ok_or_else(|| self.unexpected_eof())?;
+
+                let tmp = args.next();
+                let logic_slot_type = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let batch_mode = literal_or_variable!(tmp);
+
+                Ok(SysCall::System(System::LoadBatchSlot(
+                    boxed!(device_hash),
+                    boxed!(slot_index),
+                    logic_slot_type,
+                    batch_mode,
+                )))
+            }
+            "loadBatchedNamedSlot" | "lbns" => {
+                let mut args = args!(5);
+                let device_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
+                let name_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
+                let slot_index = args.next().ok_or_else(|| self.unexpected_eof())?;
+
+                let tmp = args.next();
+                let logic_slot_type = literal_or_variable!(tmp);
+
+                let tmp = args.next();
+                let batch_mode = literal_or_variable!(tmp);
+
+                Ok(SysCall::System(System::LoadBatchNamedSlot(
+                    boxed!(device_hash),
+                    boxed!(name_hash),
+                    boxed!(slot_index),
+                    logic_slot_type,
+                    batch_mode,
+                )))
+            }
             "loadBatchedNamed" | "lbn" => {
                 let mut args = args!(4);
                 let dev_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
