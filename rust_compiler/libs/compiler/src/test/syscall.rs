@@ -226,6 +226,45 @@ fn test_load_from_slot() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_load_from_slot_binary_expression() -> anyhow::Result<()> {
+    // Regression test: two ls() calls in a binary expression must not both
+    // write to RETURN_REGISTER (r15) and then add r15+r15 (slot 0 + slot 0).
+    // The LHS result must be spilled to a fresh register before the RHS ls()
+    // overwrites r15.
+    let compiled = compile! {
+        check
+        r#"
+        device filtration = "d0";
+
+        let filter = ls(filtration, 0, "Quantity") + ls(filtration, 1, "Quantity");
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            ls r15 d0 0 Quantity
+            move r1 r15
+            ls r15 d0 1 Quantity
+            add r2 r1 r15
+            move r8 r2
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_set_slot() -> anyhow::Result<()> {
     let compiled = compile! {
         check

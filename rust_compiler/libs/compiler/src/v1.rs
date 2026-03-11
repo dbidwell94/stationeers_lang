@@ -2537,6 +2537,23 @@ impl<'a> Compiler<'a> {
 
         // Compile LHS
         let (lhs, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
+
+        // If LHS result landed in RETURN_REGISTER, spill it to a fresh temp before
+        // compiling RHS, which may also emit a syscall and overwrite that register.
+        let (lhs, lhs_cleanup) = if matches!(lhs, Operand::Register(r) if r == VariableScope::RETURN_REGISTER)
+        {
+            let spill_name = self.next_temp_name();
+            let spill_loc = scope.add_variable(spill_name.clone(), LocationRequest::Temp, None)?;
+            let spill_reg = self.resolve_register(&spill_loc)?;
+            self.write_instruction(Instruction::Move(Operand::Register(spill_reg), lhs), None)?;
+            if let Some(name) = lhs_cleanup {
+                scope.free_temp(name, None)?;
+            }
+            (Operand::Register(spill_reg), Some(spill_name))
+        } else {
+            (lhs, lhs_cleanup)
+        };
+
         // Compile RHS
         let (rhs, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
 
@@ -2632,6 +2649,27 @@ impl<'a> Compiler<'a> {
 
                 // Compile LHS
                 let (lhs, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
+
+                // If LHS result landed in RETURN_REGISTER, spill it to a fresh temp before
+                // compiling RHS, which may also emit a syscall and overwrite that register.
+                let (lhs, lhs_cleanup) = if matches!(lhs, Operand::Register(r) if r == VariableScope::RETURN_REGISTER)
+                {
+                    let spill_name = self.next_temp_name();
+                    let spill_loc =
+                        scope.add_variable(spill_name.clone(), LocationRequest::Temp, None)?;
+                    let spill_reg = self.resolve_register(&spill_loc)?;
+                    self.write_instruction(
+                        Instruction::Move(Operand::Register(spill_reg), lhs),
+                        None,
+                    )?;
+                    if let Some(name) = lhs_cleanup {
+                        scope.free_temp(name, None)?;
+                    }
+                    (Operand::Register(spill_reg), Some(spill_name))
+                } else {
+                    (lhs, lhs_cleanup)
+                };
+
                 // Compile RHS
                 let (rhs, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
 
