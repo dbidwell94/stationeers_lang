@@ -51,6 +51,9 @@ pub fn register_forwarding<'a>(
         if let Some((temp_reg, final_reg)) = forward_candidate {
             // Check liveness: Is temp_reg used after i+1?
             let mut temp_is_dead = true;
+            // If we see a backward jump, we can still prove safety when the loop target
+            // redefines temp_reg before any read on that path.
+            let mut backward_jump_safe = true;
             for node in input.iter().skip(i + 2) {
                 if reg_is_read(&node.instruction, temp_reg) {
                     temp_is_dead = false;
@@ -88,16 +91,33 @@ pub fn register_forwarding<'a>(
                     // Check if this is a backward jump (target appears before current position)
                     if let Some(&target_pos) = label_positions.get(target) {
                         if target_pos < i {
-                            // Backward jump - could loop back, register might be live
-                            temp_is_dead = false;
-                            break;
+                            // Backward jump: conservatively safe only if temp_reg is
+                            // redefined before any read along the linear path from target.
+                            let mut loop_path_redefines_before_read = false;
+                            for target_node in input.iter().skip(target_pos + 1) {
+                                if reg_is_read(&target_node.instruction, temp_reg) {
+                                    break;
+                                }
+                                if let Some(redef) = get_destination_reg(&target_node.instruction)
+                                    && redef == temp_reg
+                                {
+                                    loop_path_redefines_before_read = true;
+                                    break;
+                                }
+                            }
+
+                            if !loop_path_redefines_before_read {
+                                backward_jump_safe = false;
+                                temp_is_dead = false;
+                                break;
+                            }
                         }
                         // Forward jump is OK - doesn't affect liveness before it
                     }
                 }
             }
 
-            if temp_is_dead {
+            if temp_is_dead && backward_jump_safe {
                 // Safety check: ensure final_reg is not used as an operand in the current instruction.
                 // This prevents generating invalid instructions like `sub r5 r0 r5` (read and write same register).
                 if !reg_is_read(&input[i].instruction, final_reg) {
@@ -146,6 +166,277 @@ mod tests {
         assert!(matches!(
             output[0].instruction,
             Instruction::Add(Operand::Register(5), _, _)
+        ));
+    }
+
+    #[test]
+    fn test_forward_in_loop_when_redefined_before_read() {
+        let input = vec![
+            InstructionNode::new(Instruction::LabelDef("L".into()), None),
+            InstructionNode::new(
+                Instruction::Min(
+                    Operand::Register(15),
+                    Operand::Number(500.into()),
+                    Operand::Number(400.into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(8), Operand::Register(15)),
+                None,
+            ),
+            InstructionNode::new(Instruction::Jump(Operand::Label("L".into())), None),
+        ];
+
+        let (output, changed) = register_forwarding(input);
+        assert!(changed);
+        assert_eq!(output.len(), 3);
+        assert!(matches!(
+            output[1].instruction,
+            Instruction::Min(Operand::Register(8), _, _)
+        ));
+    }
+
+    #[test]
+    fn test_do_not_forward_in_loop_when_read_before_redefine() {
+        let input = vec![
+            InstructionNode::new(Instruction::LabelDef("L".into()), None),
+            InstructionNode::new(
+                Instruction::Add(
+                    Operand::Register(1),
+                    Operand::Register(15),
+                    Operand::Number(1.into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Min(
+                    Operand::Register(15),
+                    Operand::Number(500.into()),
+                    Operand::Number(400.into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(8), Operand::Register(15)),
+                None,
+            ),
+            InstructionNode::new(Instruction::Jump(Operand::Label("L".into())), None),
+        ];
+
+        let (output, changed) = register_forwarding(input);
+        assert!(!changed);
+        assert_eq!(output.len(), 5);
+        assert!(matches!(
+            output[3].instruction,
+            Instruction::Move(Operand::Register(8), Operand::Register(15))
+        ));
+    }
+
+    #[test]
+    fn test_forward_before_jal_clobber_of_r15() {
+        let input = vec![
+            InstructionNode::new(
+                Instruction::Min(
+                    Operand::Register(15),
+                    Operand::Number(500.into()),
+                    Operand::Number(400.into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(8), Operand::Register(15)),
+                None,
+            ),
+            InstructionNode::new(Instruction::JumpAndLink(Operand::Label("f".into())), None),
+        ];
+
+        let (output, changed) = register_forwarding(input);
+        assert!(changed);
+        assert_eq!(output.len(), 2);
+        assert!(matches!(
+            output[0].instruction,
+            Instruction::Min(Operand::Register(8), _, _)
+        ));
+        assert!(matches!(
+            output[1].instruction,
+            Instruction::JumpAndLink(Operand::Label(_))
+        ));
+    }
+
+    #[test]
+    fn test_forward_select_move_in_loop_when_redefined_before_read() {
+        let input = vec![
+            InstructionNode::new(Instruction::LabelDef("L".into()), None),
+            InstructionNode::new(
+                Instruction::Select(
+                    Operand::Register(6),
+                    Operand::Register(4),
+                    Operand::Number(2.into()),
+                    Operand::Register(5),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(9), Operand::Register(6)),
+                None,
+            ),
+            InstructionNode::new(Instruction::Jump(Operand::Label("L".into())), None),
+        ];
+
+        let (output, changed) = register_forwarding(input);
+        assert!(changed);
+        assert_eq!(output.len(), 3);
+        assert!(matches!(
+            output[1].instruction,
+            Instruction::Select(Operand::Register(9), _, _, _)
+        ));
+    }
+
+    #[test]
+    fn test_forwarding_does_not_modify_push_pop_balance() {
+        let input = vec![
+            InstructionNode::new(Instruction::LabelDef("L".into()), None),
+            InstructionNode::new(Instruction::Push(Operand::Register(8)), None),
+            InstructionNode::new(
+                Instruction::Min(
+                    Operand::Register(15),
+                    Operand::Number(500.into()),
+                    Operand::Number(400.into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(8), Operand::Register(15)),
+                None,
+            ),
+            InstructionNode::new(Instruction::Pop(Operand::Register(8)), None),
+            InstructionNode::new(Instruction::Jump(Operand::Label("L".into())), None),
+        ];
+
+        let push_before = input
+            .iter()
+            .filter(|n| matches!(n.instruction, Instruction::Push(_)))
+            .count();
+        let pop_before = input
+            .iter()
+            .filter(|n| matches!(n.instruction, Instruction::Pop(_)))
+            .count();
+
+        let (output, changed) = register_forwarding(input);
+        assert!(changed);
+
+        let push_after = output
+            .iter()
+            .filter(|n| matches!(n.instruction, Instruction::Push(_)))
+            .count();
+        let pop_after = output
+            .iter()
+            .filter(|n| matches!(n.instruction, Instruction::Pop(_)))
+            .count();
+
+        assert_eq!(push_before, push_after);
+        assert_eq!(pop_before, pop_after);
+    }
+
+    #[test]
+    fn test_forward_load_batch_slot_result() {
+        // lbs writes to r15; move r8 r15 should be eliminated by forwarding the
+        // destination directly to r8.
+        let input = vec![
+            InstructionNode::new(
+                Instruction::LoadBatchSlot(
+                    Operand::Register(15),
+                    Operand::Number(12345.into()),
+                    Operand::Number(0.into()),
+                    Operand::LogicType("Occupied".into()),
+                    Operand::LogicType("Average".into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(8), Operand::Register(15)),
+                None,
+            ),
+        ];
+
+        let (output, changed) = register_forwarding(input);
+        assert!(changed);
+        assert_eq!(output.len(), 1);
+        assert!(matches!(
+            output[0].instruction,
+            Instruction::LoadBatchSlot(Operand::Register(8), _, _, _, _)
+        ));
+    }
+
+    #[test]
+    fn test_do_not_forward_load_batch_slot_when_reg_is_read() {
+        // r8 is used as the device hash operand in lbs, so forwarding the earlier
+        // Add result into r8 must not happen (the lbs would then read a wrong value).
+        let input = vec![
+            InstructionNode::new(Instruction::LabelDef("L".into()), None),
+            InstructionNode::new(
+                Instruction::Add(
+                    Operand::Register(1),
+                    Operand::Register(8),
+                    Operand::Number(1.into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::LoadBatchSlot(
+                    Operand::Register(15),
+                    Operand::Register(8),
+                    Operand::Number(0.into()),
+                    Operand::LogicType("Occupied".into()),
+                    Operand::LogicType("Average".into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(9), Operand::Register(1)),
+                None,
+            ),
+            InstructionNode::new(Instruction::Jump(Operand::Label("L".into())), None),
+        ];
+
+        let (output, _changed) = register_forwarding(input);
+        // The move r9 r1 can be forwarded, but r8 reads in lbs must block Add from
+        // being forwarded into r8.
+        // The important assertion: LoadBatchSlot still reads r8, not r1 or anything else.
+        assert!(matches!(
+            output[2].instruction,
+            Instruction::LoadBatchSlot(_, Operand::Register(8), _, _, _)
+        ));
+    }
+
+    #[test]
+    fn test_forward_load_batch_named_slot_result() {
+        // lbns writes to r15; move r8 r15 should be eliminated.
+        let input = vec![
+            InstructionNode::new(
+                Instruction::LoadBatchNamedSlot(
+                    Operand::Register(15),
+                    Operand::Number(12345.into()),
+                    Operand::Number(67890.into()),
+                    Operand::Number(0.into()),
+                    Operand::LogicType("Occupied".into()),
+                    Operand::LogicType("Maximum".into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(8), Operand::Register(15)),
+                None,
+            ),
+        ];
+
+        let (output, changed) = register_forwarding(input);
+        assert!(changed);
+        assert_eq!(output.len(), 1);
+        assert!(matches!(
+            output[0].instruction,
+            Instruction::LoadBatchNamedSlot(Operand::Register(8), _, _, _, _, _)
         ));
     }
 }

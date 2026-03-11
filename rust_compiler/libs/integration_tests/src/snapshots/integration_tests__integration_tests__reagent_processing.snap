@@ -1,6 +1,5 @@
 ---
 source: libs/integration_tests/src/lib.rs
-assertion_line: 61
 expression: output
 ---
 ## Unoptimized Output
@@ -80,12 +79,11 @@ ls r15 d0 0 Occupied
 seq r6 r15 0
 and r7 r5 r6
 add r1 r9 1
-select r2 r7 r1 0
-move r9 r2
+select r9 r7 r1 0
 l r3 d0 Rpm
 slt r4 r3 1
 and r5 r8 r4
-beqz r5 27
+beqz r5 26
 s d0 Open 1
 seq r6 r10 0
 ls r15 d0 0 Occupied
@@ -93,10 +91,9 @@ and r7 r6 r15
 seq r8 r7 0
 seq r6 r8 0
 s d0 On r6
-ls r15 d1 0 Quantity
-move r11 r15
+ls r11 d1 0 Quantity
 l r7 d3 Pressure
-ble r7 200 34
+ble r7 200 32
 j 4
 sgt r2 r11 0
 s d1 On r2

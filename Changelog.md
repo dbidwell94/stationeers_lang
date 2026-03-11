@@ -1,5 +1,16 @@
 # Changelog
 
+[0.7.0]
+
+- Added support for `lbs` and `lbns` syscalls
+- Syscall arguments now accept `const` string variables in addition to string literals
+- Fixed bug where two syscalls used in the same binary expression could clobber each
+  other's return register (`r15`), producing incorrect results
+- Improved register forwarding optimizer to correctly handle backwards jumps (loops),
+  preventing invalid optimizations across loop boundaries
+- Fixed parser bug that allowed assignment expressions in `if (...)` and `while (...)`
+  conditions; conditions now reject assignments and require non-assignment boolean-style expressions
+
 [0.6.2]
 
 - Fixed stack overflow bug with `continue`/`break` in loops with stack spill

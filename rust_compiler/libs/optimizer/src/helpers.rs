@@ -14,6 +14,8 @@ pub fn get_destination_reg(instr: &Instruction) -> Option<u8> {
         | Instruction::LoadSlot(Operand::Register(r), _, _, _)
         | Instruction::LoadBatch(Operand::Register(r), _, _, _)
         | Instruction::LoadBatchNamed(Operand::Register(r), _, _, _, _)
+        | Instruction::LoadBatchSlot(Operand::Register(r), _, _, _, _)
+        | Instruction::LoadBatchNamedSlot(Operand::Register(r), _, _, _, _, _)
         | Instruction::SetEq(Operand::Register(r), _, _)
         | Instruction::SetNe(Operand::Register(r), _, _)
         | Instruction::SetGt(Operand::Register(r), _, _)
@@ -73,6 +75,21 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
             b.clone(),
             c.clone(),
             d.clone(),
+        )),
+        Instruction::LoadBatchSlot(_, a, b, c, d) => Some(Instruction::LoadBatchSlot(
+            r,
+            a.clone(),
+            b.clone(),
+            c.clone(),
+            d.clone(),
+        )),
+        Instruction::LoadBatchNamedSlot(_, a, b, c, d, e) => Some(Instruction::LoadBatchNamedSlot(
+            r,
+            a.clone(),
+            b.clone(),
+            c.clone(),
+            d.clone(),
+            e.clone(),
         )),
         Instruction::LoadReagent(_, b, c, d) => {
             Some(Instruction::LoadReagent(r, b.clone(), c.clone(), d.clone()))
@@ -143,6 +160,12 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
         Instruction::LoadBatch(_, dev, _, mode) => check(dev) || check(mode),
         Instruction::LoadBatchNamed(_, d_hash, n_hash, _, mode) => {
             check(d_hash) || check(n_hash) || check(mode)
+        }
+        Instruction::LoadBatchSlot(_, dev, slot, _, mode) => {
+            check(dev) || check(slot) || check(mode)
+        }
+        Instruction::LoadBatchNamedSlot(_, d_hash, n_hash, slot, _, mode) => {
+            check(d_hash) || check(n_hash) || check(slot) || check(mode)
         }
         Instruction::SetEq(_, a, b)
         | Instruction::SetNe(_, a, b)

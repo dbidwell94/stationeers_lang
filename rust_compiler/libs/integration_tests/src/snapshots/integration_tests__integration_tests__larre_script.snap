@@ -1,6 +1,5 @@
 ---
 source: libs/integration_tests/src/lib.rs
-assertion_line: 54
 expression: output
 ---
 ## Unoptimized Output
@@ -41,9 +40,10 @@ push sp
 push ra
 sle r1 r8 1
 ls r15 d0 255 Seeding
-slt r2 r15 1
-or r3 r1 r2
-beqz r3 __internal_L6
+move r2 r15
+slt r3 r2 1
+or r4 r1 r3
+beqz r4 __internal_L6
 j __internal_L5
 __internal_L6:
 __internal_L7:
@@ -61,20 +61,20 @@ push r9
 jal waitForIdle
 pop r9
 pop r8
-move r4 r15
-push r8
-push r9
-jal deposit
-pop r9
-pop r8
 move r5 r15
-beqz r9 __internal_L9
 push r8
 push r9
 jal deposit
 pop r9
 pop r8
 move r6 r15
+beqz r9 __internal_L9
+push r8
+push r9
+jal deposit
+pop r9
+pop r8
+move r7 r15
 __internal_L9:
 s d0 Setting r8
 push r8
@@ -82,7 +82,7 @@ push r9
 jal waitForIdle
 pop r9
 pop r8
-move r6 r15
+move r7 r15
 ls r15 d0 0 Occupied
 beqz r15 __internal_L10
 s d0 Activate 1
@@ -92,7 +92,7 @@ push r9
 jal waitForIdle
 pop r9
 pop r8
-move r7 r15
+move r2 r15
 __internal_L5:
 pop ra
 pop sp
@@ -152,10 +152,10 @@ pop r8
 push sp
 push ra
 sle r1 r8 1
-ls r15 d0 255 Seeding
-slt r2 r15 1
-or r3 r1 r2
-beqz r3 32
+ls r2 d0 255 Seeding
+slt r3 r2 1
+or r4 r1 r3
+beqz r4 32
 j 74
 ls r15 d0 255 Mature
 beqz r15 37
@@ -169,27 +169,27 @@ push r9
 jal 1
 pop r9
 pop r8
-move r4 r15
+move r5 r15
 push r8
 push r9
 jal 11
 pop r9
 pop r8
-move r5 r15
+move r6 r15
 beqz r9 58
 push r8
 push r9
 jal 11
 pop r9
 pop r8
-move r6 r15
+move r7 r15
 s d0 Setting r8
 push r8
 push r9
 jal 1
 pop r9
 pop r8
-move r6 r15
+move r7 r15
 ls r15 d0 0 Occupied
 beqz r15 68
 s d0 Activate 1
@@ -198,7 +198,7 @@ push r9
 jal 1
 pop r9
 pop r8
-move r7 r15
+move r2 r15
 pop ra
 pop sp
 j ra
@@ -210,8 +210,7 @@ j 78
 add r3 r8 1
 sgt r4 r3 19
 add r5 r8 1
-select r6 r4 2 r5
-move r9 r6
+select r9 r4 2 r5
 push r8
 push r9
 push r8

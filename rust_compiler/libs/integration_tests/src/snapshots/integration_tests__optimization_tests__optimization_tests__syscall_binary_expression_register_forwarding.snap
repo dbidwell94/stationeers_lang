@@ -1,0 +1,19 @@
+---
+source: libs/integration_tests/src/optimization_tests.rs
+expression: output
+---
+## Unoptimized Output
+
+j main
+main:
+ls r15 d0 0 Quantity
+move r1 r15
+ls r15 d0 1 Quantity
+add r2 r1 r15
+move r8 r2
+
+## Optimized Output
+
+ls r1 d0 0 Quantity
+ls r15 d0 1 Quantity
+add r8 r1 r15

@@ -896,8 +896,11 @@ impl<'a> Compiler<'a> {
                     VariableLocation::Constant(Literal::Boolean(b)) => {
                         Operand::Number(Number::from(b).into())
                     }
-                    VariableLocation::Device(_)
-                    | VariableLocation::Constant(Literal::String(_)) => unreachable!(),
+                    VariableLocation::Constant(Literal::String(s)) => {
+                        // String constants can be used in expressions like `let x = STRINGCONST;`
+                        Operand::LogicType(s)
+                    }
+                    VariableLocation::Device(_) => unreachable!(),
                 };
                 self.emit_variable_assignment(&var_loc, src)?;
                 (var_loc, None)
@@ -2287,6 +2290,33 @@ impl<'a> Compiler<'a> {
         )
     }
 
+    /// Compiles an expression and validates that it must result in a constant string value.
+    /// Useful for syscall parameters that require string constants (e.g., logic type names).
+    ///
+    /// Returns the string value if successful, or an error if:
+    /// - The expression evaluates to a register (runtime value)
+    /// - The expression is not a string
+    fn compile_const_string(
+        &mut self,
+        expr: Spanned<Expression<'a>>,
+        scope: &mut VariableScope<'a, '_>,
+        span: Span,
+    ) -> Result<Cow<'a, str>, Error<'a>> {
+        let (operand, _cleanup) = self.compile_operand(expr, scope)?;
+
+        match operand {
+            Operand::LogicType(s) => Ok(s),
+            Operand::Register(_) => Err(Error::AgrumentMismatch(
+                "String argument must be a constant, not a runtime value".into(),
+                span,
+            )),
+            _ => Err(Error::AgrumentMismatch(
+                "Argument must be a string constant".into(),
+                span,
+            )),
+        }
+    }
+
     /// Recursively fold negations of numeric literals, e.g., -5 => 5, -(-5) => 5
     fn try_fold_negation(&self, expr: &Expression) -> Option<Number> {
         match expr {
@@ -2507,6 +2537,23 @@ impl<'a> Compiler<'a> {
 
         // Compile LHS
         let (lhs, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
+
+        // If LHS result landed in RETURN_REGISTER, spill it to a fresh temp before
+        // compiling RHS, which may also emit a syscall and overwrite that register.
+        let (lhs, lhs_cleanup) = if matches!(lhs, Operand::Register(r) if r == VariableScope::RETURN_REGISTER)
+        {
+            let spill_name = self.next_temp_name();
+            let spill_loc = scope.add_variable(spill_name.clone(), LocationRequest::Temp, None)?;
+            let spill_reg = self.resolve_register(&spill_loc)?;
+            self.write_instruction(Instruction::Move(Operand::Register(spill_reg), lhs), None)?;
+            if let Some(name) = lhs_cleanup {
+                scope.free_temp(name, None)?;
+            }
+            (Operand::Register(spill_reg), Some(spill_name))
+        } else {
+            (lhs, lhs_cleanup)
+        };
+
         // Compile RHS
         let (rhs, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
 
@@ -2602,6 +2649,27 @@ impl<'a> Compiler<'a> {
 
                 // Compile LHS
                 let (lhs, lhs_cleanup) = self.compile_operand(*left_expr, scope)?;
+
+                // If LHS result landed in RETURN_REGISTER, spill it to a fresh temp before
+                // compiling RHS, which may also emit a syscall and overwrite that register.
+                let (lhs, lhs_cleanup) = if matches!(lhs, Operand::Register(r) if r == VariableScope::RETURN_REGISTER)
+                {
+                    let spill_name = self.next_temp_name();
+                    let spill_loc =
+                        scope.add_variable(spill_name.clone(), LocationRequest::Temp, None)?;
+                    let spill_reg = self.resolve_register(&spill_loc)?;
+                    self.write_instruction(
+                        Instruction::Move(Operand::Register(spill_reg), lhs),
+                        None,
+                    )?;
+                    if let Some(name) = lhs_cleanup {
+                        scope.free_temp(name, None)?;
+                    }
+                    (Operand::Register(spill_reg), Some(spill_name))
+                } else {
+                    (lhs, lhs_cleanup)
+                };
+
                 // Compile RHS
                 let (rhs, rhs_cleanup) = self.compile_operand(*right_expr, scope)?;
 
@@ -3035,21 +3103,27 @@ impl<'a> Compiler<'a> {
                     .cloned()
                     .unwrap_or(Cow::from("d0"));
 
-                let Spanned {
-                    node: Literal::String(logic_type),
-                    ..
-                } = logic_type
-                else {
-                    return Err(Error::AgrumentMismatch(
-                        "Arg2 expected to be a string".into(),
-                        span,
-                    ));
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let logic_type_expr = match logic_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
+                let logic_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_type_expr,
+                        span: logic_type.span,
+                    },
+                    scope,
+                    span,
+                )?;
 
                 self.write_instruction(
                     Instruction::Store(
                         Operand::Device(device_val),
-                        Operand::LogicType(logic_type),
+                        Operand::LogicType(logic_type_str),
                         variable,
                     ),
                     Some(span),
@@ -3062,19 +3136,30 @@ impl<'a> Compiler<'a> {
                 let (var, var_cleanup) = self.compile_operand(*variable, scope)?;
                 let (device_hash_val, device_hash_cleanup) =
                     self.compile_literal_or_variable(device_hash.node, scope)?;
-                let Spanned {
-                    node: Literal::String(logic_type),
-                    ..
-                } = logic_type
-                else {
-                    return Err(Error::AgrumentMismatch(
-                        "Arg2 expected to be a string".into(),
-                        span,
-                    ));
+
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let logic_type_expr = match logic_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
+                let logic_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_type_expr,
+                        span: logic_type.span,
+                    },
+                    scope,
+                    span,
+                )?;
 
                 self.write_instruction(
-                    Instruction::StoreBatch(device_hash_val, Operand::LogicType(logic_type), var),
+                    Instruction::StoreBatch(
+                        device_hash_val,
+                        Operand::LogicType(logic_type_str),
+                        var,
+                    ),
                     Some(span),
                 )?;
                 cleanup!(var_cleanup, device_hash_cleanup);
@@ -3089,21 +3174,33 @@ impl<'a> Compiler<'a> {
                 let (name_hash, name_hash_cleanup) =
                     self.compile_literal_or_variable(name_hash.node, scope)?;
 
-                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(logic_type.node),
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let logic_type_expr = match logic_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_type_operand = self.compile_const_string(
+                    Spanned {
+                        node: logic_type_expr,
+                        span: logic_type.span,
+                    },
                     scope,
+                    span,
                 )?;
 
                 self.write_instruction(
-                    Instruction::StoreBatchNamed(device_hash, name_hash, logic_type, value),
+                    Instruction::StoreBatchNamed(
+                        device_hash,
+                        name_hash,
+                        Operand::LogicType(logic_type_operand),
+                        value,
+                    ),
                     Some(span),
                 )?;
-                cleanup!(
-                    value_cleanup,
-                    device_hash_cleanup,
-                    name_hash_cleanup,
-                    logic_type_cleanup
-                );
+                cleanup!(value_cleanup, device_hash_cleanup, name_hash_cleanup);
 
                 Ok(None)
             }
@@ -3134,22 +3231,28 @@ impl<'a> Compiler<'a> {
                     .cloned()
                     .unwrap_or(Cow::from("d0"));
 
-                let Spanned {
-                    node: Literal::String(logic_type),
-                    ..
-                } = logic_type
-                else {
-                    return Err(Error::AgrumentMismatch(
-                        "Arg2 expected to be a string".into(),
-                        span,
-                    ));
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let logic_type_expr = match logic_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
+                let logic_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_type_expr,
+                        span: logic_type.span,
+                    },
+                    scope,
+                    span,
+                )?;
 
                 self.write_instruction(
                     Instruction::Load(
                         Operand::Register(VariableScope::RETURN_REGISTER),
                         Operand::Device(device_val),
-                        Operand::LogicType(logic_type),
+                        Operand::LogicType(logic_type_str),
                     ),
                     Some(span),
                 )?;
@@ -3161,26 +3264,52 @@ impl<'a> Compiler<'a> {
             }
             System::LoadBatch(device_hash, logic_type, batch_mode) => {
                 let (device_hash, device_hash_cleanup) =
-                    self.compile_literal_or_variable(device_hash.node, scope)?;
-                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(logic_type.node),
+                    self.compile_operand(*device_hash, scope)?;
+
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let logic_type_expr = match logic_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_type_expr,
+                        span: logic_type.span,
+                    },
                     scope,
+                    span,
                 )?;
-                let (batch_mode, batch_mode_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(batch_mode.node),
+
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let batch_mode_expr = match batch_mode.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: batch_mode.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let batch_mode_str = self.compile_const_string(
+                    Spanned {
+                        node: batch_mode_expr,
+                        span: batch_mode.span,
+                    },
                     scope,
+                    span,
                 )?;
 
                 self.write_instruction(
                     Instruction::LoadBatch(
                         Operand::Register(VariableScope::RETURN_REGISTER),
                         device_hash,
-                        logic_type,
-                        batch_mode,
+                        Operand::LogicType(logic_type_str),
+                        Operand::LogicType(batch_mode_str),
                     ),
                     Some(span),
                 )?;
-                cleanup!(device_hash_cleanup, logic_type_cleanup, batch_mode_cleanup);
+                cleanup!(device_hash_cleanup);
 
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
@@ -3189,16 +3318,41 @@ impl<'a> Compiler<'a> {
             }
             System::LoadBatchNamed(device_hash, name_hash, logic_type, batch_mode) => {
                 let (device_hash, device_hash_cleanup) =
-                    self.compile_literal_or_variable(device_hash.node, scope)?;
-                let (name_hash, name_hash_cleanup) =
-                    self.compile_literal_or_variable(name_hash.node, scope)?;
-                let (logic_type, logic_type_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(logic_type.node),
+                    self.compile_operand(*device_hash, scope)?;
+                let (name_hash, name_hash_cleanup) = self.compile_operand(*name_hash, scope)?;
+
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let logic_type_expr = match logic_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_type_expr,
+                        span: logic_type.span,
+                    },
                     scope,
+                    span,
                 )?;
-                let (batch_mode, batch_mode_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(batch_mode.node),
+
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let batch_mode_expr = match batch_mode.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: batch_mode.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let batch_mode_str = self.compile_const_string(
+                    Spanned {
+                        node: batch_mode_expr,
+                        span: batch_mode.span,
+                    },
                     scope,
+                    span,
                 )?;
 
                 self.write_instruction(
@@ -3206,17 +3360,128 @@ impl<'a> Compiler<'a> {
                         Operand::Register(VariableScope::RETURN_REGISTER),
                         device_hash,
                         name_hash,
-                        logic_type,
-                        batch_mode,
+                        Operand::LogicType(logic_type_str),
+                        Operand::LogicType(batch_mode_str),
                     ),
                     Some(span),
                 )?;
-                cleanup!(
-                    device_hash_cleanup,
-                    name_hash_cleanup,
-                    logic_type_cleanup,
-                    batch_mode_cleanup
-                );
+                cleanup!(device_hash_cleanup, name_hash_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            System::LoadBatchSlot(device_hash, slot_index, logic_slot_type, batch_mode) => {
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_operand(*device_hash, scope)?;
+                let (slot_index, slot_cleanup) = self.compile_operand(*slot_index, scope)?;
+
+                let logic_slot_type_expr = match logic_slot_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_slot_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_slot_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_slot_type_expr,
+                        span: logic_slot_type.span,
+                    },
+                    scope,
+                    span,
+                )?;
+
+                let batch_mode_expr = match batch_mode.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: batch_mode.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let batch_mode_str = self.compile_const_string(
+                    Spanned {
+                        node: batch_mode_expr,
+                        span: batch_mode.span,
+                    },
+                    scope,
+                    span,
+                )?;
+
+                self.write_instruction(
+                    Instruction::LoadBatchSlot(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        device_hash,
+                        slot_index,
+                        Operand::LogicType(logic_slot_type_str),
+                        Operand::LogicType(batch_mode_str),
+                    ),
+                    Some(span),
+                )?;
+                cleanup!(device_hash_cleanup, slot_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            System::LoadBatchNamedSlot(
+                device_hash,
+                name_hash,
+                slot_index,
+                logic_slot_type,
+                batch_mode,
+            ) => {
+                let (device_hash, device_hash_cleanup) =
+                    self.compile_operand(*device_hash, scope)?;
+                let (name_hash, name_hash_cleanup) = self.compile_operand(*name_hash, scope)?;
+                let (slot_index, slot_cleanup) = self.compile_operand(*slot_index, scope)?;
+
+                let logic_slot_type_expr = match logic_slot_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_slot_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_slot_type_str = self.compile_const_string(
+                    Spanned {
+                        node: logic_slot_type_expr,
+                        span: logic_slot_type.span,
+                    },
+                    scope,
+                    span,
+                )?;
+
+                let batch_mode_expr = match batch_mode.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: batch_mode.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let batch_mode_str = self.compile_const_string(
+                    Spanned {
+                        node: batch_mode_expr,
+                        span: batch_mode.span,
+                    },
+                    scope,
+                    span,
+                )?;
+
+                self.write_instruction(
+                    Instruction::LoadBatchNamedSlot(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        device_hash,
+                        name_hash,
+                        slot_index,
+                        Operand::LogicType(logic_slot_type_str),
+                        Operand::LogicType(batch_mode_str),
+                    ),
+                    Some(span),
+                )?;
+                cleanup!(device_hash_cleanup, name_hash_cleanup, slot_cleanup);
 
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
@@ -3227,9 +3492,22 @@ impl<'a> Compiler<'a> {
                 let (dev_hash, hash_cleanup) =
                     self.compile_literal_or_variable(dev_name.node, scope)?;
                 let (slot_index, slot_cleanup) = self.compile_operand(*slot_index, scope)?;
-                let (logic_type, logic_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(logic_type.node),
+
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let logic_type_expr = match logic_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_type_operand = self.compile_const_string(
+                    Spanned {
+                        node: logic_type_expr,
+                        span: logic_type.span,
+                    },
                     scope,
+                    span,
                 )?;
 
                 self.write_instruction(
@@ -3237,11 +3515,11 @@ impl<'a> Compiler<'a> {
                         Operand::Register(VariableScope::RETURN_REGISTER),
                         dev_hash,
                         slot_index,
-                        logic_type,
+                        Operand::LogicType(logic_type_operand),
                     ),
                     Some(span),
                 )?;
-                cleanup!(hash_cleanup, slot_cleanup, logic_cleanup);
+                cleanup!(hash_cleanup, slot_cleanup);
 
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
@@ -3252,17 +3530,36 @@ impl<'a> Compiler<'a> {
                 let (dev_name, name_cleanup) =
                     self.compile_literal_or_variable(dev_name.node, scope)?;
                 let (slot_index, index_cleanup) = self.compile_operand(*slot_index, scope)?;
-                let (logic_type, type_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(logic_type.node),
+
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let logic_type_expr = match logic_type.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: logic_type.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let logic_type_operand = self.compile_const_string(
+                    Spanned {
+                        node: logic_type_expr,
+                        span: logic_type.span,
+                    },
                     scope,
+                    span,
                 )?;
+
                 let (var, var_cleanup) = self.compile_operand(*var, scope)?;
 
                 self.write_instruction(
-                    Instruction::StoreSlot(dev_name, slot_index, logic_type, var),
+                    Instruction::StoreSlot(
+                        dev_name,
+                        slot_index,
+                        Operand::LogicType(logic_type_operand),
+                        var,
+                    ),
                     Some(span),
                 )?;
-                cleanup!(name_cleanup, index_cleanup, type_cleanup, var_cleanup);
+                cleanup!(name_cleanup, index_cleanup, var_cleanup);
 
                 Ok(None)
             }
@@ -3283,9 +3580,21 @@ impl<'a> Compiler<'a> {
                     scope,
                 )?;
 
-                let (reagent_mode, reagent_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Literal(reagent_mode.node),
+                // Convert LiteralOrVariable to Expression and validate it's a constant string
+                let reagent_mode_expr = match reagent_mode.node {
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
+                        node: lit,
+                        span: reagent_mode.span,
+                    }),
+                    LiteralOrVariable::Variable(var) => Expression::Variable(var),
+                };
+                let reagent_mode_str = self.compile_const_string(
+                    Spanned {
+                        node: reagent_mode_expr,
+                        span: reagent_mode.span,
+                    },
                     scope,
+                    span,
                 )?;
 
                 let (reagent_hash, reagent_hash_cleanup) =
@@ -3295,13 +3604,13 @@ impl<'a> Compiler<'a> {
                     Instruction::LoadReagent(
                         Operand::Register(VariableScope::RETURN_REGISTER),
                         device,
-                        reagent_mode,
+                        Operand::LogicType(reagent_mode_str),
                         reagent_hash,
                     ),
                     Some(span),
                 )?;
 
-                cleanup!(reagent_cleanup, reagent_hash_cleanup, device_cleanup);
+                cleanup!(reagent_hash_cleanup, device_cleanup);
 
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),

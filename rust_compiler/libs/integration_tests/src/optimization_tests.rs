@@ -79,4 +79,30 @@ mod optimization_tests {
         let output = compile_with_and_without_optimization(source);
         insta::assert_snapshot!(output);
     }
+
+    /// Regression test: two ls() syscalls on the LHS and RHS of a binary expression.
+    /// The unoptimized output requires a spill `move` because both calls write to r15.
+    /// The optimizer's register-forwarding pass should eliminate both intermediate moves,
+    /// writing directly to the final destination registers.
+    #[test]
+    fn test_syscall_binary_expression_register_forwarding() {
+        let source = indoc! {r#"
+            device filtration = "d0";
+            let filter = ls(filtration, 0, "Quantity") + ls(filtration, 1, "Quantity");
+        "#};
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
+
+    #[test]
+    fn test_min_assignment_register_forwarding_in_loop() {
+        let source = indoc! {r#"
+            let minimum = 0;
+            loop {
+                minimum = min(500, 400);
+            }
+        "#};
+        let output = compile_with_and_without_optimization(source);
+        insta::assert_snapshot!(output);
+    }
 }

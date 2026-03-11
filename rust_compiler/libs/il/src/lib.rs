@@ -192,6 +192,24 @@ pub enum Instruction<'a> {
     /// `sbn deviceHash nameHash type value` - Set Batch Named
     StoreBatchNamed(Operand<'a>, Operand<'a>, Operand<'a>, Operand<'a>),
 
+    /// `lbs register deviceHash slotIndex logicSlotType batchMode` - Load Batch Slot
+    LoadBatchSlot(
+        Operand<'a>,
+        Operand<'a>,
+        Operand<'a>,
+        Operand<'a>,
+        Operand<'a>,
+    ),
+    /// `lbns register deviceHash nameHash slotIndex logicSlotType batchMode` - Load Batch Named Slot
+    LoadBatchNamedSlot(
+        Operand<'a>,
+        Operand<'a>,
+        Operand<'a>,
+        Operand<'a>,
+        Operand<'a>,
+        Operand<'a>,
+    ),
+
     /// `lr register device reagentMode int`
     LoadReagent(Operand<'a>, Operand<'a>, Operand<'a>, Operand<'a>),
 
@@ -329,6 +347,16 @@ impl<'a> fmt::Display for Instruction<'a> {
             }
             Instruction::StoreBatchNamed(d_hash, n_hash, typ, val) => {
                 write!(f, "sbn {} {} {} {}", d_hash, n_hash, typ, val)
+            }
+            Instruction::LoadBatchSlot(reg, hash, slot, typ, mode) => {
+                write!(f, "lbs {} {} {} {} {}", reg, hash, slot, typ, mode)
+            }
+            Instruction::LoadBatchNamedSlot(reg, d_hash, n_hash, slot, typ, mode) => {
+                write!(
+                    f,
+                    "lbns {} {} {} {} {} {}",
+                    reg, d_hash, n_hash, slot, typ, mode
+                )
             }
             Instruction::LoadReagent(reg, device, reagent_mode, reagent_hash) => {
                 write!(f, "lr {} {} {} {}", reg, device, reagent_mode, reagent_hash)
