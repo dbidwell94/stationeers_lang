@@ -215,7 +215,7 @@ documented! {
         /// `let item = load(deviceHash, "LogicType");`
         /// `let item = l(deviceHash, "LogicType");`
         /// `let item = deviceAlias.LogicType;`
-        LoadFromDevice(Spanned<LiteralOrVariable<'a>>, Spanned<Literal<'a>>),
+        LoadFromDevice(Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>),
         /// Function which gets a LogicType from all connected network devices that match
         /// the provided device hash and name, aggregating them via a batchMode
         /// ## IC10
@@ -224,10 +224,10 @@ documented! {
         /// `loadBatchedNamed(deviceHash, deviceName, "LogicType", "BatchMode");`
         /// `lbn(deviceHash, deviceName, "LogicType", "BatchMode");`
         LoadBatchNamed(
+            Box<Spanned<Expression<'a>>>,
+            Box<Spanned<Expression<'a>>>,
             Spanned<LiteralOrVariable<'a>>,
             Spanned<LiteralOrVariable<'a>>,
-            Spanned<Literal<'a>>,
-            Spanned<Literal<'a>>,
         ),
         /// Loads a LogicType from all connected network devices, aggregating them via a
         /// BatchMode
@@ -236,7 +236,7 @@ documented! {
         /// ## Slang
         /// `loadBatched(deviceHash, "Variable", "LogicType");`
         /// `lb(deviceHash, "Variable", "LogicType");`
-        LoadBatch(Spanned<LiteralOrVariable<'a>>, Spanned<Literal<'a>>, Spanned<Literal<'a>>),
+        LoadBatch(Box<Spanned<Expression<'a>>>, Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>),
         /// Represents a function which stores a setting into a specific device.
         /// ## IC10
         /// `s d? logicType r?`
@@ -244,7 +244,7 @@ documented! {
         /// `set(deviceHash, "LogicType", (number|var));`
         /// `s(deviceHash, "LogicType", (number|var));`
         /// `deviceAlias.LogicType = (number|var);`
-        SetOnDevice(Spanned<LiteralOrVariable<'a>>, Spanned<Literal<'a>>, Box<Spanned<Expression<'a>>>),
+        SetOnDevice(Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>, Box<Spanned<Expression<'a>>>),
         /// Represents a function which stores a setting to all devices that match
         /// the given deviceHash
         /// ## IC10
@@ -252,7 +252,7 @@ documented! {
         /// ## Slang
         /// `setBatched(deviceHash, "LogicType", (number|var));`
         /// `sb(deviceHash, "LogicType", (number|var));`
-        SetOnDeviceBatched(Spanned<LiteralOrVariable<'a>>, Spanned<Literal<'a>>, Box<Spanned<Expression<'a>>>),
+        SetOnDeviceBatched(Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>, Box<Spanned<Expression<'a>>>),
         /// Represents a function which stores a setting to all devices that match
         /// both the given deviceHash AND the given nameHash
         /// ## IC10
@@ -263,7 +263,7 @@ documented! {
         SetOnDeviceBatchedNamed(
             Spanned<LiteralOrVariable<'a>>,
             Spanned<LiteralOrVariable<'a>>,
-            Spanned<Literal<'a>>,
+            Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>,
         ),
         /// Loads slot LogicSlotType from device into a variable
@@ -276,7 +276,7 @@ documented! {
         LoadSlot(
             Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>,
-            Spanned<Literal<'a>>
+            Spanned<LiteralOrVariable<'a>>,
         ),
         /// Stores a value of LogicType on a device by the index value
         /// ## IC10
@@ -287,7 +287,7 @@ documented! {
         SetSlot(
             Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>,
-            Spanned<Literal<'a>>,
+            Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>
         ),
         /// Loads reagent of device's ReagentMode where a hash of the reagent type to check for
@@ -299,7 +299,7 @@ documented! {
         /// `let result = lr(deviceHash, "ReagentMode", reagentHash);`
         LoadReagent(
             Spanned<LiteralOrVariable<'a>>,
-            Spanned<Literal<'a>>,
+            Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>
         ),
         /// Maps a reagent hash to the item hash that fulfills it on a device

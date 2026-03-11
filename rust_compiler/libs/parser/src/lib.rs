@@ -1986,23 +1986,6 @@ impl<'a> Parser<'a> {
             };
         }
 
-        macro_rules! get_arg {
-            ($matcher: ident, $arg: expr) => {
-                match $arg.node {
-                    LiteralOrVariable::$matcher(i) => Spanned {
-                        node: i,
-                        span: $arg.span,
-                    },
-                    _ => {
-                        return Err(Error::InvalidSyntax(
-                            $arg.span,
-                            format!("Expected a {}", stringify!($matcher).to_lowercase()),
-                        ))
-                    }
-                }
-            };
-        }
-
         match invocation.name.node.as_ref() {
             // System SysCalls
             "yield" => {
@@ -2046,78 +2029,45 @@ impl<'a> Parser<'a> {
                 let device = literal_or_variable!(tmp);
                 let next_arg = args.next();
 
-                let variable = match next_arg {
-                    Some(expr) => match expr.node {
-                        Expression::Literal(spanned_lit) => match spanned_lit.node {
-                            Literal::String(s) => Spanned {
-                                node: s,
-                                span: spanned_lit.span,
-                            },
-                            _ => {
-                                return Err(Error::InvalidSyntax(
-                                    spanned_lit.span,
-                                    "Expected a string literal".to_string(),
-                                ));
-                            }
-                        },
-                        _ => {
-                            return Err(Error::InvalidSyntax(
-                                expr.span,
-                                "Expected a string literal".to_string(),
-                            ));
-                        }
-                    },
-                    _ => {
-                        return Err(Error::UnexpectedToken(
-                            self.current_span(),
-                            self.current_token
-                                .clone()
-                                .ok_or_else(|| self.unexpected_eof())?,
-                        ));
-                    }
-                };
+                let logic_type = literal_or_variable!(next_arg);
 
                 Ok(SysCall::System(sys_call::System::LoadFromDevice(
-                    device,
-                    Spanned {
-                        node: Literal::String(variable.node),
-                        span: variable.span,
-                    },
+                    device, logic_type,
                 )))
             }
             "loadBatched" | "lb" => {
                 let mut args = args!(3);
-                let tmp = args.next();
-                let device_hash = literal_or_variable!(tmp);
+                let device_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 let tmp = args.next();
-                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+                let logic_type = literal_or_variable!(tmp);
 
                 let tmp = args.next();
-                let batch_mode = get_arg!(Literal, literal_or_variable!(tmp));
+                let batch_mode = literal_or_variable!(tmp);
 
                 Ok(SysCall::System(System::LoadBatch(
-                    device_hash,
+                    boxed!(device_hash),
                     logic_type,
                     batch_mode,
                 )))
             }
             "loadBatchedNamed" | "lbn" => {
                 let mut args = args!(4);
-                let tmp = args.next();
-                let dev_hash = literal_or_variable!(tmp);
+                let dev_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
+
+                let name_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 let tmp = args.next();
-                let name_hash = literal_or_variable!(tmp);
+                let logic_type = literal_or_variable!(tmp);
 
                 let tmp = args.next();
-                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
-
-                let tmp = args.next();
-                let batch_mode = get_arg!(Literal, literal_or_variable!(tmp));
+                let batch_mode = literal_or_variable!(tmp);
 
                 Ok(SysCall::System(System::LoadBatchNamed(
-                    dev_hash, name_hash, logic_type, batch_mode,
+                    boxed!(dev_hash),
+                    boxed!(name_hash),
+                    logic_type,
+                    batch_mode,
                 )))
             }
             "set" | "s" => {
@@ -2126,17 +2076,12 @@ impl<'a> Parser<'a> {
                 let device = literal_or_variable!(tmp);
 
                 let tmp = args.next();
-                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+                let logic_type = literal_or_variable!(tmp);
 
                 let variable = args.next().ok_or_else(|| self.unexpected_eof())?;
                 Ok(SysCall::System(sys_call::System::SetOnDevice(
                     device,
-                    Spanned {
-                        node: Literal::String(Cow::from(
-                            logic_type.node.to_string().replace("\"", ""),
-                        )),
-                        span: logic_type.span,
-                    },
+                    logic_type,
                     boxed!(variable),
                 )))
             }
@@ -2146,15 +2091,12 @@ impl<'a> Parser<'a> {
                 let device_hash = literal_or_variable!(tmp);
 
                 let tmp = args.next();
-                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+                let logic_type = literal_or_variable!(tmp);
                 let variable = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::System(sys_call::System::SetOnDeviceBatched(
                     device_hash,
-                    Spanned {
-                        node: Literal::String(Cow::from(logic_type.to_string().replace("\"", ""))),
-                        span: logic_type.span,
-                    },
+                    logic_type,
                     boxed!(variable),
                 )))
             }
@@ -2167,7 +2109,7 @@ impl<'a> Parser<'a> {
                 let name_hash = literal_or_variable!(tmp);
 
                 let tmp = args.next();
-                let logic_type = get_arg!(Literal, literal_or_variable!(tmp));
+                let logic_type = literal_or_variable!(tmp);
 
                 let tmp = args.next();
                 let expr = Box::new(tmp.ok_or_else(|| self.unexpected_eof())?);
@@ -2186,19 +2128,7 @@ impl<'a> Parser<'a> {
                 let slot_index = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 let next = args.next();
-                let slot_logic = get_arg!(Literal, literal_or_variable!(next));
-                if !matches!(
-                    slot_logic,
-                    Spanned {
-                        node: Literal::String(_),
-                        ..
-                    }
-                ) {
-                    return Err(Error::InvalidSyntax(
-                        slot_logic.span,
-                        "Expected a String".into(),
-                    ));
-                }
+                let slot_logic = literal_or_variable!(next);
 
                 Ok(SysCall::System(System::LoadSlot(
                     dev_name,
@@ -2213,19 +2143,8 @@ impl<'a> Parser<'a> {
                 let slot_index = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 let next = args.next();
-                let slot_logic = get_arg!(Literal, literal_or_variable!(next));
-                if !matches!(
-                    slot_logic,
-                    Spanned {
-                        node: Literal::String(_),
-                        ..
-                    }
-                ) {
-                    return Err(Error::InvalidSyntax(
-                        slot_logic.span,
-                        "Expected a string".into(),
-                    ));
-                }
+                let slot_logic = literal_or_variable!(next);
+
                 let next = args.next();
                 let expr = next.ok_or_else(|| self.unexpected_eof())?;
 
@@ -2241,7 +2160,7 @@ impl<'a> Parser<'a> {
                 let next = args.next();
                 let device = literal_or_variable!(next);
                 let next = args.next();
-                let reagent_mode = get_arg!(Literal, literal_or_variable!(next));
+                let reagent_mode = literal_or_variable!(next);
                 let reagent_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::System(System::LoadReagent(
