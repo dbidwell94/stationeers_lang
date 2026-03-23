@@ -1,4 +1,4 @@
-FROM rust:latest
+FROM rust:1.92
 
 RUN apt-get update && apt-get install -y \
   mingw-w64 \
