@@ -1,6 +1,5 @@
 ---
 source: libs/integration_tests/src/bitwise_tests.rs
-assertion_line: 17
 expression: output
 ---
 ## Unoptimized Output
@@ -28,5 +27,4 @@ move r2 7
 move r11 7
 move r3 6
 move r12 6
-not r4 r8
-move r13 r4
+not r13 r8

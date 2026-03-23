@@ -10,12 +10,17 @@ pub fn get_destination_reg(instr: &Instruction) -> Option<u8> {
         | Instruction::Div(Operand::Register(r), _, _)
         | Instruction::Mod(Operand::Register(r), _, _)
         | Instruction::Pow(Operand::Register(r), _, _)
+        | Instruction::Sll(Operand::Register(r), _, _)
+        | Instruction::Sra(Operand::Register(r), _, _)
+        | Instruction::Srl(Operand::Register(r), _, _)
         | Instruction::Load(Operand::Register(r), _, _)
         | Instruction::LoadSlot(Operand::Register(r), _, _, _)
         | Instruction::LoadBatch(Operand::Register(r), _, _, _)
         | Instruction::LoadBatchNamed(Operand::Register(r), _, _, _, _)
         | Instruction::LoadBatchSlot(Operand::Register(r), _, _, _, _)
         | Instruction::LoadBatchNamedSlot(Operand::Register(r), _, _, _, _, _)
+        | Instruction::LoadReagent(Operand::Register(r), _, _, _)
+        | Instruction::Rmap(Operand::Register(r), _, _)
         | Instruction::SetEq(Operand::Register(r), _, _)
         | Instruction::SetNe(Operand::Register(r), _, _)
         | Instruction::SetGt(Operand::Register(r), _, _)
@@ -25,6 +30,8 @@ pub fn get_destination_reg(instr: &Instruction) -> Option<u8> {
         | Instruction::And(Operand::Register(r), _, _)
         | Instruction::Or(Operand::Register(r), _, _)
         | Instruction::Xor(Operand::Register(r), _, _)
+        | Instruction::Nor(Operand::Register(r), _, _)
+        | Instruction::Not(Operand::Register(r), _)
         | Instruction::Peek(Operand::Register(r))
         | Instruction::Get(Operand::Register(r), _, _)
         | Instruction::Select(Operand::Register(r), _, _, _)
@@ -44,8 +51,6 @@ pub fn get_destination_reg(instr: &Instruction) -> Option<u8> {
         | Instruction::Sqrt(Operand::Register(r), _)
         | Instruction::Tan(Operand::Register(r), _)
         | Instruction::Trunc(Operand::Register(r), _)
-        | Instruction::LoadReagent(Operand::Register(r), _, _, _)
-        | Instruction::Rmap(Operand::Register(r), _, _)
         | Instruction::Pop(Operand::Register(r)) => Some(*r),
         _ => None,
     }
@@ -62,6 +67,9 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
         Instruction::Div(_, a, b) => Some(Instruction::Div(r, a.clone(), b.clone())),
         Instruction::Mod(_, a, b) => Some(Instruction::Mod(r, a.clone(), b.clone())),
         Instruction::Pow(_, a, b) => Some(Instruction::Pow(r, a.clone(), b.clone())),
+        Instruction::Sll(_, a, b) => Some(Instruction::Sll(r, a.clone(), b.clone())),
+        Instruction::Sra(_, a, b) => Some(Instruction::Sra(r, a.clone(), b.clone())),
+        Instruction::Srl(_, a, b) => Some(Instruction::Srl(r, a.clone(), b.clone())),
         Instruction::Load(_, a, b) => Some(Instruction::Load(r, a.clone(), b.clone())),
         Instruction::LoadSlot(_, a, b, c) => {
             Some(Instruction::LoadSlot(r, a.clone(), b.clone(), c.clone()))
@@ -94,6 +102,7 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
         Instruction::LoadReagent(_, b, c, d) => {
             Some(Instruction::LoadReagent(r, b.clone(), c.clone(), d.clone()))
         }
+        Instruction::Rmap(_, a, b) => Some(Instruction::Rmap(r, a.clone(), b.clone())),
         Instruction::SetEq(_, a, b) => Some(Instruction::SetEq(r, a.clone(), b.clone())),
         Instruction::SetNe(_, a, b) => Some(Instruction::SetNe(r, a.clone(), b.clone())),
         Instruction::SetGt(_, a, b) => Some(Instruction::SetGt(r, a.clone(), b.clone())),
@@ -103,6 +112,8 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
         Instruction::And(_, a, b) => Some(Instruction::And(r, a.clone(), b.clone())),
         Instruction::Or(_, a, b) => Some(Instruction::Or(r, a.clone(), b.clone())),
         Instruction::Xor(_, a, b) => Some(Instruction::Xor(r, a.clone(), b.clone())),
+        Instruction::Nor(_, a, b) => Some(Instruction::Nor(r, a.clone(), b.clone())),
+        Instruction::Not(_, a) => Some(Instruction::Not(r, a.clone())),
         Instruction::Peek(_) => Some(Instruction::Peek(r)),
         Instruction::Get(_, a, b) => Some(Instruction::Get(r, a.clone(), b.clone())),
         Instruction::Select(_, a, b, c) => {
@@ -125,7 +136,6 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
         Instruction::Sqrt(_, a) => Some(Instruction::Sqrt(r, a.clone())),
         Instruction::Tan(_, a) => Some(Instruction::Tan(r, a.clone())),
         Instruction::Trunc(_, a) => Some(Instruction::Trunc(r, a.clone())),
-        Instruction::Rmap(_, a, b) => Some(Instruction::Rmap(r, a.clone(), b.clone())),
         _ => None,
     }
 }
@@ -135,53 +145,8 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
     let check = |op: &Operand| matches!(op, Operand::Register(r) if *r == reg);
 
     match instr {
-        Instruction::Move(_, a) => check(a),
-        Instruction::Add(_, a, b)
-        | Instruction::Sub(_, a, b)
-        | Instruction::Mul(_, a, b)
-        | Instruction::Div(_, a, b)
-        | Instruction::Mod(_, a, b)
-        | Instruction::Pow(_, a, b) => check(a) || check(b),
-        Instruction::Load(_, a, _) => check(a),
-        Instruction::Store(a, _, b) => check(a) || check(b),
-        Instruction::StoreBatch(a, _, b) => check(a) || check(b),
-        Instruction::StoreBatchNamed(a, b, _, c) => check(a) || check(b) || check(c),
-        Instruction::StoreSlot(a, b, _, c) => check(a) || check(b) || check(c),
-        Instruction::BranchEq(a, b, _)
-        | Instruction::BranchNe(a, b, _)
-        | Instruction::BranchGt(a, b, _)
-        | Instruction::BranchLt(a, b, _)
-        | Instruction::BranchGe(a, b, _)
-        | Instruction::BranchLe(a, b, _) => check(a) || check(b),
-        Instruction::BranchEqZero(a, _) | Instruction::BranchNeZero(a, _) => check(a),
-        Instruction::LoadReagent(_, device, _, item_hash) => check(device) || check(item_hash),
-        Instruction::Rmap(_, device, reagent_hash) => check(device) || check(reagent_hash),
-        Instruction::LoadSlot(_, dev, slot, _) => check(dev) || check(slot),
-        Instruction::LoadBatch(_, dev, _, mode) => check(dev) || check(mode),
-        Instruction::LoadBatchNamed(_, d_hash, n_hash, _, mode) => {
-            check(d_hash) || check(n_hash) || check(mode)
-        }
-        Instruction::LoadBatchSlot(_, dev, slot, _, mode) => {
-            check(dev) || check(slot) || check(mode)
-        }
-        Instruction::LoadBatchNamedSlot(_, d_hash, n_hash, slot, _, mode) => {
-            check(d_hash) || check(n_hash) || check(slot) || check(mode)
-        }
-        Instruction::SetEq(_, a, b)
-        | Instruction::SetNe(_, a, b)
-        | Instruction::SetGt(_, a, b)
-        | Instruction::SetLt(_, a, b)
-        | Instruction::SetGe(_, a, b)
-        | Instruction::SetLe(_, a, b)
-        | Instruction::And(_, a, b)
-        | Instruction::Or(_, a, b)
-        | Instruction::Xor(_, a, b) => check(a) || check(b),
-        Instruction::Push(a) => check(a),
-        Instruction::Get(_, a, b) => check(a) || check(b),
-        Instruction::Put(a, b, c) => check(a) || check(b) || check(c),
-        Instruction::Select(_, a, b, c) => check(a) || check(b) || check(c),
-        Instruction::Sleep(a) => check(a),
-        Instruction::Acos(_, a)
+        Instruction::Move(_, a)
+        | Instruction::Acos(_, a)
         | Instruction::Asin(_, a)
         | Instruction::Atan(_, a)
         | Instruction::Abs(_, a)
@@ -192,12 +157,67 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
         | Instruction::Sin(_, a)
         | Instruction::Sqrt(_, a)
         | Instruction::Tan(_, a)
-        | Instruction::Trunc(_, a) => check(a),
-        Instruction::Atan2(_, a, b) | Instruction::Max(_, a, b) | Instruction::Min(_, a, b) => {
-            check(a) || check(b)
+        | Instruction::Trunc(_, a)
+        | Instruction::Not(_, a)
+        | Instruction::Push(a)
+        | Instruction::Sleep(a)
+        | Instruction::Jump(a)
+        | Instruction::JumpAndLink(a)
+        | Instruction::JumpRelative(a)
+        | Instruction::Clr(a)
+        | Instruction::Alias(_, a) => check(a),
+
+        Instruction::Add(_, a, b)
+        | Instruction::Sub(_, a, b)
+        | Instruction::Mul(_, a, b)
+        | Instruction::Div(_, a, b)
+        | Instruction::Mod(_, a, b)
+        | Instruction::Pow(_, a, b)
+        | Instruction::Sll(_, a, b)
+        | Instruction::Sra(_, a, b)
+        | Instruction::Srl(_, a, b)
+        | Instruction::Atan2(_, a, b)
+        | Instruction::Max(_, a, b)
+        | Instruction::Min(_, a, b)
+        | Instruction::SetEq(_, a, b)
+        | Instruction::SetNe(_, a, b)
+        | Instruction::SetGt(_, a, b)
+        | Instruction::SetLt(_, a, b)
+        | Instruction::SetGe(_, a, b)
+        | Instruction::SetLe(_, a, b)
+        | Instruction::And(_, a, b)
+        | Instruction::Or(_, a, b)
+        | Instruction::Xor(_, a, b)
+        | Instruction::Nor(_, a, b)
+        | Instruction::Get(_, a, b)
+        | Instruction::Rmap(_, a, b)
+        | Instruction::Load(_, a, b)
+        | Instruction::BranchEq(a, b, _)
+        | Instruction::BranchNe(a, b, _)
+        | Instruction::BranchGt(a, b, _)
+        | Instruction::BranchLt(a, b, _)
+        | Instruction::BranchGe(a, b, _)
+        | Instruction::BranchLe(a, b, _)
+        | Instruction::BranchEqZero(a, b)
+        | Instruction::BranchNeZero(a, b) => check(a) || check(b),
+
+        Instruction::Store(a, b, c)
+        | Instruction::StoreBatch(a, b, c)
+        | Instruction::LoadSlot(_, a, b, c)
+        | Instruction::LoadBatch(_, a, b, c)
+        | Instruction::LoadReagent(_, a, b, c)
+        | Instruction::Put(a, b, c)
+        | Instruction::Select(_, a, b, c) => check(a) || check(b) || check(c),
+
+        Instruction::StoreSlot(a, b, c, d)
+        | Instruction::StoreBatchNamed(a, b, c, d)
+        | Instruction::LoadBatchNamed(_, a, b, c, d)
+        | Instruction::LoadBatchSlot(_, a, b, c, d) => check(a) || check(b) || check(c) || check(d),
+
+        Instruction::LoadBatchNamedSlot(_, a, b, c, d, e) => {
+            check(a) || check(b) || check(c) || check(d) || check(e)
         }
-        Instruction::JumpRelative(a) => check(a),
-        Instruction::Alias(_, a) => check(a),
+
         _ => false,
     }
 }
