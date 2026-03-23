@@ -1,5 +1,15 @@
 # Changelog
 
+[0.7.1]
+
+- Fixed optimizer bug in `-z` builds where values used by shift/bitwise operations
+  could be incorrectly treated as dead stores and removed
+  - This could break bit-packing patterns like `x = x << 1` after comparisons
+- Expanded optimizer register read/write tracking coverage for instruction analysis
+  (`sll`, `sra`, `srl`, `nor`, `not`, `clr`, and related multi-operand syscall forms)
+- Added regression tests to prevent future dead-store elimination regressions for
+  shift, `not`, and `clr` usage
+
 [0.7.0]
 
 - Added support for `lbs` and `lbns` syscalls
