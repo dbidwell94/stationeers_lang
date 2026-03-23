@@ -123,4 +123,71 @@ mod tests {
         assert!(changed);
         assert_eq!(output.len(), 1);
     }
+
+    #[test]
+    fn test_keep_write_used_by_shift_before_overwrite() {
+        let input = vec![
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(1), Operand::Number(1.into())),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Sll(
+                    Operand::Register(2),
+                    Operand::Register(1),
+                    Operand::Number(1.into()),
+                ),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(1), Operand::Number(2.into())),
+                None,
+            ),
+        ];
+
+        let (output, changed) = dead_store_elimination(input);
+        assert!(!changed);
+        assert_eq!(output.len(), 3);
+    }
+
+    #[test]
+    fn test_keep_write_used_by_not_before_overwrite() {
+        let input = vec![
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(1), Operand::Number(1.into())),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Not(Operand::Register(2), Operand::Register(1)),
+                None,
+            ),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(1), Operand::Number(2.into())),
+                None,
+            ),
+        ];
+
+        let (output, changed) = dead_store_elimination(input);
+        assert!(!changed);
+        assert_eq!(output.len(), 3);
+    }
+
+    #[test]
+    fn test_keep_write_used_by_clr_before_overwrite() {
+        let input = vec![
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(1), Operand::Number(1.into())),
+                None,
+            ),
+            InstructionNode::new(Instruction::Clr(Operand::Register(1)), None),
+            InstructionNode::new(
+                Instruction::Move(Operand::Register(1), Operand::Number(2.into())),
+                None,
+            ),
+        ];
+
+        let (output, changed) = dead_store_elimination(input);
+        assert!(!changed);
+        assert_eq!(output.len(), 3);
+    }
 }
