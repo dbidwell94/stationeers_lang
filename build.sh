@@ -17,7 +17,7 @@ echo "Building native Rust binaries and libs"
 cargo build --release --target=x86_64-unknown-linux-gnu
 
 # -- Build for Windows (x86-64) --
-# cargo build --release --target=x86_64-pc-windows-gnu dotnet does this on its own now
+cargo build --release --target=x86_64-pc-windows-gnu
 
 # -- Generate C# Headers --
 # cargo run --features headers --bin generate-headers dotnet does this on its own now
