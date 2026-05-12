@@ -18,15 +18,24 @@
 			<HintPath>./ref/netstandard.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
-		<Reference Include="BepInEx">
-			<HintPath>./ref/BepInEx.dll</HintPath>
-			<Private>False</Private>
-		</Reference>
+		<!-- Taken from  https://github.com/aproposmath/stationeers-modding-template/blob/5d0031f686eccf7d0b970417ee967dd2195b50ce/Template.props -->
+		<PackageReference Include="BepInEx.Core" Version="5.*" />
+		<PackageReference Include="BepInEx.PluginInfoProps" Version="1.*" />
+		<PackageReference
+				Include="BepInEx.Analyzers"
+				Version="1.*"
+				PrivateAssets="all"
+        />
+		<PackageReference
+				Include="UnityEngine.Modules"
+				Version="2021.2.3"
+				IncludeAssets="compile"
+        />
+
 		<Reference Include="0Harmony">
 			<HintPath>./ref/0Harmony.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
-
 		<Reference Include="UnityEngine">
 			<HintPath>./ref/UnityEngine.dll</HintPath>
 			<Private>False</Private>
