@@ -1,3 +1,5 @@
-fn main() -> std::io::Result<()> {
+use anyhow::Result;
+
+fn main() -> Result<()> {
     ::slang::generate_headers()
 }
