@@ -1,67 +1,94 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
-    <Nullable>enable</Nullable>
-    <AssemblyName>StationeersSlang</AssemblyName>
-    <Description>Slang Compiler Bridge</Description>
-    <Version>0.7.1</Version>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <LangVersion>latest</LangVersion>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net48</TargetFramework>
+		<Nullable>enable</Nullable>
+		<AssemblyName>StationeersSlang</AssemblyName>
+		<Description>Slang Compiler Bridge</Description>
+		<Version>0.7.1</Version>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<LangVersion>latest</LangVersion>
+	</PropertyGroup>
 
-  <PropertyGroup>
-  </PropertyGroup>
+	<PropertyGroup>
+	</PropertyGroup>
 
-  <ItemGroup>
-      <Reference Include="netstandard">
-        <HintPath>./ref/netstandard.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="BepInEx">
-        <HintPath>./ref/BepInEx.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="0Harmony">
-        <HintPath>./ref/0Harmony.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
+	<ItemGroup>
+		<Reference Include="netstandard">
+			<HintPath>./ref/netstandard.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="BepInEx">
+			<HintPath>./ref/BepInEx.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="0Harmony">
+			<HintPath>./ref/0Harmony.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
 
-      <Reference Include="UnityEngine">
-        <HintPath>./ref/UnityEngine.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="UnityEngine.CoreModule">
-        <HintPath>./ref/UnityEngine.CoreModule.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="Assembly-CSharp">
-        <HintPath>./ref/Assembly-CSharp.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="RG.ImGui">
-        <HintPath>./ref/RG.ImGui.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
+		<Reference Include="UnityEngine">
+			<HintPath>./ref/UnityEngine.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="UnityEngine.CoreModule">
+			<HintPath>./ref/UnityEngine.CoreModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="Assembly-CSharp">
+			<HintPath>./ref/Assembly-CSharp.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="RG.ImGui">
+			<HintPath>./ref/RG.ImGui.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
 
-      <Reference Include="IC10Editor.dll">
-        <HintPath>./ref/IC10Editor.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="LaunchPadBooster.dll">
-      <HintPath>./ref/LaunchPadBooster.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="StationeersMods.Interface.dll">
-      <HintPath>./ref/StationeersMods.Interface.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-    </ItemGroup>
+		<Reference Include="IC10Editor.dll">
+			<HintPath>./ref/IC10Editor.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="LaunchPadBooster.dll">
+			<HintPath>./ref/LaunchPadBooster.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="StationeersMods.Interface.dll">
+			<HintPath>./ref/StationeersMods.Interface.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+	</ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="../rust_compiler/target/x86_64-pc-windows-gnu/release/slang.dll">
-      <LogicalName>slang_compiler.dll</LogicalName>
-    </EmbeddedResource>
-  </ItemGroup>
+	<PropertyGroup>
+		<CargoTarget>x86_64-pc-windows-gnu</CargoTarget>
+		<CargoWorkspacePath>$(MSBuildThisFileDirectory)/../rust_compiler/</CargoWorkspacePath>
+		<CargoTargetPath>$(MSBuildThisFileDirectory)/../target</CargoTargetPath>
+		<CargoArtifact>slang.dll</CargoArtifact>
+		<CargoArtifactPath>$(CargoWorkspacePath)/target/$(CargoTarget)/$(CargoConfiguration)/$(CargoArtifact)</CargoArtifactPath>
+	</PropertyGroup>
+
+	<Target Name="GenerateHeaders" BeforeTargets="BeforeBuild">
+		<ConvertToAbsolutePath Paths="$(IntermediateOutputPath)">
+			<Output TaskParameter="AbsolutePaths" PropertyName="IntermediateOutputPathAbs" />
+		</ConvertToAbsolutePath>
+		<Exec Command="cargo run --bin generate-headers --release --features &quot; headers &quot;" WorkingDirectory="$(CargoWorkspacePath)" EnvironmentVariables="BINDINGS_OUT=$(IntermediateOutputPathAbs)/net48" />
+		<ItemGroup>
+			<Compile Include="$(IntermediateOutputPath)FfiGlue.cs" />
+			<None Include="$(IntermediateOutputPath)FfiGlue.cs" TargetPath="FfiGlue.cs" CopyToOutputDirectory="PreserveNewest"/>
+		</ItemGroup>
+	</Target>
+	<Target Name="CleanGeneratedCode" AfterTargets="CoreClean">
+		<Delete Files="$(IntermediateOutputPath)/net48/FfiGlue.cs" />
+	</Target>
+	<Target Name="CargoBuild" BeforeTargets="PreBuildEvent">
+		<Message Text="$(CargoWorkspacePath)" Importance="high" />
+		<Exec Command="cargo build --lib --release --target $(CargoTarget)" WorkingDirectory="$(CargoWorkspacePath)" />
+	</Target>
+	<Target Name="CargoCopy">
+		<ItemGroup>
+			<EmbeddedResource Include="$(CargoArtifactPath)">
+				<LogicalName>slang_compiler.dll</LogicalName>
+			</EmbeddedResource>
+		</ItemGroup>
+	</Target>
 
 </Project>
