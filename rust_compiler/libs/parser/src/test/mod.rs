@@ -337,3 +337,150 @@ fn test_eof_error_has_span() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_trailing_line_comments_do_not_break_next_statement() -> Result<()> {
+    let input = r#"
+        let a = 1; //First
+        let b = 2; //Second
+        let c = 3;
+    "#;
+
+    let tokenizer = Tokenizer::from(input);
+    let mut parser = Parser::new(tokenizer);
+
+    assert_eq!("(let a = 1)", parser.parse()?.unwrap().to_string());
+    assert_eq!("(let b = 2)", parser.parse()?.unwrap().to_string());
+    assert_eq!("(let c = 3)", parser.parse()?.unwrap().to_string());
+    assert_eq!(None, parser.parse()?);
+
+    Ok(())
+}
+
+#[test]
+fn test_trailing_line_comments_parse_all() -> Result<()> {
+    let input = r#"
+        let a = 1; //First
+        let b = 2; //Second
+        let c = 3;
+    "#;
+
+    let tokenizer = Tokenizer::from(input);
+    let mut parser = Parser::new(tokenizer);
+
+    let expression = parser.parse_all()?.unwrap();
+    assert_eq!(
+        "{ (let a = 1); (let b = 2); (let c = 3); }",
+        expression.to_string()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_trailing_line_comments_after_syscalls() -> Result<()> {
+    let input = r#"
+        sbn(displayHash, displayName, "On", false);
+        sbn(displayHash, displayName, "Color", 7); //Black
+        sbn(displayHash, displayName, "Mode", 0); //Steady
+    "#;
+
+    let tokenizer = Tokenizer::from(input);
+    let mut parser = Parser::new(tokenizer);
+
+    let expression = parser.parse_all()?.unwrap();
+    assert_eq!(
+        "{ setOnDeviceBatchedNamed(displayHash, displayName, \"On\", 0); setOnDeviceBatchedNamed(displayHash, displayName, \"Color\", 7); setOnDeviceBatchedNamed(displayHash, displayName, \"Mode\", 0); }",
+        expression.to_string()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_trailing_line_comments_after_syscalls_sequential_parse() -> Result<()> {
+    let input = r#"
+        sbn(displayHash, displayName, "On", false);
+        sbn(displayHash, displayName, "Color", 7); //Black
+        sbn(displayHash, displayName, "Mode", 0); //Steady
+    "#;
+
+    let tokenizer = Tokenizer::from(input);
+    let mut parser = Parser::new(tokenizer);
+
+    assert_eq!(
+        "setOnDeviceBatchedNamed(displayHash, displayName, \"On\", 0)",
+        parser.parse()?.unwrap().to_string()
+    );
+    assert_eq!(
+        "setOnDeviceBatchedNamed(displayHash, displayName, \"Color\", 7)",
+        parser.parse()?.unwrap().to_string()
+    );
+    assert_eq!(
+        "setOnDeviceBatchedNamed(displayHash, displayName, \"Mode\", 0)",
+        parser.parse()?.unwrap().to_string()
+    );
+    assert_eq!(None, parser.parse()?);
+
+    Ok(())
+}
+
+#[test]
+fn test_trailing_line_comments_inside_function_block() -> Result<()> {
+    let input = r#"
+        fn ColorAlertHi(displayHash, displayName, value) {
+            if (value < 0.8) {
+                sbn(displayHash, displayName, "On", false);
+                sbn(displayHash, displayName, "Color", 7); //Black
+                sbn(displayHash, displayName, "Mode", 0); //Steady
+            }
+        }
+    "#;
+
+    let tokenizer = Tokenizer::from(input);
+    let mut parser = Parser::new(tokenizer);
+
+    let rendered = parser.parse()?.unwrap().to_string();
+
+    assert!(rendered.starts_with("(fn ColorAlertHi(displayHash, displayName, value)"));
+    assert!(rendered.contains("(if ((value < 0.8))"));
+    assert!(rendered.contains("setOnDeviceBatchedNamed(displayHash, displayName, \"On\", 0)"));
+    assert!(rendered.contains("setOnDeviceBatchedNamed(displayHash, displayName, \"Color\", 7)"));
+    assert!(rendered.contains("setOnDeviceBatchedNamed(displayHash, displayName, \"Mode\", 0)"));
+    assert_eq!(3, rendered.matches("setOnDeviceBatchedNamed(").count());
+
+    Ok(())
+}
+
+#[test]
+fn test_doc_comments_are_preserved_for_declarations() -> Result<()> {
+    let input = r#"
+        /// Display load percentage shown in console.
+        let displayLoad = 5;
+        /// Battery bank identifier.
+        const batteryBank = "A1";
+    "#;
+
+    let tokenizer = Tokenizer::from(input);
+    let mut parser = Parser::new(tokenizer);
+
+    assert_eq!(
+        "(let displayLoad = 5)",
+        parser.parse()?.unwrap().to_string()
+    );
+    assert_eq!(
+        r#"(const batteryBank = "A1")"#,
+        parser.parse()?.unwrap().to_string()
+    );
+
+    assert_eq!(
+        Some("Display load percentage shown in console.".to_string()),
+        parser.get_declaration_doc("displayLoad")
+    );
+    assert_eq!(
+        Some("Battery bank identifier.".to_string()),
+        parser.get_declaration_doc("batteryBank")
+    );
+
+    Ok(())
+}

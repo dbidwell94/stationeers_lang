@@ -150,15 +150,27 @@ impl<'a> TokenizerBuffer<'a> {
         Ok(token)
     }
     pub fn peek(&mut self) -> Result<Option<Token<'a>>, Error> {
-        if let Some(token) = self.buffer.front() {
+        if let Some(token) = self.buffer.iter().find(|token| {
+            !matches!(
+                token.token_type,
+                TokenType::Comment(_) | TokenType::Newline
+            )
+        }) {
             return Ok(Some(token.clone()));
         }
 
-        let Some(new_token) = self.tokenizer.next_token_with_comments()? else {
-            return Ok(None);
-        };
-        self.buffer.push_front(new_token.clone());
-        Ok(Some(new_token))
+        loop {
+            let Some(new_token) = self.tokenizer.next_token_with_comments()? else {
+                return Ok(None);
+            };
+
+            let is_significant = !matches!(new_token.token_type, TokenType::Comment(_) | TokenType::Newline);
+            self.buffer.push_back(new_token.clone());
+
+            if is_significant {
+                return Ok(Some(new_token));
+            }
+        }
     }
     pub fn loc(&self) -> i64 {
         self.index
