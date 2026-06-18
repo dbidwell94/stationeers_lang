@@ -242,3 +242,97 @@ fn test_deeply_nested_function_invocations() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_non_leaf_function_restores_sp_correctly() -> anyhow::Result<()> {
+    // Regression test: when a non-leaf function (one that calls another function)
+    // has a stack-spilled local variable, the epilogue must read saved_sp from
+    // sp - (ra_offset + 1), not sp - (ra_offset - 1). The off-by-two bug caused
+    // `move sp r0` to use the local variable's value as the new stack pointer.
+    let compiled = compile!(check r#"
+        fn leaf() {
+            return 42;
+        }
+        fn caller(a, b, c, d, e, f, g, h) {
+            let x = leaf();
+            return x;
+        }
+        loop {
+            caller(1, 2, 3, 4, 5, 6, 7, 8);
+        }
+    "#);
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {"
+            j main
+            leaf:
+            push sp
+            push ra
+            move r15 42
+            j __internal_L1
+            __internal_L1:
+            pop ra
+            pop sp
+            j ra
+            caller:
+            pop r8
+            pop r9
+            pop r10
+            pop r11
+            pop r12
+            pop r13
+            pop r14
+            push sp
+            push ra
+            push r8
+            push r9
+            push r10
+            push r11
+            push r12
+            push r13
+            push r14
+            jal leaf
+            pop r14
+            pop r13
+            pop r12
+            pop r11
+            pop r10
+            pop r9
+            pop r8
+            push r15
+            sub r0 sp 1
+            get r15 db r0
+            j __internal_L2
+            __internal_L2:
+            sub r0 sp 2
+            get ra db r0
+            sub r0 sp 3
+            get r0 db r0
+            move sp r0
+            j ra
+            main:
+            __internal_L3:
+            push 1
+            push 2
+            push 3
+            push 4
+            push 5
+            push 6
+            push 7
+            push 8
+            jal caller
+            move r1 r15
+            j __internal_L3
+            __internal_L4:
+        "}
+    );
+
+    Ok(())
+}

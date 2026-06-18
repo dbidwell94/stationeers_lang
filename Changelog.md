@@ -1,5 +1,12 @@
 # Changelog
 
+[0.7.2]
+
+- Fixed a stack overflow issue that could occur in scripts using nested function
+  calls with many arguments
+- Fixed an issue where inline comments after statements could break later lines
+  in the same script
+
 [0.7.1]
 
 - Fixed optimizer bug in `-z` builds where values used by shift/bitwise operations
