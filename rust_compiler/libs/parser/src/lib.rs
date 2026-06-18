@@ -297,6 +297,10 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {
         self.assign_next()?;
 
+        while self_matches_current!(self, TokenType::Newline) {
+            self.assign_next()?;
+        }
+
         if self.current_token.is_none() {
             return Ok(None);
         }
