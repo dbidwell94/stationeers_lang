@@ -4132,8 +4132,12 @@ impl<'a> Compiler<'a> {
             )?;
 
             if !is_tuple_return {
-                // Non-tuple return: restore SP from saved value to clean up
-                let sp_offset = adjusted_ra_offset - 1;
+                // Non-tuple return: restore SP from saved value to clean up.
+                // sp was pushed BEFORE ra, so it's one slot deeper:
+                // stack layout: ... | saved_sp | saved_ra | locals... | <- sp
+                // saved_ra is at sp - adjusted_ra_offset
+                // saved_sp is at sp - (adjusted_ra_offset + 1)
+                let sp_offset = adjusted_ra_offset + 1;
                 self.write_instruction(
                     Instruction::Sub(
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
