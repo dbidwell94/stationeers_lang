@@ -495,6 +495,41 @@ fn test_load_batched_named_slot() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_load_batched_named_from_syscalls() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device hashMem = "d0";
+        device nameMem = "d1";
+        let occupiedAverage = lbn(l(hashMem, "Setting"), l(nameMem, "Setting"), "Occupied", "Average");
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d0 Setting
+            move r1 r15
+            l r15 d1 Setting
+            lbn r15 r1 r15 Occupied Average
+            move r8 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_load_batched_slot_from_syscalls() -> anyhow::Result<()> {
     // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
     // the return register (r15) do not clobber eachother.

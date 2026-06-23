@@ -3328,9 +3328,8 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::LoadBatchNamed(device_hash, name_hash, logic_type, batch_mode) => {
-                let (device_hash, device_hash_cleanup) =
-                    self.compile_operand(*device_hash, scope)?;
-                let (name_hash, name_hash_cleanup) = self.compile_operand(*name_hash, scope)?;
+                let ((device_hash, device_hash_cleanup), (name_hash, name_hash_cleanup)) =
+                    compile_operands!(self, (*device_hash, *name_hash), scope);
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
