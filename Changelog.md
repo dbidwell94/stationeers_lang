@@ -1,5 +1,20 @@
 # Changelog
 
+[0.7.3]
+
+- Fixed an issue where scripts could read the wrong value when multiple device/system
+  reads were used inside the same expression
+  - This mainly affected more advanced one-liner calculations, especially when combining
+    batch reads and math helper calls in a single statement
+  - In some cases, the second read could overwrite the first one before the calculation
+    finished, leading to incorrect automation behavior
+- Added broader safeguards so multi-part expressions now preserve each intermediate
+  value correctly
+- Added regression tests covering affected syscall combinations to help prevent this
+  issue from returning
+- No script changes are required for most users; existing scripts should now produce
+  more reliable results
+
 [0.7.2]
 
 - Fixed a stack overflow issue that could occur in scripts using nested function
