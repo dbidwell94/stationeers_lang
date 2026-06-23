@@ -192,7 +192,7 @@ pub struct Compiler<'a> {
     pub metadata: crate::CompilationMetadata<'a>,
 }
 
-/// Chains multiple operand compilations together, injecting a "prevent_return_operand_collision"
+/// Chains multiple operand compilations together, injecting a "prevent_return_register_clobbering"
 /// inbetween expressions.
 ///
 /// # Example
@@ -213,7 +213,7 @@ macro_rules! compile_operands {
         compile_operands!{
             @increment $self, $scope, [$($acc)* {
                 let (opr, cleanup) = $self.compile_operand($expr, $scope)?;
-                $self.prevent_return_operand_collision(opr, cleanup, $scope)?
+                $self.prevent_return_register_clobbering(opr, cleanup, $scope)?
             },]; $($tail)*
         }
     };
@@ -2289,9 +2289,9 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    // Compiles multiple expressions catching cases where function/syscall returns yield
-    // overwritting stores to the return register (r15).
-    fn prevent_return_operand_collision(
+    /// Prevents clobbering of the return-register in multi-operand expressions
+    /// by moving the return register of a parsed operand into a new temporary register.
+    fn prevent_return_register_clobbering(
         &mut self,
         operand: Operand<'a>,
         cleanup: Option<Cow<'a, str>>,
