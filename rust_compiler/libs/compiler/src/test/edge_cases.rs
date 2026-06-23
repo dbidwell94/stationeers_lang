@@ -710,6 +710,59 @@ fn tuple_from_simple_function() -> anyhow::Result<()> {
 }
 
 #[test]
+fn tuple_from_syscalls_from_simple_function() -> anyhow::Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
+    let compiled = compile! {
+        check "
+            device dev0 = \"d0\";
+            device dev1 = \"d1\";
+
+            fn get_pair() {
+                return (l(dev0, \"Setting\"), l(dev1, \"Setting\"));
+            }
+
+            let (a, b) = get_pair();
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {"
+            j main
+            get_pair:
+            push sp
+            push ra
+            l r15 d0 Setting
+            push r15
+            l r15 d1 Setting
+            push r15
+            sub r0 sp 4
+            get r0 db r0
+            move r15 r0
+            j __internal_L1
+            __internal_L1:
+            sub r0 sp 3
+            get ra db r0
+            j ra
+            main:
+            jal get_pair
+            pop r9
+            pop r8
+            move sp r15
+        "}
+    );
+
+    Ok(())
+}
+
+#[test]
 fn tuple_from_expression_not_function() -> anyhow::Result<()> {
     let compiled = compile! {
         check "

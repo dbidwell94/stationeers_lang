@@ -333,6 +333,39 @@ fn device_index_write() -> anyhow::Result<()> {
 }
 
 #[test]
+fn device_index_write_with_syscall() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device printer = \"d0\";
+            device mem = \"d1\";
+            printer[l(mem, \"Setting\")] = l(mem, \"Mode\");
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d1 Setting
+            move r1 r15
+            l r15 d1 Mode
+            put d0 r1 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn device_index_db_not_allowed() -> anyhow::Result<()> {
     let compiled = compile! {
         check "

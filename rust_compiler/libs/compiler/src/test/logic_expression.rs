@@ -47,6 +47,40 @@ fn test_comparison_expressions() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_comparison_expression_with_syscall() -> anyhow::Result<()> {
+    let result = compile! {
+        check
+        "
+        device dev = \"d0\";
+        let isGreater = l(dev, \"PressureInput\") > l(dev, \"PressureOutput\");
+        "
+    };
+
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
+    assert_eq!(
+        result.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d0 PressureInput
+            move r1 r15
+            l r15 d0 PressureOutput
+            sgt r2 r1 r15
+            move r8 r2
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_logical_and_or_not() -> anyhow::Result<()> {
     let result = compile! {
         check

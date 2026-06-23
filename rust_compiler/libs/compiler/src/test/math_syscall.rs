@@ -123,6 +123,42 @@ fn test_atan2() -> Result<()> {
 }
 
 #[test]
+fn test_atan2_from_syscall() -> Result<()> {
+    let compiled = compile! {
+        check
+        "
+        device arg0 = \"d0\";
+        device arg1 = \"d1\";
+
+        let i = atan2(l(arg0, \"Setting\"), l(arg1, \"Setting\"));
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d0 Setting
+            move r1 r15
+            l r15 d1 Setting
+            atan2 r15 r1 r15
+            move r8 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_abs() -> Result<()> {
     let compiled = compile! {
         check
@@ -335,6 +371,43 @@ fn test_max_from_game() -> Result<()> {
 }
 
 #[test]
+fn test_max_from_syscalls() -> anyhow::Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
+    let compiled = compile! {
+        check
+        r#"
+        device filtration = "d0";
+
+        let largestQuantity = max(ls(filtration, 0, "Quantity"), ls(filtration, 1, "Quantity"));
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            ls r15 d0 0 Quantity
+            move r1 r15
+            ls r15 d0 1 Quantity
+            max r15 r1 r15
+            move r8 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_min() -> Result<()> {
     let compiled = compile! {
         check
@@ -356,6 +429,43 @@ fn test_min() -> Result<()> {
             j main
             main:
             min r15 123 456
+            move r8 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_min_from_syscalls() -> anyhow::Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
+    let compiled = compile! {
+        check
+        r#"
+        device filtration = "d0";
+
+        let smallestQuantity = min(ls(filtration, 0, "Quantity"), ls(filtration, 1, "Quantity"));
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            ls r15 d0 0 Quantity
+            move r1 r15
+            ls r15 d0 1 Quantity
+            min r15 r1 r15
             move r8 r15
             "
         }

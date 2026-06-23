@@ -63,6 +63,42 @@ mod test {
     }
 
     #[test]
+    fn test_tuple_literal_declaration_from_syscalls() -> anyhow::Result<()> {
+        // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+        // the return register (r15) do not clobber eachother.
+        let compiled = compile!(
+            check
+            r#"
+            device dev0 = "d0";
+            device dev1 = "d1";
+            let (x, y) = (l(dev0, "Setting"), l(dev1, "Setting"));
+            "#
+        );
+
+        assert!(
+            compiled.errors.is_empty(),
+            "Expected no errors, got: {:?}",
+            compiled.errors
+        );
+
+        assert_eq!(
+            compiled.output,
+            indoc! {
+                "
+                j main
+                main:
+                l r15 d0 Setting
+                move r8 r15
+                l r15 d1 Setting
+                move r9 r15
+                "
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn test_tuple_literal_assignment() -> anyhow::Result<()> {
         let compiled = compile!(
             check

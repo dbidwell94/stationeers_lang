@@ -296,6 +296,42 @@ fn test_set_slot() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_set_slot_from_syscall() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device airCon = "d0";
+        device indexMem = "d1";
+        device valueMem = "d2";
+
+        ss(airCon, l(indexMem, "Setting"), "Occupied", l(valueMem, "Setting"));
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d1 Setting
+            move r1 r15
+            l r15 d2 Setting
+            ss d0 r1 Occupied r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_load_reagent() -> anyhow::Result<()> {
     let compiled = compile! {
         check
@@ -451,6 +487,118 @@ fn test_load_batched_named_slot() -> anyhow::Result<()> {
             move r9 67890
             lbns r15 r8 r9 0 Occupied Average
             move r10 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_load_batched_named_from_syscalls() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device hashMem = "d0";
+        device nameMem = "d1";
+        let occupiedAverage = lbn(l(hashMem, "Setting"), l(nameMem, "Setting"), "Occupied", "Average");
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d0 Setting
+            move r1 r15
+            l r15 d1 Setting
+            lbn r15 r1 r15 Occupied Average
+            move r8 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_load_batched_slot_from_syscalls() -> anyhow::Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
+    let compiled = compile! {
+        check
+        r#"
+        device hashMem = "d0";
+        device indexMem = "d1";
+        let slotOccupied = lbs(l(hashMem, "Setting"), l(indexMem, "Setting"), "Occupied", "Average");
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d0 Setting
+            move r1 r15
+            l r15 d1 Setting
+            lbs r15 r1 r15 Occupied Average
+            move r8 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_load_batched_named_slot_from_syscalls() -> anyhow::Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
+    let compiled = compile! {
+        check
+        r#"
+        device hashMem = "d0";
+        device nameMem = "d1";
+        device indexMem = "d2";
+        let slotOccupied = lbns(l(hashMem, "Setting"), l(nameMem, "Setting"), l(indexMem, "Setting"), "Occupied", "Average");
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d0 Setting
+            move r1 r15
+            l r15 d1 Setting
+            move r2 r15
+            l r15 d2 Setting
+            lbns r15 r1 r2 r15 Occupied Average
+            move r8 r15
             "
         }
     );
