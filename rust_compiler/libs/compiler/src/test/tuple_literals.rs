@@ -64,6 +64,8 @@ mod test {
 
     #[test]
     fn test_tuple_literal_declaration_from_syscalls() -> anyhow::Result<()> {
+        // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+        // the return register (r15) do not clobber eachother.
         let compiled = compile!(
             check
             r#"

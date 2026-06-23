@@ -213,6 +213,8 @@ fn test_ternary_expression_assignment() -> Result<()> {
 
 #[test]
 fn test_ternary_expression_from_syscalls() -> Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
 
     let compiled = compile! {
         check

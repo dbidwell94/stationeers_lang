@@ -496,6 +496,8 @@ fn test_load_batched_named_slot() -> anyhow::Result<()> {
 
 #[test]
 fn test_load_batched_slot_from_syscalls() -> anyhow::Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
     let compiled = compile! {
         check
         r#"
@@ -531,6 +533,8 @@ fn test_load_batched_slot_from_syscalls() -> anyhow::Result<()> {
 
 #[test]
 fn test_load_batched_named_slot_from_syscalls() -> anyhow::Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
     let compiled = compile! {
         check
         r#"

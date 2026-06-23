@@ -711,6 +711,8 @@ fn tuple_from_simple_function() -> anyhow::Result<()> {
 
 #[test]
 fn tuple_from_syscalls_from_simple_function() -> anyhow::Result<()> {
+    // (atakehar) "from_syscalls" checks that expresssions of multiple sub-expressions each using
+    // the return register (r15) do not clobber eachother.
     let compiled = compile! {
         check "
             device dev0 = \"d0\";
