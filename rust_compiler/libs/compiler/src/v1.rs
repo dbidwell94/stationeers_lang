@@ -1595,7 +1595,6 @@ impl<'a> Compiler<'a> {
                 }
 
                 // Compile each element and assign to corresponding variable
-                // TODO (This needs to be checked and tested for the bug!)
                 for (name_spanned, element) in names.into_iter().zip(tuple_elements.into_iter()) {
                     // Skip underscores
                     if name_spanned.node.as_ref() == "_" {
@@ -2919,7 +2918,6 @@ impl<'a> Compiler<'a> {
                     let tuple_size = tuple_elements.len();
 
                     // Push each tuple element onto the stack using compile_operand
-                    // TODO (CHECK FOR BUG!)
                     for element in tuple_elements.into_iter() {
                         let (push_operand, cleanup) = self.compile_operand(element, scope)?;
 
