@@ -192,16 +192,32 @@ pub struct Compiler<'a> {
     pub metadata: crate::CompilationMetadata<'a>,
 }
 
+/// Chains multiple operand compilations together, injecting a "prevent_return_operand_collision"
+/// inbetween expressions.
+///
+/// # Example
+/// ```
+/// let ((expr, cleanup)) = compile_operands!(self, (*operand), scope);
+/// let ((expr1, cleanup1), (expr2, cleanup2), (expr3, cleanup3)) = compile_operands!(self, (*operand1, *operand2, *operand3), scope);
+/// ```
 macro_rules! compile_operands {
-    ($self:expr, $scope:expr, $tail:expr) => {
-        ( $self.compile_operand($tail, $scope)? )
+    (@increment $self:expr, $scope:expr, [$($acc:tt)*];) => {
+        ($($acc)*)
     };
-    ($self:expr, $scope:expr, $($preceeding:expr),*; $tail:expr) => {
-        ($( {
-            let (opr, cleanup) = $self.compile_operand($preceeding, $scope)?;
-            $self.prevent_return_operand_collision(opr, cleanup, $scope)?
-        },)* $self.compile_operand($tail, $scope)?)
+    (@increment $self:expr, $scope:expr, [$($acc:tt)*]; $expr:expr) => {
+        compile_operands!{
+            @increment $self, $scope, [$($acc)* $self.compile_operand($expr, $scope)?,];
+        }
     };
+    (@increment $self:expr, $scope:expr, [$($acc:tt)*]; $expr:expr, $($tail:tt)*) => {
+        compile_operands!{
+            @increment $self, $scope, [$($acc)* {
+                let (opr, cleanup) = $self.compile_operand($expr, $scope)?;
+                $self.prevent_return_operand_collision(opr, cleanup, $scope)?
+            },]; $($tail)*
+        }
+    };
+    ($self:expr, ($($toks:tt)+), $scope:expr) => { compile_operands! {@increment $self, $scope, []; $($toks)*} };
 }
 
 impl<'a> Compiler<'a> {
@@ -1232,7 +1248,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 let ((addr, addr_cleanup), (val, val_cleanup)) =
-                    compile_operands!(self, scope, *index; *expression);
+                    compile_operands!(self, (*index, *expression), scope);
 
                 self.write_instruction(Instruction::Put(device, addr, val), Some(assignee.span))?;
 
@@ -2143,7 +2159,7 @@ impl<'a> Compiler<'a> {
         };
 
         let ((cond, cond_clean), (true_val, true_clean), (false_val, false_clean)) =
-            compile_operands!(self, scope, *condition, *true_value; *false_value);
+            compile_operands!(self, (*condition, *true_value, *false_value), scope);
 
         let result_name = self.next_temp_name();
         let result_loc = scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
@@ -2573,7 +2589,7 @@ impl<'a> Compiler<'a> {
         let span = Self::merge_spans(left_expr.span, right_expr.span);
 
         // Compile LHS
-        let (lhs_tup, rhs_tup) = compile_operands!(self, scope, *left_expr; *right_expr);
+        let (lhs_tup, rhs_tup) = compile_operands!(self, (*left_expr, *right_expr), scope);
 
         // Allocate result register
         let result_name = self.next_temp_name();
@@ -2666,7 +2682,7 @@ impl<'a> Compiler<'a> {
                 let span = Self::merge_spans(left_expr.span, right_expr.span);
 
                 let ((lhs, lhs_cleanup), (rhs, rhs_cleanup)) =
-                    compile_operands!(self, scope, *left_expr; *right_expr);
+                    compile_operands!(self, (*left_expr, *right_expr), scope);
 
                 // Allocate result register
                 let result_name = self.next_temp_name();
@@ -3369,7 +3385,7 @@ impl<'a> Compiler<'a> {
             }
             System::LoadBatchSlot(device_hash, slot_index, logic_slot_type, batch_mode) => {
                 let ((device_hash, device_hash_cleanup), (slot_index, slot_cleanup)) =
-                    compile_operands!(self, scope, *device_hash; *slot_index);
+                    compile_operands!(self, (*device_hash, *slot_index), scope);
 
                 let logic_slot_type_expr = match logic_slot_type.node {
                     LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
@@ -3431,7 +3447,7 @@ impl<'a> Compiler<'a> {
                     (device_hash, device_hash_cleanup),
                     (name_hash, name_hash_cleanup),
                     (slot_index, slot_cleanup),
-                ) = compile_operands!(self, scope, *device_hash, *name_hash; *slot_index);
+                ) = compile_operands!(self, (*device_hash, *name_hash, *slot_index), scope);
 
                 let logic_slot_type_expr = match logic_slot_type.node {
                     LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
@@ -3525,7 +3541,7 @@ impl<'a> Compiler<'a> {
                 let (dev_name, name_cleanup) =
                     self.compile_literal_or_variable(dev_name.node, scope)?;
                 let ((slot_index, index_cleanup), (var, var_cleanup)) =
-                    compile_operands!(self, scope, *slot_index; *var);
+                    compile_operands!(self, (*slot_index, *var), scope);
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
@@ -3720,7 +3736,7 @@ impl<'a> Compiler<'a> {
             }
             Math::Atan2(expr1, expr2) => {
                 let ((var1, var1_cleanup), (var2, var2_cleanup)) =
-                    compile_operands!(self, scope, *expr1; *expr2);
+                    compile_operands!(self, (*expr1, *expr2), scope);
 
                 self.write_instruction(
                     Instruction::Atan2(
@@ -3808,7 +3824,7 @@ impl<'a> Compiler<'a> {
             }
             Math::Max(expr1, expr2) => {
                 let ((var1, clean1), (var2, clean2)) =
-                    compile_operands!(self, scope, *expr1; *expr2);
+                    compile_operands!(self, (*expr1, *expr2), scope);
 
                 self.write_instruction(
                     Instruction::Max(
@@ -3827,7 +3843,7 @@ impl<'a> Compiler<'a> {
             }
             Math::Min(expr1, expr2) => {
                 let ((var1, clean1), (var2, clean2)) =
-                    compile_operands!(self, scope, *expr1; *expr2);
+                    compile_operands!(self, (*expr1, *expr2), scope);
 
                 self.write_instruction(
                     Instruction::Min(
