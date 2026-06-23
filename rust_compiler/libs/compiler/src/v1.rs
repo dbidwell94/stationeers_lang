@@ -193,8 +193,14 @@ pub struct Compiler<'a> {
 }
 
 macro_rules! compile_operands {
-    ($self:expr, $($preceeding:expr),*; $tail:expr, $scope:expr) => {
-        ($($self.compile_preceeding_operand($preceeding, $scope)?,)* $self.compile_operand($tail, $scope)?)
+    ($self:expr, $scope:expr, $tail:expr) => {
+        ( $self.compile_operand($tail, $scope)? )
+    };
+    ($self:expr, $scope:expr, $($preceeding:expr),*; $tail:expr) => {
+        ($( {
+            let (opr, cleanup) = $self.compile_operand($preceeding, $scope)?;
+            $self.prevent_return_operand_collision(opr, cleanup, $scope)?
+        },)* $self.compile_operand($tail, $scope)?)
     };
 }
 
@@ -1225,9 +1231,8 @@ impl<'a> Compiler<'a> {
                     }
                 }
 
-                // TODO (check for the bug!)
                 let ((addr, addr_cleanup), (val, val_cleanup)) =
-                    compile_operands!(self, *index; *expression, scope);
+                    compile_operands!(self, scope, *index; *expression);
 
                 self.write_instruction(Instruction::Put(device, addr, val), Some(assignee.span))?;
 
@@ -2139,7 +2144,7 @@ impl<'a> Compiler<'a> {
         };
 
         let ((cond, cond_clean), (true_val, true_clean), (false_val, false_clean)) =
-            compile_operands!(self, *condition, *true_value; *false_value, scope);
+            compile_operands!(self, scope, *condition, *true_value; *false_value);
 
         let result_name = self.next_temp_name();
         let result_loc = scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
@@ -2271,28 +2276,28 @@ impl<'a> Compiler<'a> {
 
     // Compiles multiple expressions catching cases where function/syscall returns yield
     // overwritting stores to the return register (r15).
-    fn compile_preceeding_operand(
+    fn prevent_return_operand_collision(
         &mut self,
-        expr: Spanned<Expression<'a>>,
+        operand: Operand<'a>,
+        cleanup: Option<Cow<'a, str>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
-        // Compile first
-        let (opr, opr_cleanup) = self.compile_operand(expr, scope)?;
-
         // If opr result landed in RETURN_REGISTER, spill it to a fresh temp before
         // compiling the next operand, which may also emit a syscall and overwrite that register.
-        if matches!(opr, Operand::Register(r) if r == VariableScope::RETURN_REGISTER) {
-            let spill_name = self.next_temp_name();
-            let spill_loc = scope.add_variable(spill_name.clone(), LocationRequest::Temp, None)?;
-            let spill_reg = self.resolve_register(&spill_loc)?;
-            self.write_instruction(Instruction::Move(Operand::Register(spill_reg), opr), None)?;
-            if let Some(name) = opr_cleanup {
-                scope.free_temp(name, None)?;
-            }
-            Ok((Operand::Register(spill_reg), Some(spill_name)))
-        } else {
-            Ok((opr, opr_cleanup))
+        if !matches!(operand, Operand::Register(r) if r == VariableScope::RETURN_REGISTER) {
+            return Ok((operand, cleanup));
         }
+        let spill_name = self.next_temp_name();
+        let spill_loc = scope.add_variable(spill_name.clone(), LocationRequest::Temp, None)?;
+        let spill_reg = self.resolve_register(&spill_loc)?;
+        self.write_instruction(
+            Instruction::Move(Operand::Register(spill_reg), operand),
+            None,
+        )?;
+        if let Some(name) = cleanup {
+            scope.free_temp(name, None)?;
+        }
+        Ok((Operand::Register(spill_reg), Some(spill_name)))
     }
 
     fn compile_literal_or_variable(
@@ -2569,7 +2574,7 @@ impl<'a> Compiler<'a> {
         let span = Self::merge_spans(left_expr.span, right_expr.span);
 
         // Compile LHS
-        let (lhs_tup, rhs_tup) = compile_operands!(self, *left_expr; *right_expr, scope);
+        let (lhs_tup, rhs_tup) = compile_operands!(self, scope, *left_expr; *right_expr);
 
         // Allocate result register
         let result_name = self.next_temp_name();
@@ -2661,9 +2666,8 @@ impl<'a> Compiler<'a> {
 
                 let span = Self::merge_spans(left_expr.span, right_expr.span);
 
-                // TODO (check for the bug!)
                 let ((lhs, lhs_cleanup), (rhs, rhs_cleanup)) =
-                    compile_operands!(self, *left_expr; *right_expr, scope);
+                    compile_operands!(self, scope, *left_expr; *right_expr);
 
                 // Allocate result register
                 let result_name = self.next_temp_name();
@@ -3366,10 +3370,8 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::LoadBatchSlot(device_hash, slot_index, logic_slot_type, batch_mode) => {
-                // TODO (CHECK FOR BUG)!
-                let (device_hash, device_hash_cleanup) =
-                    self.compile_operand(*device_hash, scope)?;
-                let (slot_index, slot_cleanup) = self.compile_operand(*slot_index, scope)?;
+                let ((device_hash, device_hash_cleanup), (slot_index, slot_cleanup)) =
+                    compile_operands!(self, scope, *device_hash; *slot_index);
 
                 let logic_slot_type_expr = match logic_slot_type.node {
                     LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
@@ -3427,11 +3429,11 @@ impl<'a> Compiler<'a> {
                 logic_slot_type,
                 batch_mode,
             ) => {
-                // TODO (CHECK FOR BUG)!
-                let (device_hash, device_hash_cleanup) =
-                    self.compile_operand(*device_hash, scope)?;
-                let (name_hash, name_hash_cleanup) = self.compile_operand(*name_hash, scope)?;
-                let (slot_index, slot_cleanup) = self.compile_operand(*slot_index, scope)?;
+                let (
+                    (device_hash, device_hash_cleanup),
+                    (name_hash, name_hash_cleanup),
+                    (slot_index, slot_cleanup),
+                ) = compile_operands!(self, scope, *device_hash, *name_hash; *slot_index);
 
                 let logic_slot_type_expr = match logic_slot_type.node {
                     LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
@@ -3522,10 +3524,10 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::SetSlot(dev_name, slot_index, logic_type, var) => {
-                // TODO (CHECK FOR BUG)!
                 let (dev_name, name_cleanup) =
                     self.compile_literal_or_variable(dev_name.node, scope)?;
-                let (slot_index, index_cleanup) = self.compile_operand(*slot_index, scope)?;
+                let ((slot_index, index_cleanup), (var, var_cleanup)) =
+                    compile_operands!(self, scope, *slot_index; *var);
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
@@ -3543,8 +3545,6 @@ impl<'a> Compiler<'a> {
                     scope,
                     span,
                 )?;
-
-                let (var, var_cleanup) = self.compile_operand(*var, scope)?;
 
                 self.write_instruction(
                     Instruction::StoreSlot(
@@ -3721,9 +3721,8 @@ impl<'a> Compiler<'a> {
                 }))
             }
             Math::Atan2(expr1, expr2) => {
-                // TODO (CHECK FOR BUG)!
-                let (var1, var1_cleanup) = self.compile_operand(*expr1, scope)?;
-                let (var2, var2_cleanup) = self.compile_operand(*expr2, scope)?;
+                let ((var1, var1_cleanup), (var2, var2_cleanup)) =
+                    compile_operands!(self, scope, *expr1; *expr2);
 
                 self.write_instruction(
                     Instruction::Atan2(
@@ -3811,7 +3810,7 @@ impl<'a> Compiler<'a> {
             }
             Math::Max(expr1, expr2) => {
                 let ((var1, clean1), (var2, clean2)) =
-                    compile_operands!(self, *expr1; *expr2, scope);
+                    compile_operands!(self, scope, *expr1; *expr2);
 
                 self.write_instruction(
                     Instruction::Max(
@@ -3829,9 +3828,8 @@ impl<'a> Compiler<'a> {
                 }))
             }
             Math::Min(expr1, expr2) => {
-                // TODO (CHECK FOR BUG)!
-                let (var1, clean1) = self.compile_operand(*expr1, scope)?;
-                let (var2, clean2) = self.compile_operand(*expr2, scope)?;
+                let ((var1, clean1), (var2, clean2)) =
+                    compile_operands!(self, scope, *expr1; *expr2);
 
                 self.write_instruction(
                     Instruction::Min(

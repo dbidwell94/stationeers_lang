@@ -212,6 +212,47 @@ fn test_ternary_expression_assignment() -> Result<()> {
 }
 
 #[test]
+fn test_ternary_expression_from_syscalls() -> Result<()> {
+
+    let compiled = compile! {
+        check
+        r#"
+        device dev0 = "d0";
+        device dev1 = "d1";
+        device dev2 = "d2";
+
+        let i = l(dev0, "Setting") ? l(dev1, "Setting") : l(dev2, "Setting");
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            l r15 d0 Setting
+            move r1 r15
+            l r15 d1 Setting
+            move r2 r15
+            l r15 d2 Setting
+            select r3 r1 r2 r15
+            move r8 r3
+            "
+        }
+    );
+
+    Ok(())
+}
+
+
+#[test]
 fn test_negative_literals() -> Result<()> {
     let result = compile!(
     check
