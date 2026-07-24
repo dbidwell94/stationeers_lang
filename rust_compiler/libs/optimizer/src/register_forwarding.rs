@@ -89,8 +89,8 @@ pub fn register_forwarding<'a>(
 
                 if let Some(target) = jump_target {
                     // Check if this is a backward jump (target appears before current position)
-                    if let Some(&target_pos) = label_positions.get(target) {
-                        if target_pos < i {
+                    if let Some(&target_pos) = label_positions.get(target)
+                        && target_pos < i {
                             // Backward jump: conservatively safe only if temp_reg is
                             // redefined before any read along the linear path from target.
                             let mut loop_path_redefines_before_read = false;
@@ -113,7 +113,6 @@ pub fn register_forwarding<'a>(
                             }
                         }
                         // Forward jump is OK - doesn't affect liveness before it
-                    }
                 }
             }
 

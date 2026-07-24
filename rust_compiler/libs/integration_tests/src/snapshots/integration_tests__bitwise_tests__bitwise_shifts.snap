@@ -1,6 +1,5 @@
 ---
 source: libs/integration_tests/src/bitwise_tests.rs
-assertion_line: 29
 expression: output
 ---
 ## Unoptimized Output

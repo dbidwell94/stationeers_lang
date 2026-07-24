@@ -344,10 +344,8 @@ impl<'a> Compiler<'a> {
         scope: &mut VariableScope<'a, '_>,
         temps: &[Option<Cow<'a, str>>],
     ) -> Result<(), Error<'a>> {
-        for temp in temps {
-            if let Some(name) = temp {
-                scope.free_temp(name.clone(), None)?;
-            }
+        for name in temps.iter().flatten() {
+            scope.free_temp(name.clone(), None)?;
         }
         Ok(())
     }
@@ -413,22 +411,22 @@ impl<'a> Compiler<'a> {
             Expression::Ternary(tern) => Ok(Some(self.expression_ternary(tern.node, scope)?)),
             Expression::Invocation(expr_invoke) => {
                 // Special case: hash() with string literal can be evaluated at compile time
-                if expr_invoke.node.name.node == "hash" && expr_invoke.node.arguments.len() == 1 {
-                    if let Expression::Literal(Spanned {
+                if expr_invoke.node.name.node == "hash"
+                    && expr_invoke.node.arguments.len() == 1
+                    && let Expression::Literal(Spanned {
                         node: Literal::String(str_to_hash),
                         ..
                     }) = &expr_invoke.node.arguments[0].node
-                    {
-                        // Evaluate hash at compile time
-                        let hash_value = crc_hash_signed(str_to_hash);
-                        return Ok(Some(CompileLocation {
-                            location: VariableLocation::Constant(Literal::Number(Number::Integer(
-                                hash_value,
-                                Unit::None,
-                            ))),
-                            temp_name: None,
-                        }));
-                    }
+                {
+                    // Evaluate hash at compile time
+                    let hash_value = crc_hash_signed(str_to_hash);
+                    return Ok(Some(CompileLocation {
+                        location: VariableLocation::Constant(Literal::Number(Number::Integer(
+                            hash_value,
+                            Unit::None,
+                        ))),
+                        temp_name: None,
+                    }));
                 }
 
                 // Non-constant hash calls or other function calls
@@ -553,13 +551,13 @@ impl<'a> Compiler<'a> {
                 let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
 
                 // Check if device is "db" (not allowed)
-                if let Operand::Device(ref dev_str) = device {
-                    if dev_str.as_ref() == "db" {
-                        return Err(Error::OperationNotSupported(
-                            "Direct stack access on 'db' is not yet supported".to_string(),
-                            expr.span,
-                        ));
-                    }
+                if let Operand::Device(ref dev_str) = device
+                    && dev_str.as_ref() == "db"
+                {
+                    return Err(Error::OperationNotSupported(
+                        "Direct stack access on 'db' is not yet supported".to_string(),
+                        expr.span,
+                    ));
                 }
 
                 // 2. Compile the index expression to get the address
@@ -1238,13 +1236,13 @@ impl<'a> Compiler<'a> {
                 let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
 
                 // Check if device is "db" (not allowed)
-                if let Operand::Device(ref dev_str) = device {
-                    if dev_str.as_ref() == "db" {
-                        return Err(Error::OperationNotSupported(
-                            "Direct stack access on 'db' is not yet supported".to_string(),
-                            assignee.span,
-                        ));
-                    }
+                if let Operand::Device(ref dev_str) = device
+                    && dev_str.as_ref() == "db"
+                {
+                    return Err(Error::OperationNotSupported(
+                        "Direct stack access on 'db' is not yet supported".to_string(),
+                        assignee.span,
+                    ));
                 }
 
                 let ((addr, addr_cleanup), (val, val_cleanup)) =
@@ -1454,15 +1452,15 @@ impl<'a> Compiler<'a> {
     /// Helper: Validate tuple size from function return
     fn validate_tuple_function_size(
         &mut self,
-        func_name: &Cow<'a, str>,
+        func_name: Cow<'a, str>,
         expected_count: usize,
         span: Span,
     ) {
-        if let Some(&actual_size) = self.function_meta.tuple_return_sizes.get(func_name) {
-            if actual_size != expected_count {
-                self.errors
-                    .push(Error::TupleSizeMismatch(actual_size, expected_count, span));
-            }
+        if let Some(&actual_size) = self.function_meta.tuple_return_sizes.get(&func_name)
+            && actual_size != expected_count
+        {
+            self.errors
+                .push(Error::TupleSizeMismatch(actual_size, expected_count, span));
         }
     }
 
@@ -1572,7 +1570,7 @@ impl<'a> Compiler<'a> {
 
                 // Validate tuple return size matches the declaration
                 self.validate_tuple_function_size(
-                    &invoke_expr.node.name.node,
+                    invoke_expr.node.name.node,
                     names.len(),
                     value.span,
                 );
@@ -1611,7 +1609,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 // Compile each element and assign to corresponding variable
-                for (name_spanned, element) in names.into_iter().zip(tuple_elements.into_iter()) {
+                for (name_spanned, element) in names.into_iter().zip(tuple_elements) {
                     // Skip underscores
                     if name_spanned.node.as_ref() == "_" {
                         continue;
@@ -1660,7 +1658,7 @@ impl<'a> Compiler<'a> {
 
                 // Validate tuple return size matches the assignment
                 self.validate_tuple_function_size(
-                    &invoke_expr.node.name.node,
+                    invoke_expr.node.name.node,
                     names.len(),
                     value.span,
                 );
@@ -1703,7 +1701,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 // Compile each element and assign to corresponding variable
-                for (name_spanned, element) in names.into_iter().zip(tuple_elements.into_iter()) {
+                for (name_spanned, element) in names.into_iter().zip(tuple_elements) {
                     // Skip underscores
                     if name_spanned.node.as_ref() == "_" {
                         continue;
@@ -2495,10 +2493,10 @@ impl<'a> Compiler<'a> {
 
                 // 5. Handle Variable Reference: Check if it's a const
                 Expression::Variable(var_id) => {
-                    if let Ok(var_loc) = scope.get_location_of(var_id, None) {
-                        if let VariableLocation::Constant(Literal::Number(num)) = var_loc {
-                            return Some(num);
-                        }
+                    if let Ok(var_loc) = scope.get_location_of(var_id, None)
+                        && let VariableLocation::Constant(Literal::Number(num)) = var_loc
+                    {
+                        return Some(num);
                     }
                     None
                 }
@@ -2511,21 +2509,19 @@ impl<'a> Compiler<'a> {
                             ..
                         })),
                     ..
-                }) => {
-                    return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
-                }
+                }) => Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None)),
 
                 // 7. Handle hash() macro as invocation - evaluates to a constant at compile time
                 Expression::Invocation(inv) => {
-                    if inv.node.name.node == "hash" && inv.node.arguments.len() == 1 {
-                        if let Expression::Literal(Spanned {
+                    if inv.node.name.node == "hash"
+                        && inv.node.arguments.len() == 1
+                        && let Expression::Literal(Spanned {
                             node: Literal::String(str_to_hash),
                             ..
                         }) = &inv.node.arguments[0].node
-                        {
-                            // hash() takes a string literal and returns a signed integer
-                            return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
-                        }
+                    {
+                        // hash() takes a string literal and returns a signed integer
+                        return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
                     }
                     None
                 }
@@ -4108,7 +4104,7 @@ impl<'a> Compiler<'a> {
 
         // For tuple returns, account for tuple values pushed onto the stack
         let adjusted_ra_offset = if is_tuple_return {
-            ra_stack_offset + self.function_meta.tuple_return_size as u16
+            ra_stack_offset + self.function_meta.tuple_return_size
         } else {
             ra_stack_offset
         };

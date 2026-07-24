@@ -240,11 +240,13 @@ impl<'a> CompilationMetadata<'a> {
     pub fn symbols_of_kind(&self, kind: &str) -> Vec<&SymbolInfo<'a>> {
         self.symbols
             .iter()
-            .filter(|sym| match (&sym.kind, kind) {
-                (SymbolKind::Function { .. }, "function") => true,
-                (SymbolKind::Syscall { .. }, "syscall") => true,
-                (SymbolKind::Variable { .. }, "variable") => true,
-                _ => false,
+            .filter(|sym| {
+                matches!(
+                    (&sym.kind, kind),
+                    (SymbolKind::Function { .. }, "function")
+                        | (SymbolKind::Syscall { .. }, "syscall")
+                        | (SymbolKind::Variable { .. }, "variable")
+                )
             })
             .collect()
     }

@@ -1,5 +1,9 @@
 # Changelog
 
+[0.7.4]
+
+- Minor code refactor using `cargo clippy` to ensure code consistancy
+
 [0.7.3]
 
 - Fixed an issue where scripts could read the wrong value when multiple device/system

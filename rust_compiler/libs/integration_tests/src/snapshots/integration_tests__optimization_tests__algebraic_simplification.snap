@@ -1,14 +1,17 @@
 ---
 source: libs/integration_tests/src/optimization_tests.rs
-assertion_line: 10
 expression: output
 ---
 ## Unoptimized Output
 
 j main
 main:
-move r8 15
+move r8 5
+mul r1 r8 1
+move r9 r1
 
 ## Optimized Output
 
-move r8 15
+move r8 5
+move r1 5
+move r9 5

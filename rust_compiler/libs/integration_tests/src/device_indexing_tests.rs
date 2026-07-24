@@ -1,11 +1,10 @@
 #[cfg(test)]
-mod device_indexing_tests {
-    use crate::common::compile_with_and_without_optimization;
-    use indoc::indoc;
+use crate::common::compile_with_and_without_optimization;
+use indoc::indoc;
 
-    #[test]
-    fn test_device_indexing_with_hash_and_binary_literals() {
-        let source = indoc! {"
+#[test]
+fn test_device_indexing_with_hash_and_binary_literals() {
+    let source = indoc! {"
             device printer = \"d0\";
             
             let item_type = hash(\"ItemIronIngot\");
@@ -23,13 +22,13 @@ mod device_indexing_tests {
             // Read it back
             let result = printer[addr];
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_device_indexing_with_computed_index() {
-        let source = indoc! {"
+#[test]
+fn test_device_indexing_with_computed_index() {
+    let source = indoc! {"
             device storage = \"d1\";
             
             let base_addr = 10;
@@ -41,13 +40,13 @@ mod device_indexing_tests {
             
             let retrieved = storage[index];
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_device_indexing_with_binary_literals() {
-        let source = indoc! {"
+#[test]
+fn test_device_indexing_with_binary_literals() {
+    let source = indoc! {"
             device mem = \"d0\";
             
             // Binary literals for bitwise operations
@@ -61,13 +60,13 @@ mod device_indexing_tests {
             // Read back
             let read_value = mem[0];
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_device_indexing_complex_expression() {
-        let source = indoc! {"
+#[test]
+fn test_device_indexing_complex_expression() {
+    let source = indoc! {"
             device db = \"d0\";
             
             let item = hash(\"ItemCopper\");
@@ -86,13 +85,13 @@ mod device_indexing_tests {
             let read_addr = (slot + 0) * 256 + 100;
             let stored_value = db[read_addr];
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_device_indexing_optimization_folds_constants() {
-        let source = indoc! {"
+#[test]
+fn test_device_indexing_optimization_folds_constants() {
+    let source = indoc! {"
             device cache = \"d0\";
             
             // This should optimize to a single constant
@@ -101,7 +100,6 @@ mod device_indexing_tests {
             cache[255] = packed_constant;
             let result = cache[255];
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
 }
