@@ -335,10 +335,10 @@ impl<'a> Parser<'a> {
                     }
 
                     // If we have a cached doc comment and encounter an identifier, associate them
-                    if let TokenType::Identifier(ref id) = token.token_type {
-                        if let Some(doc) = self.cached_doc_comment.take() {
-                            self.store_declaration_doc(id.to_string(), doc);
-                        }
+                    if let TokenType::Identifier(ref id) = token.token_type
+                        && let Some(doc) = self.cached_doc_comment.take()
+                    {
+                        self.store_declaration_doc(id.to_string(), doc);
                     }
 
                     // Non-comment token, use it as current
