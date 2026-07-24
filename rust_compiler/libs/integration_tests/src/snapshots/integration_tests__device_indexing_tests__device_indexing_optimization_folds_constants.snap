@@ -1,6 +1,5 @@
 ---
 source: libs/integration_tests/src/device_indexing_tests.rs
-assertion_line: 105
 expression: output
 ---
 ## Unoptimized Output

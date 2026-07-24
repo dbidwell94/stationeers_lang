@@ -1,20 +1,26 @@
 ---
 source: libs/integration_tests/src/optimization_tests.rs
-assertion_line: 49
 expression: output
 ---
 ## Unoptimized Output
 
 j main
-compare:
+compute:
 pop r8
 pop r9
+pop r10
 push sp
 push ra
-sgt r1 r9 r8
-beqz r1 __internal_L2
-move r10 1
-__internal_L2:
+mul r1 r10 2
+move r11 r1
+add r2 r9 0
+move r12 r2
+mul r3 r8 1
+move r13 r3
+add r4 r11 r12
+add r5 r4 r13
+move r15 r5
+j __internal_L1
 __internal_L1:
 pop ra
 pop sp
@@ -25,10 +31,14 @@ j ra
 j main
 pop r8
 pop r9
+pop r10
 push sp
 push ra
-ble r9 r8 7
-move r10 1
+add r11 r10 r10
+move r12 r9
+move r13 r8
+add r4 r11 r12
+add r15 r4 r13
 pop ra
 pop sp
 j ra

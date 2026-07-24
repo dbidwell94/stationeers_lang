@@ -1,6 +1,5 @@
 ---
 source: libs/integration_tests/src/optimization_tests.rs
-assertion_line: 36
 expression: output
 ---
 ## Unoptimized Output

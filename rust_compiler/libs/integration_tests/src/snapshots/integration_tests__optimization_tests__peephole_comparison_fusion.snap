@@ -1,17 +1,19 @@
 ---
-source: libs/integration_tests/src/function_tests.rs
-assertion_line: 31
+source: libs/integration_tests/src/optimization_tests.rs
 expression: output
 ---
 ## Unoptimized Output
 
 j main
-increment:
+compare:
 pop r8
+pop r9
 push sp
 push ra
-add r1 r8 1
-move r8 r1
+sgt r1 r9 r8
+beqz r1 __internal_L2
+move r10 1
+__internal_L2:
 __internal_L1:
 pop ra
 pop sp
@@ -21,10 +23,11 @@ j ra
 
 j main
 pop r8
+pop r9
 push sp
 push ra
-add r1 r8 1
-move r8 r1
+ble r9 r8 7
+move r10 1
 pop ra
 pop sp
 j ra
