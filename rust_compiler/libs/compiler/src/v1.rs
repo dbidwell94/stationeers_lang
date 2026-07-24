@@ -344,10 +344,8 @@ impl<'a> Compiler<'a> {
         scope: &mut VariableScope<'a, '_>,
         temps: &[Option<Cow<'a, str>>],
     ) -> Result<(), Error<'a>> {
-        for temp in temps {
-            if let Some(name) = temp {
-                scope.free_temp(name.clone(), None)?;
-            }
+        for name in temps.iter().flatten() {
+            scope.free_temp(name.clone(), None)?;
         }
         Ok(())
     }
@@ -1454,11 +1452,11 @@ impl<'a> Compiler<'a> {
     /// Helper: Validate tuple size from function return
     fn validate_tuple_function_size(
         &mut self,
-        func_name: &Cow<'a, str>,
+        func_name: Cow<'a, str>,
         expected_count: usize,
         span: Span,
     ) {
-        if let Some(&actual_size) = self.function_meta.tuple_return_sizes.get(func_name) {
+        if let Some(&actual_size) = self.function_meta.tuple_return_sizes.get(&func_name) {
             if actual_size != expected_count {
                 self.errors
                     .push(Error::TupleSizeMismatch(actual_size, expected_count, span));
@@ -1572,7 +1570,7 @@ impl<'a> Compiler<'a> {
 
                 // Validate tuple return size matches the declaration
                 self.validate_tuple_function_size(
-                    &invoke_expr.node.name.node,
+                    invoke_expr.node.name.node,
                     names.len(),
                     value.span,
                 );
@@ -1611,7 +1609,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 // Compile each element and assign to corresponding variable
-                for (name_spanned, element) in names.into_iter().zip(tuple_elements.into_iter()) {
+                for (name_spanned, element) in names.into_iter().zip(tuple_elements) {
                     // Skip underscores
                     if name_spanned.node.as_ref() == "_" {
                         continue;
@@ -1660,7 +1658,7 @@ impl<'a> Compiler<'a> {
 
                 // Validate tuple return size matches the assignment
                 self.validate_tuple_function_size(
-                    &invoke_expr.node.name.node,
+                    invoke_expr.node.name.node,
                     names.len(),
                     value.span,
                 );

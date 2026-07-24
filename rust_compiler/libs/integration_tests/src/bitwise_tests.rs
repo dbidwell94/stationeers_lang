@@ -1,11 +1,9 @@
-#[cfg(test)]
-mod bitwise_tests {
-    use crate::common::compile_with_and_without_optimization;
-    use indoc::indoc;
+use crate::common::compile_with_and_without_optimization;
+use indoc::indoc;
 
-    #[test]
-    fn test_bitwise_operations() {
-        let source = indoc! {"
+#[test]
+fn test_bitwise_operations() {
+    let source = indoc! {"
             let a = 5;
             let b = 3;
             let and_result = a & b;
@@ -13,36 +11,36 @@ mod bitwise_tests {
             let xor_result = a ^ b;
             let not_result = ~a;
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_bitwise_shifts() {
-        let source = indoc! {"
+#[test]
+fn test_bitwise_shifts() {
+    let source = indoc! {"
             let x = 8;
             let left_shift = x << 2;
             let arithmetic_shift = x >> 1;
             let logical_shift = x >>> 1;
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_bitwise_constant_folding() {
-        let source = indoc! {"
+#[test]
+fn test_bitwise_constant_folding() {
+    let source = indoc! {"
             let packed = (1 << 16) & (255 << 8) & 2;
             let mask = 0xFF & 0x0F;
             let combined = (15 | 4096);
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_bitwise_with_variables() {
-        let source = indoc! {"
+#[test]
+fn test_bitwise_with_variables() {
+    let source = indoc! {"
             fn pack_bits(high, low) {
                 let packed = (high << 8) | low;
                 return packed;
@@ -53,13 +51,13 @@ mod bitwise_tests {
                 return (high, low);
             }
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_complex_bit_manipulation() {
-        let source = indoc! {"
+#[test]
+fn test_complex_bit_manipulation() {
+    let source = indoc! {"
             fn encode_flags(enabled, mode, priority) {
                 let flag_byte = (enabled << 7) | (mode << 4) | priority;
                 return flag_byte;
@@ -71,13 +69,13 @@ mod bitwise_tests {
                 return (enabled, mode, priority);
             }
         "};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_sorter_bitwise_operations() {
-        let source = indoc! {r#"
+#[test]
+fn test_sorter_bitwise_operations() {
+    let source = indoc! {r#"
             device self = "db";
             device sorter = "d0";
 
@@ -87,13 +85,13 @@ mod bitwise_tests {
                 sorter[0] = (hash("ItemCropHay") << 8) | 1;
             }
         "#};
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
+}
 
-    #[test]
-    fn test_bitwise_with_const() {
-        let source = indoc! {r#"
+#[test]
+fn test_bitwise_with_const() {
+    let source = indoc! {r#"
         device sorterOutput = "d0";
 
         const ingotSortClass = 19;
@@ -106,7 +104,6 @@ mod bitwise_tests {
         }
         "#};
 
-        let output = compile_with_and_without_optimization(source);
-        insta::assert_snapshot!(output);
-    }
+    let output = compile_with_and_without_optimization(source);
+    insta::assert_snapshot!(output);
 }
