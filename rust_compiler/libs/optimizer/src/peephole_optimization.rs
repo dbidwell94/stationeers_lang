@@ -13,60 +13,54 @@ pub fn peephole_optimization<'a>(
         // Pattern: push sp; push ra ... pop ra; pop sp (with no jal in between)
         // If we push sp and ra and later pop them, but never call a function in between, remove all four
         // and adjust any stack pointer offsets in between by -2
-        if i + 1 < input.len() {
-            if let (
+        if i + 1 < input.len()
+            && let (
                 Instruction::Push(Operand::StackPointer),
                 Instruction::Push(Operand::ReturnAddress),
             ) = (&input[i].instruction, &input[i + 1].instruction)
+        {
+            // Look for matching pop ra; pop sp pattern
+            if let Some((ra_pop_idx, instructions_between)) = find_matching_ra_pop(&input[i + 1..])
             {
-                // Look for matching pop ra; pop sp pattern
-                if let Some((ra_pop_idx, instructions_between)) =
-                    find_matching_ra_pop(&input[i + 1..])
+                let absolute_ra_pop = i + 1 + ra_pop_idx;
+                // Check if the next instruction is pop sp
+                if absolute_ra_pop + 1 < input.len()
+                    && let Instruction::Pop(Operand::StackPointer) =
+                        &input[absolute_ra_pop + 1].instruction
                 {
-                    let absolute_ra_pop = i + 1 + ra_pop_idx;
-                    // Check if the next instruction is pop sp
-                    if absolute_ra_pop + 1 < input.len() {
-                        if let Instruction::Pop(Operand::StackPointer) =
-                            &input[absolute_ra_pop + 1].instruction
-                        {
-                            // Check if there's any jal between push and pop
-                            let has_call = instructions_between.iter().any(|node| {
-                                matches!(node.instruction, Instruction::JumpAndLink(_))
-                            });
+                    // Check if there's any jal between push and pop
+                    let has_call = instructions_between
+                        .iter()
+                        .any(|node| matches!(node.instruction, Instruction::JumpAndLink(_)));
 
-                            if !has_call {
-                                // Safe to remove all four: push sp, push ra, pop ra, pop sp
-                                // Also need to adjust stack pointer offsets in between by -2
-                                let absolute_sp_pop = absolute_ra_pop + 1;
-                                // Clear output since we're going to reprocess the entire input
-                                output.clear();
-                                for (idx, node) in input.iter().enumerate() {
-                                    if idx == i
-                                        || idx == i + 1
-                                        || idx == absolute_ra_pop
-                                        || idx == absolute_sp_pop
-                                    {
-                                        // Skip all four push/pop instructions
-                                        continue;
-                                    }
+                    if !has_call {
+                        // Safe to remove all four: push sp, push ra, pop ra, pop sp
+                        // Also need to adjust stack pointer offsets in between by -2
+                        let absolute_sp_pop = absolute_ra_pop + 1;
+                        // Clear output since we're going to reprocess the entire input
+                        output.clear();
+                        for (idx, node) in input.iter().enumerate() {
+                            if idx == i
+                                || idx == i + 1
+                                || idx == absolute_ra_pop
+                                || idx == absolute_sp_pop
+                            {
+                                // Skip all four push/pop instructions
+                                continue;
+                            }
 
-                                    // If this instruction is between the pushes and pops, adjust its stack offsets
-                                    if idx > i + 1 && idx < absolute_ra_pop {
-                                        let adjusted_instruction =
-                                            adjust_stack_offset(node.instruction.clone(), 2);
-                                        output.push(InstructionNode::new(
-                                            adjusted_instruction,
-                                            node.span,
-                                        ));
-                                    } else {
-                                        output.push(node.clone());
-                                    }
-                                }
-                                changed = true;
-                                // We've processed the entire input, so break
-                                break;
+                            // If this instruction is between the pushes and pops, adjust its stack offsets
+                            if idx > i + 1 && idx < absolute_ra_pop {
+                                let adjusted_instruction =
+                                    adjust_stack_offset(node.instruction.clone(), 2);
+                                output.push(InstructionNode::new(adjusted_instruction, node.span));
+                            } else {
+                                output.push(node.clone());
                             }
                         }
+                        changed = true;
+                        // We've processed the entire input, so break
+                        break;
                     }
                 }
             }
@@ -74,38 +68,37 @@ pub fn peephole_optimization<'a>(
 
         // Pattern: push ra ... pop ra (with no jal in between)
         // Fallback for when there's only ra push/pop without sp
-        if let Instruction::Push(Operand::ReturnAddress) = &input[i].instruction {
-            if let Some((pop_idx, instructions_between)) = find_matching_ra_pop(&input[i..]) {
-                // Check if there's any jal between push and pop
-                let has_call = instructions_between
-                    .iter()
-                    .any(|node| matches!(node.instruction, Instruction::JumpAndLink(_)));
+        if let Instruction::Push(Operand::ReturnAddress) = &input[i].instruction
+            && let Some((pop_idx, instructions_between)) = find_matching_ra_pop(&input[i..])
+        {
+            // Check if there's any jal between push and pop
+            let has_call = instructions_between
+                .iter()
+                .any(|node| matches!(node.instruction, Instruction::JumpAndLink(_)));
 
-                if !has_call {
-                    // Safe to remove both push and pop
-                    // Also need to adjust stack pointer offsets in between
-                    let absolute_pop_idx = i + pop_idx;
-                    // Clear output since we're going to reprocess the entire input
-                    output.clear();
-                    for (idx, node) in input.iter().enumerate() {
-                        if idx == i || idx == absolute_pop_idx {
-                            // Skip the push and pop
-                            continue;
-                        }
-
-                        // If this instruction is between push and pop, adjust its stack offsets
-                        if idx > i && idx < absolute_pop_idx {
-                            let adjusted_instruction =
-                                adjust_stack_offset(node.instruction.clone(), 1);
-                            output.push(InstructionNode::new(adjusted_instruction, node.span));
-                        } else {
-                            output.push(node.clone());
-                        }
+            if !has_call {
+                // Safe to remove both push and pop
+                // Also need to adjust stack pointer offsets in between
+                let absolute_pop_idx = i + pop_idx;
+                // Clear output since we're going to reprocess the entire input
+                output.clear();
+                for (idx, node) in input.iter().enumerate() {
+                    if idx == i || idx == absolute_pop_idx {
+                        // Skip the push and pop
+                        continue;
                     }
-                    changed = true;
-                    // We've processed the entire input, so break
-                    break;
+
+                    // If this instruction is between push and pop, adjust its stack offsets
+                    if idx > i && idx < absolute_pop_idx {
+                        let adjusted_instruction = adjust_stack_offset(node.instruction.clone(), 1);
+                        output.push(InstructionNode::new(adjusted_instruction, node.span));
+                    } else {
+                        output.push(node.clone());
+                    }
                 }
+                changed = true;
+                // We've processed the entire input, so break
+                break;
             }
         }
 
@@ -278,65 +271,41 @@ fn try_match_select_pattern<'a>(
     // Check for beqz pattern
     if let Instruction::BranchEqZero(cond, Operand::Label(else_label)) =
         &instructions[0].instruction
+        && let Instruction::Move(dst1, val1) = &instructions[1].instruction
+        && let Instruction::Jump(Operand::Label(end_label)) = &instructions[2].instruction
+        && let Instruction::LabelDef(label3) = &instructions[3].instruction
+        && label3 == else_label
+        && let Instruction::Move(dst2, val2) = &instructions[4].instruction
+        && dst1 == dst2
+        && let Instruction::LabelDef(label5) = &instructions[5].instruction
+        && label5 == end_label
     {
-        if let Instruction::Move(dst1, val1) = &instructions[1].instruction {
-            if let Instruction::Jump(Operand::Label(end_label)) = &instructions[2].instruction {
-                if let Instruction::LabelDef(label3) = &instructions[3].instruction {
-                    if label3 == else_label {
-                        if let Instruction::Move(dst2, val2) = &instructions[4].instruction {
-                            if dst1 == dst2 {
-                                if let Instruction::LabelDef(label5) = &instructions[5].instruction
-                                {
-                                    if label5 == end_label {
-                                        // beqz means: if cond==0, goto else, so val1 is for true, val2 for false
-                                        // select dst cond true_val false_val
-                                        // When cond is non-zero (true), use val1, otherwise val2
-                                        return Some((
-                                            dst1.clone(),
-                                            cond.clone(),
-                                            val1.clone(),
-                                            val2.clone(),
-                                            6,
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // beqz means: if cond==0, goto else, so val1 is for true, val2 for false
+        // select dst cond true_val false_val
+        // When cond is non-zero (true), use val1, otherwise val2
+        return Some((dst1.clone(), cond.clone(), val1.clone(), val2.clone(), 6));
     }
 
     // Check for bnez pattern
     if let Instruction::BranchNeZero(cond, Operand::Label(then_label)) =
         &instructions[0].instruction
+        && let Instruction::Move(dst1, val_false) = &instructions[1].instruction
+        && let Instruction::Jump(Operand::Label(end_label)) = &instructions[2].instruction
+        && let Instruction::LabelDef(label3) = &instructions[3].instruction
+        && label3 == then_label
+        && let Instruction::Move(dst2, val_true) = &instructions[4].instruction
+        && dst1 == dst2
+        && let Instruction::LabelDef(label5) = &instructions[5].instruction
+        && label5 == end_label
     {
-        if let Instruction::Move(dst1, val_false) = &instructions[1].instruction {
-            if let Instruction::Jump(Operand::Label(end_label)) = &instructions[2].instruction {
-                if let Instruction::LabelDef(label3) = &instructions[3].instruction {
-                    if label3 == then_label {
-                        if let Instruction::Move(dst2, val_true) = &instructions[4].instruction {
-                            if dst1 == dst2 {
-                                if let Instruction::LabelDef(label5) = &instructions[5].instruction
-                                {
-                                    if label5 == end_label {
-                                        // bnez means: if cond!=0, goto then, so val_true for true, val_false for false
-                                        return Some((
-                                            dst1.clone(),
-                                            cond.clone(),
-                                            val_true.clone(),
-                                            val_false.clone(),
-                                            6,
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // bnez means: if cond!=0, goto then, so val_true for true, val_false for false
+        return Some((
+            dst1.clone(),
+            cond.clone(),
+            val_true.clone(),
+            val_false.clone(),
+            6,
+        ));
     }
 
     None
@@ -375,27 +344,29 @@ fn find_matching_ra_pop<'a>(
 /// Checks if an instruction uses or modifies the stack pointer.
 #[allow(dead_code)]
 fn uses_stack_pointer(instruction: &Instruction) -> bool {
-    match instruction {
-        Instruction::Push(_) | Instruction::Pop(_) | Instruction::Peek(_) => true,
-        Instruction::Add(Operand::StackPointer, _, _)
-        | Instruction::Sub(Operand::StackPointer, _, _)
-        | Instruction::Mul(Operand::StackPointer, _, _)
-        | Instruction::Div(Operand::StackPointer, _, _)
-        | Instruction::Mod(Operand::StackPointer, _, _) => true,
-        Instruction::Add(_, Operand::StackPointer, _)
-        | Instruction::Sub(_, Operand::StackPointer, _)
-        | Instruction::Mul(_, Operand::StackPointer, _)
-        | Instruction::Div(_, Operand::StackPointer, _)
-        | Instruction::Mod(_, Operand::StackPointer, _) => true,
-        Instruction::Add(_, _, Operand::StackPointer)
-        | Instruction::Sub(_, _, Operand::StackPointer)
-        | Instruction::Mul(_, _, Operand::StackPointer)
-        | Instruction::Div(_, _, Operand::StackPointer)
-        | Instruction::Mod(_, _, Operand::StackPointer) => true,
-        Instruction::Move(Operand::StackPointer, _)
-        | Instruction::Move(_, Operand::StackPointer) => true,
-        _ => false,
-    }
+    matches!(
+        instruction,
+        Instruction::Push(_)
+            | Instruction::Pop(_)
+            | Instruction::Peek(_)
+            | Instruction::Add(Operand::StackPointer, _, _)
+            | Instruction::Sub(Operand::StackPointer, _, _)
+            | Instruction::Mul(Operand::StackPointer, _, _)
+            | Instruction::Div(Operand::StackPointer, _, _)
+            | Instruction::Mod(Operand::StackPointer, _, _)
+            | Instruction::Add(_, Operand::StackPointer, _)
+            | Instruction::Sub(_, Operand::StackPointer, _)
+            | Instruction::Mul(_, Operand::StackPointer, _)
+            | Instruction::Div(_, Operand::StackPointer, _)
+            | Instruction::Mod(_, Operand::StackPointer, _)
+            | Instruction::Add(_, _, Operand::StackPointer)
+            | Instruction::Sub(_, _, Operand::StackPointer)
+            | Instruction::Mul(_, _, Operand::StackPointer)
+            | Instruction::Div(_, _, Operand::StackPointer)
+            | Instruction::Mod(_, _, Operand::StackPointer)
+            | Instruction::Move(Operand::StackPointer, _)
+            | Instruction::Move(_, Operand::StackPointer)
+    )
 }
 
 /// Adjusts stack pointer offsets in an instruction by decrementing them by a given amount.
