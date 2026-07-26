@@ -3,6 +3,7 @@
 [0.7.4]
 
 - Minor code refactor using `cargo clippy` to ensure code consistancy
+- Performed a code split on the internal codebase to reduce cognitive load
 
 [0.7.3]
 
