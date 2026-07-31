@@ -99,10 +99,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_type_str = self.compile_const_string(
@@ -133,10 +130,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_type_str = self.compile_const_string(
@@ -169,10 +163,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_type_operand = self.compile_const_string(
@@ -226,10 +217,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_type_str = self.compile_const_string(
@@ -261,10 +249,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_type_str = self.compile_const_string(
@@ -278,10 +263,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let batch_mode_expr = match batch_mode.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: batch_mode.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let batch_mode_str = self.compile_const_string(
@@ -315,10 +297,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_type_str = self.compile_const_string(
@@ -332,10 +311,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let batch_mode_expr = match batch_mode.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: batch_mode.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let batch_mode_str = self.compile_const_string(
@@ -369,10 +345,7 @@ impl<'a> Compiler<'a> {
                     compile_operands!(self, (*device_hash, *slot_index), scope);
 
                 let logic_slot_type_expr = match logic_slot_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_slot_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_slot_type_str = self.compile_const_string(
@@ -385,10 +358,7 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 let batch_mode_expr = match batch_mode.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: batch_mode.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let batch_mode_str = self.compile_const_string(
@@ -431,10 +401,7 @@ impl<'a> Compiler<'a> {
                 ) = compile_operands!(self, (*device_hash, *name_hash, *slot_index), scope);
 
                 let logic_slot_type_expr = match logic_slot_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_slot_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_slot_type_str = self.compile_const_string(
@@ -447,10 +414,7 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 let batch_mode_expr = match batch_mode.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: batch_mode.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let batch_mode_str = self.compile_const_string(
@@ -487,10 +451,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_type_operand = self.compile_const_string(
@@ -526,10 +487,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: logic_type.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let logic_type_operand = self.compile_const_string(
@@ -573,10 +531,7 @@ impl<'a> Compiler<'a> {
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let reagent_mode_expr = match reagent_mode.node {
-                    LiteralOrVariable::Literal(lit) => Expression::Literal(Spanned {
-                        node: lit,
-                        span: reagent_mode.span,
-                    }),
+                    LiteralOrVariable::Literal(lit) => Expression::Literal(lit),
                     LiteralOrVariable::Variable(var) => Expression::Variable(var),
                 };
                 let reagent_mode_str = self.compile_const_string(

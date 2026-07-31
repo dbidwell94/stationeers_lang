@@ -372,7 +372,7 @@ impl<'a> Parser<'a> {
                 node: fn_ident,
             },
             arguments,
-            body: self.block()?,
+            body: self.spanned(|p| p.block())?,
         })
     }
 }

@@ -731,27 +731,11 @@ impl<'a> Compiler<'a> {
         val: LiteralOrVariable<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
-        let dummy_span = Span {
-            start_line: 0,
-            start_col: 0,
-            end_line: 0,
-            end_col: 0,
+        let (span, expr) = match val {
+            LiteralOrVariable::Literal(l) => (l.span, Expression::Literal(l)),
+            LiteralOrVariable::Variable(v) => (v.span, Expression::Variable(v)),
         };
-
-        let expr = match val {
-            LiteralOrVariable::Literal(l) => Expression::Literal(Spanned {
-                node: l,
-                span: dummy_span,
-            }),
-            LiteralOrVariable::Variable(v) => Expression::Variable(v),
-        };
-        self.compile_operand(
-            Spanned {
-                node: expr,
-                span: dummy_span,
-            },
-            scope,
-        )
+        self.compile_operand(Spanned { node: expr, span }, scope)
     }
 
     /// Compiles an expression and validates that it must result in a constant string value.

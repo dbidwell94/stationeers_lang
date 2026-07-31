@@ -96,7 +96,7 @@ impl<'a> Parser<'a> {
                         match &expr.node {
                             Expression::Literal(literal) => Spanned {
                                 span,
-                                node: LiteralOrVariable::Literal(literal.node.clone()),
+                                node: LiteralOrVariable::Literal(literal.clone()),
                             },
                             Expression::Variable(ident) => Spanned {
                                 span,
@@ -143,7 +143,7 @@ impl<'a> Parser<'a> {
 
                 let Spanned {
                     node: LiteralOrVariable::Literal(lit_str),
-                    span,
+                    span: _,
                 } = lit_str
                 else {
                     return Err(Error::InvalidSyntax(
@@ -152,10 +152,7 @@ impl<'a> Parser<'a> {
                     ));
                 };
 
-                Ok(SysCall::System(System::Hash(Spanned {
-                    node: lit_str,
-                    span,
-                })))
+                Ok(SysCall::System(System::Hash(lit_str)))
             }
             "load" | "l" => {
                 let mut args = args!(2);

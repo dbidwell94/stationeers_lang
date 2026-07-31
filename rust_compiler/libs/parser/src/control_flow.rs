@@ -88,7 +88,7 @@ impl<'a> Parser<'a> {
 
         Ok(WhileExpression {
             condition: boxed!(condition),
-            body: self.block()?,
+            body: self.spanned(|p| p.block())?,
         })
     }
 

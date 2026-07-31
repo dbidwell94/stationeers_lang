@@ -184,22 +184,9 @@ impl<'a> Compiler<'a> {
             }
         };
 
-        // Wrap the root expression in a dummy span for consistency
-        let span = if let Expression::Block(ref block) = expr {
-            block.span
-        } else {
-            Span {
-                start_line: 0,
-                end_line: 0,
-                start_col: 0,
-                end_col: 0,
-            }
-        };
-
-        let spanned_root = Spanned { node: expr, span };
         if let Err(e) = self.write_instruction(
             Instruction::Jump(Operand::Label(Cow::from("main"))),
-            Some(span),
+            Some(expr.span.clone()),
         ) {
             self.errors.push(e);
             return CompilationResult {
@@ -212,7 +199,7 @@ impl<'a> Compiler<'a> {
         let mut scope = VariableScope::default();
 
         // We ignore the result of the root expression (usually a block)
-        if let Err(e) = self.expression(spanned_root, &mut scope) {
+        if let Err(e) = self.expression(expr, &mut scope) {
             self.errors.push(e);
         }
 
@@ -277,7 +264,7 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             Expression::Block(expr_block) => {
-                self.expression_block(expr_block.node, scope)?;
+                self.expression_block(expr_block, scope)?;
                 Ok(None)
             }
             Expression::If(expr_if) => {

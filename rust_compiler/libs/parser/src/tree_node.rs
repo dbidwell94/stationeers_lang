@@ -1,11 +1,11 @@
 use super::sys_call::SysCall;
-use crate::sys_call;
+use crate::{sys_call, visitor::AstVisitor};
 use helpers::Span;
 use safer_ffi::prelude::*;
 use std::{borrow::Cow, ops::Deref};
 use tokenizer::token::{Number, Token, TokenType, Unit};
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Literal<'a> {
     Number(Number),
     String(Cow<'a, str>),
@@ -117,7 +117,7 @@ impl<'a> std::fmt::Display for AssignmentExpression<'a> {
 pub struct FunctionExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
     pub arguments: Vec<Spanned<Cow<'a, str>>>,
-    pub body: BlockExpression<'a>,
+    pub body: Spanned<BlockExpression<'a>>,
 }
 
 impl<'a> std::fmt::Display for FunctionExpression<'a> {
@@ -223,8 +223,19 @@ impl<'a> std::fmt::Display for IndexAccessExpression<'a> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum LiteralOrVariable<'a> {
-    Literal(Literal<'a>),
+    Literal(Spanned<Literal<'a>>),
     Variable(Spanned<Cow<'a, str>>),
+}
+
+impl<'a> Spanned<LiteralOrVariable<'a>> {
+    pub fn walk<V: AstVisitor<'a>>(&'a self, visitor: &mut V) {
+        match &self.node {
+            LiteralOrVariable::Literal(l) => visitor.visit_literal(l),
+            LiteralOrVariable::Variable(var) => {
+                visitor.visit_variable(var);
+            }
+        }
+    }
 }
 
 impl<'a> std::fmt::Display for LiteralOrVariable<'a> {
@@ -255,7 +266,7 @@ impl<'a> std::fmt::Display for ConstDeclarationExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum DeviceType {
     /// Represents a device pin (ex. d0, d1, d2, d3, d4, d5)
     Pin(u8),
@@ -382,7 +393,7 @@ impl<'a> std::fmt::Display for LoopExpression<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct WhileExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
-    pub body: BlockExpression<'a>,
+    pub body: Spanned<BlockExpression<'a>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

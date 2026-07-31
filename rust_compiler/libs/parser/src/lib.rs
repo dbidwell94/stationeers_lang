@@ -2,6 +2,7 @@ pub mod sys_call;
 #[cfg(test)]
 mod test;
 pub mod tree_node;
+pub mod visitor;
 
 use crate::sys_call::{Math, System};
 use helpers::Span;
@@ -15,6 +16,13 @@ use tree_node::*;
 
 pub trait Documentation {
     fn docs(&self) -> String;
+}
+
+#[macro_export]
+macro_rules! parse {
+    ($input:expr) => {
+        Parser::new(Tokenizer::from($input)).parse_all()
+    };
 }
 
 #[macro_export]
@@ -179,7 +187,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_all(&mut self) -> Result<Option<tree_node::Expression<'a>>, Error<'a>> {
+    pub fn parse_all(&mut self) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {
         let first_token = self.tokenizer.peek().unwrap_or(None);
         let (start_line, start_col) = first_token
             .as_ref()
@@ -224,10 +232,13 @@ impl<'a> Parser<'a> {
             end_col,
         };
 
-        Ok(Some(Expression::Block(Spanned {
-            node: BlockExpression(expressions),
+        Ok(Some(Spanned {
+            node: Expression::Block(Spanned {
+                node: BlockExpression(expressions),
+                span,
+            }),
             span,
-        })))
+        }))
     }
 
     pub fn parse(&mut self) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {

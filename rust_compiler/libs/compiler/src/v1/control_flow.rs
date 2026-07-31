@@ -28,9 +28,11 @@ impl<'a> Compiler<'a> {
             scope.free_temp(name, None)?;
         }
 
+        let body_span = expr.body.span.clone();
+
         // Compile Body
         // Scope variables in body are ephemeral to the block, handled by expression_block
-        self.expression_block(expr.body.node, scope)?;
+        self.expression_block(expr.body, scope)?;
 
         // If we have an else branch, we need to jump over it after the 'if' body
         if let Some(else_branch) = expr.else_branch {
@@ -41,13 +43,13 @@ impl<'a> Compiler<'a> {
             self.write_instruction(Instruction::LabelDef(else_label), Some(else_branch.span))?;
 
             match else_branch.node {
-                Expression::Block(block) => self.expression_block(block.node, scope)?,
+                Expression::Block(block) => self.expression_block(block, scope)?,
                 Expression::If(if_expr) => self.expression_if(if_expr.node, scope)?,
                 _ => unreachable!("Parser ensures else branch is Block or If"),
             }
         }
 
-        self.write_instruction(Instruction::LabelDef(end_label), Some(expr.body.span))?;
+        self.write_instruction(Instruction::LabelDef(end_label), Some(body_span))?;
 
         Ok(())
     }
@@ -67,20 +69,22 @@ impl<'a> Compiler<'a> {
         self.loop_stack
             .push((start_label.clone(), end_label.clone(), entry_stack_depth));
 
+        let body_span = expr.body.span.clone();
+
         self.write_instruction(
             Instruction::LabelDef(start_label.clone()),
-            Some(expr.body.span),
+            Some(body_span.clone()),
         )?;
 
         // Compile Body
-        self.expression_block(expr.body.node, scope)?;
+        self.expression_block(expr.body, scope)?;
 
         // Jump back to start
         self.write_instruction(
             Instruction::Jump(Operand::Label(start_label)),
-            Some(expr.body.span),
+            Some(body_span.clone()),
         )?;
-        self.write_instruction(Instruction::LabelDef(end_label), Some(expr.body.span))?;
+        self.write_instruction(Instruction::LabelDef(end_label), Some(body_span))?;
 
         self.loop_stack.pop();
 
@@ -248,7 +252,7 @@ impl<'a> Compiler<'a> {
     /// instruction emission to load. Use `compile_operand` for general handling.
     pub(super) fn expression_block<'v>(
         &mut self,
-        mut expr: BlockExpression<'a>,
+        mut expr: Spanned<BlockExpression<'a>>,
         parent_scope: &'v mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         fn get_expression_priority<'a>(expr: &Spanned<Expression<'a>>) -> u32 {
@@ -261,7 +265,7 @@ impl<'a> Compiler<'a> {
         }
 
         // First, sort the expressions to ensure functions are hoisted
-        expr.0.sort_by(|a, b| {
+        expr.node.0.sort_by(|a, b| {
             let a_cost = get_expression_priority(a);
             let b_cost = get_expression_priority(b);
 
@@ -270,7 +274,7 @@ impl<'a> Compiler<'a> {
 
         let mut scope = VariableScope::scoped(parent_scope);
 
-        for expr in expr.0 {
+        for expr in expr.node.0 {
             if !self.declared_main
                 && !matches!(
                     expr.node,

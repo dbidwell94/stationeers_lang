@@ -3,7 +3,7 @@ pub use helper_funcs::dedent;
 mod macros;
 mod syscall;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start_line: usize,
     pub end_line: usize,

@@ -1,0 +1,17 @@
+[package]
+name = "static_analysis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+parser = { path = "../parser" }
+il = { path = "../il" }
+helpers = { path = "../helpers" }
+tokenizer = { path = "../tokenizer" }
+rust_decimal = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+indoc = { version = "2.0.7" }
+assert_matches = { version = "1.5.0" }

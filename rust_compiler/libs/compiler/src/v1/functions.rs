@@ -672,7 +672,7 @@ impl<'a> Compiler<'a> {
 
         self.write_instruction(Instruction::Push(Operand::ReturnAddress), Some(span))?;
 
-        for expr in body.0 {
+        for expr in body.node.0 {
             match expr.node {
                 Expression::Return(ret_expr) => {
                     self.expression_return(ret_expr, &mut block_scope)?;
