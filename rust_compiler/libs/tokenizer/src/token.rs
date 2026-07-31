@@ -523,6 +523,15 @@ impl std::ops::Mul for Number {
     type Output = Number;
 
     fn mul(self, rhs: Self) -> Self::Output {
+        // Temperature units (C/F) are affine transforms to Kelvin, so non-additive
+        // operators must first convert to absolute values to avoid applying offsets
+        // after the arithmetic (e.g. (a * 25)c).
+        if self.has_unit() || rhs.has_unit() {
+            let l: Decimal = self.into();
+            let r: Decimal = rhs.into();
+            return Number::Decimal(l * r, Unit::None);
+        }
+
         if let Some(target_unit) = determine_target_unit(self.unit(), rhs.unit()) {
             return match (self, rhs) {
                 (Number::Integer(l, _), Number::Integer(r, _)) => {
@@ -550,6 +559,13 @@ impl std::ops::Div for Number {
     type Output = Number;
 
     fn div(self, rhs: Self) -> Self::Output {
+        // See multiplication rationale above.
+        if self.has_unit() || rhs.has_unit() {
+            let l: Decimal = self.into();
+            let r: Decimal = rhs.into();
+            return Number::Decimal(l / r, Unit::None);
+        }
+
         if let Some(target_unit) = determine_target_unit(self.unit(), rhs.unit()) {
             // Division always promotes to Decimal
             let l_val = match self {
@@ -573,6 +589,13 @@ impl std::ops::Rem for Number {
     type Output = Number;
 
     fn rem(self, rhs: Self) -> Self::Output {
+        // See multiplication rationale above.
+        if self.has_unit() || rhs.has_unit() {
+            let l: Decimal = self.into();
+            let r: Decimal = rhs.into();
+            return Number::Decimal(l % r, Unit::None);
+        }
+
         if let Some(target_unit) = determine_target_unit(self.unit(), rhs.unit()) {
             let l_val = match self {
                 Self::Integer(i, _) => Decimal::from(i),

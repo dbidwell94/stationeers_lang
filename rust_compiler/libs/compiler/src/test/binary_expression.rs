@@ -114,6 +114,41 @@ fn stress_test_constant_folding() -> Result<()> {
 }
 
 #[test]
+fn test_temperature_literal_multiplication_constant_folding() -> Result<()> {
+    let result = compile! {
+        check
+        r#"
+        const rgas = 0.00831446;
+        const roomTemp = 25c;
+        let foo = rgas * (25 + 273.15);
+        let bar = rgas * 25c;
+        let baz = rgas * roomTemp;
+        "#
+    };
+
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+
+    assert_eq!(
+        result.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 2.4789562490
+            move r9 2.4789562490
+            move r10 2.4789562490
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_constant_folding_with_variables_mixed_in() -> Result<()> {
     let result = compile! {
         check
@@ -252,7 +287,6 @@ fn test_ternary_expression_from_syscalls() -> Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn test_negative_literals() -> Result<()> {
