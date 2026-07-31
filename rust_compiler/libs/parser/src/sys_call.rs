@@ -289,7 +289,7 @@ documented! {
         /// `sbn(deviceHash, nameHash, "LogicType", (number|var));`
         SetOnDeviceBatchedNamed(
             Spanned<LiteralOrVariable<'a>>,
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>,
         ),

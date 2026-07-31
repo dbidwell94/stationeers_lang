@@ -7,6 +7,8 @@
 - Fixed issue where temperature literal constant folding was converting to
   Kelvin AFTER folding was complete instead of before folding resulting in
   incorrect folding
+- Fixed issue where `sbn` wouldn't accept an expression for the second argument -
+  it only accepted a variable or literal.
 
 [0.7.3]
 

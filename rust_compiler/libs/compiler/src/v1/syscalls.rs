@@ -1,7 +1,6 @@
 use super::*;
 
 impl<'a> Compiler<'a> {
-
     pub(super) fn expression_syscall_system(
         &mut self,
         expr: System<'a>,
@@ -166,8 +165,7 @@ impl<'a> Compiler<'a> {
                 let (device_hash, device_hash_cleanup) =
                     self.compile_literal_or_variable(device_hash.node, scope)?;
 
-                let (name_hash, name_hash_cleanup) =
-                    self.compile_literal_or_variable(name_hash.node, scope)?;
+                let (name_hash, name_hash_cleanup) = self.compile_operand(*name_hash, scope)?;
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
@@ -910,5 +908,4 @@ impl<'a> Compiler<'a> {
             }
         }
     }
-
 }
