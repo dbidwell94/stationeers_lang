@@ -4,6 +4,9 @@
 
 - Minor code refactor using `cargo clippy` to ensure code consistancy
 - Performed a code split on the internal codebase to reduce cognitive load
+- Fixed issue where temperature literal constant folding was converting to
+  Kelvin AFTER folding was complete instead of before folding resulting in
+  incorrect folding
 
 [0.7.3]
 
