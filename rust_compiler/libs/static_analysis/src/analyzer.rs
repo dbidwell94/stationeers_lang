@@ -1,12 +1,43 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use helpers::Span;
 use parser::sys_call::{SysCall, System};
+use parser::tree_node::DeviceType;
 use parser::tree_node::{Expression, Literal, LiteralOr, Spanned};
 use tokenizer::token::{Number, Unit};
 
 use crate::error::Error;
 use crate::symbol::*;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ParameterKind {
+    #[default]
+    Unknown,
+    Value,
+    DevicePin,
+    DeviceReference,
+    DeviceHousing,
+}
+
+impl ParameterKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            ParameterKind::Unknown => "unknown",
+            ParameterKind::Value => "value",
+            ParameterKind::DevicePin => "device pin",
+            ParameterKind::DeviceReference => "device reference",
+            ParameterKind::DeviceHousing => "device housing",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FunctionMetadata<'a> {
+    pub symbol: Symbol<'a>,
+    pub parameter_kinds: Vec<ParameterKind>,
+    pub call_sites: Vec<Span>,
+}
 
 #[cfg(test)]
 mod tests;
@@ -15,6 +46,7 @@ mod tests;
 pub struct Analyzer<'a> {
     pub symbol_table: SymbolTable<'a>,
     pub errors: Vec<Error>,
+    pub functions: HashMap<SymbolId, FunctionMetadata<'a>>,
 
     is_lhs: bool,
     lhs_vars: Vec<Cow<'a, str>>,
@@ -31,6 +63,106 @@ impl<'a> Analyzer<'a> {
     fn declare(&mut self, name: &'a str, kind: SymbolKind<'a>, span: Span) {
         if let Err(e) = self.symbol_table.declare(name, kind, span) {
             self.errors.push(e);
+        }
+    }
+
+    fn ensure_function_metadata(&mut self, symbol: Symbol<'a>) {
+        let param_count = match symbol.kind {
+            SymbolKind::Function { param_count } => param_count,
+            _ => return,
+        };
+
+        self.functions
+            .entry(symbol.id)
+            .or_insert_with(|| FunctionMetadata {
+                symbol,
+                parameter_kinds: vec![ParameterKind::Unknown; param_count],
+                call_sites: Vec::new(),
+            });
+    }
+
+    fn symbol_kind_for_declaration(&mut self, expr: &'a Spanned<Expression<'a>>) -> SymbolKind<'a> {
+        match &expr.node {
+            Expression::Variable(name) => self
+                .symbol_table
+                .lookup(&name.node)
+                .and_then(|id| self.symbol_table.get(&id))
+                .map(|symbol| match symbol.kind {
+                    SymbolKind::Device(device) => SymbolKind::Device(device),
+                    _ => SymbolKind::Variable,
+                })
+                .unwrap_or(SymbolKind::Variable),
+            Expression::Priority(inner) => self.symbol_kind_for_declaration(inner),
+            _ => SymbolKind::Variable,
+        }
+    }
+
+    fn infer_argument_kind(&mut self, expr: &'a Spanned<Expression<'a>>) -> ParameterKind {
+        match &expr.node {
+            Expression::Literal(_) => ParameterKind::Value,
+            Expression::Variable(name) => self
+                .symbol_table
+                .lookup(&name.node)
+                .and_then(|id| self.symbol_table.get(&id))
+                .map(|symbol| Self::parameter_kind_from_symbol_kind(&symbol.kind))
+                .unwrap_or(ParameterKind::Unknown),
+            Expression::Binary(_)
+            | Expression::BitwiseNot(_)
+            | Expression::IndexAccess(_)
+            | Expression::Logical(_)
+            | Expression::MemberAccess(_)
+            | Expression::Negation(_)
+            | Expression::Syscall(_)
+            | Expression::Ternary(_)
+            | Expression::Tuple(_) => ParameterKind::Value,
+            Expression::Priority(inner) => self.infer_argument_kind(inner),
+            _ => ParameterKind::Unknown,
+        }
+    }
+
+    fn parameter_kind_from_symbol_kind(kind: &SymbolKind<'a>) -> ParameterKind {
+        match kind {
+            SymbolKind::Device(DeviceType::Pin(_)) => ParameterKind::DevicePin,
+            SymbolKind::Device(DeviceType::Reference(_)) => ParameterKind::DeviceReference,
+            SymbolKind::Device(DeviceType::Housing) => ParameterKind::DeviceHousing,
+            SymbolKind::Function { .. } => ParameterKind::Unknown,
+            _ => ParameterKind::Value,
+        }
+    }
+
+    fn merge_parameter_kind(
+        &mut self,
+        function_symbol: Symbol<'a>,
+        parameter_index: usize,
+        inferred_kind: ParameterKind,
+        span: Span,
+    ) {
+        if inferred_kind == ParameterKind::Unknown {
+            return;
+        }
+
+        self.ensure_function_metadata(function_symbol.clone());
+        let Some(metadata) = self.functions.get_mut(&function_symbol.id) else {
+            return;
+        };
+
+        let Some(existing_kind) = metadata.parameter_kinds.get_mut(parameter_index) else {
+            return;
+        };
+
+        if *existing_kind == ParameterKind::Unknown {
+            *existing_kind = inferred_kind;
+            return;
+        }
+
+        if *existing_kind != inferred_kind {
+            self.errors.push(Error::ConflictingFunctionParameterType {
+                function: function_symbol.name.to_string(),
+                parameter_index,
+                expected: existing_kind.as_str().to_string(),
+                actual: inferred_kind.as_str().to_string(),
+                span,
+            });
         }
     }
 }
@@ -58,6 +190,13 @@ impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
             },
             spanned.span,
         );
+
+        if let Some(symbol_id) = self.symbol_table.lookup(&spanned.name.node)
+            && let Some(symbol) = self.symbol_table.get(&symbol_id)
+        {
+            self.ensure_function_metadata(symbol);
+        }
+
         self.symbol_table.enter_scope();
         for arg in &spanned.arguments {
             self.declare(&arg.node, SymbolKind::Variable, arg.span);
@@ -66,13 +205,51 @@ impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
         self.symbol_table.exit_scope();
     }
 
+    fn visit_invocation_expression(
+        &mut self,
+        spanned: &'a Spanned<parser::tree_node::InvocationExpression<'a>>,
+    ) {
+        let Some(function_symbol_id) = self.symbol_table.lookup(&spanned.name.node) else {
+            self.errors.push(Error::MissingSymbol {
+                name: spanned.name.node.to_string(),
+                span: spanned.name.span,
+            });
+            return;
+        };
+
+        let Some(function_symbol) = self.symbol_table.get(&function_symbol_id) else {
+            self.errors.push(Error::MissingSymbol {
+                name: spanned.name.node.to_string(),
+                span: spanned.name.span,
+            });
+            return;
+        };
+
+        self.ensure_function_metadata(function_symbol.clone());
+        if let Some(metadata) = self.functions.get_mut(&function_symbol.id) {
+            metadata.call_sites.push(spanned.span);
+        }
+
+        for (index, argument) in spanned.arguments.iter().enumerate() {
+            let inferred_kind = self.infer_argument_kind(argument);
+            self.merge_parameter_kind(function_symbol.clone(), index, inferred_kind, argument.span);
+            self.visit_expression(argument);
+        }
+    }
+
     fn visit_block_expression(
         &mut self,
         spanned: &'a Spanned<parser::tree_node::BlockExpression<'a>>,
     ) {
+        let mut expression_indexes = (0..spanned.0.len()).collect::<Vec<_>>();
+        expression_indexes.sort_by_key(|&index| match spanned.0[index].node {
+            Expression::Function(_) => 0,
+            _ => 1,
+        });
+
         self.symbol_table.enter_scope();
-        for expr in &spanned.0 {
-            self.visit_expression(expr);
+        for index in expression_indexes {
+            self.visit_expression(&spanned.0[index]);
         }
         self.symbol_table.exit_scope();
     }
@@ -170,7 +347,8 @@ impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
         name: &'a Spanned<Cow<'a, str>>,
         spanned: &'a Spanned<Expression<'a>>,
     ) {
-        self.declare(&name.node, SymbolKind::Variable, name.span);
+        let kind = self.symbol_kind_for_declaration(spanned);
+        self.declare(&name.node, kind, name.span);
         self.visit_expression(spanned);
     }
 }

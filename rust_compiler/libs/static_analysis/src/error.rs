@@ -24,4 +24,18 @@ pub enum Error {
 
     #[error("Attempted to access a variable that has not yet been defined")]
     InvalidVariable { name: String, span: Span },
+
+    #[error("Error: Invalid symbol '{name}' at {span:?}. Symbol is not declared.")]
+    MissingSymbol { name: String, span: Span },
+
+    #[error(
+        "Function '{function}' parameter {parameter_index} was inferred as '{expected}' but was later called with '{actual}'"
+    )]
+    ConflictingFunctionParameterType {
+        function: String,
+        parameter_index: usize,
+        expected: String,
+        actual: String,
+        span: Span,
+    },
 }

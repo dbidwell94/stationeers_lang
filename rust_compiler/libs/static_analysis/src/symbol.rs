@@ -7,8 +7,6 @@ use std::collections::HashMap;
 pub enum SymbolKind<'a> {
     /// A variable that can be read and written to
     Variable,
-    /// A variable representing a pointer to an array of a fixed size
-    ManagedArray { size: usize },
     /// A non-changing compile-time constant value
     Constant(Literal<'a>),
     /// A variable representing a device pin or device refId

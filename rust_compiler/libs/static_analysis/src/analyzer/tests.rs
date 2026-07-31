@@ -205,10 +205,17 @@ fn using_variable_in_parent_scope_is_valid() -> anyhow::Result<()> {
 }
 
 #[test]
-fn declaring_arrays_extracts_name_of_variable_and_size_of_array() -> anyhow::Result<()> {
+fn function_invocations_record_parameter_kinds() -> anyhow::Result<()> {
     let parsed = parse!(indoc! {
         r#"
-            let arr = [|3|];
+            device pin = "d0";
+            device ref_id = 4660;
+
+            fn ping(target, other) {
+                return;
+            };
+
+            ping(pin, ref_id);
         "#
     })?
     .expect("an expression");
@@ -216,18 +223,108 @@ fn declaring_arrays_extracts_name_of_variable_and_size_of_array() -> anyhow::Res
     let mut analyzer = Analyzer::default();
     analyzer.analyze(&parsed);
 
-    assert_eq!(analyzer.errors.len(), 0);
-    assert_eq!(analyzer.symbol_table.symbols.len(), 1);
+    assert!(
+        analyzer.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        analyzer.errors
+    );
 
+    let function_symbol = analyzer
+        .symbol_table
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "ping")
+        .expect("function symbol to exist");
+
+    let metadata = analyzer
+        .functions
+        .get(&function_symbol.id)
+        .expect("function metadata to exist");
+
+    assert_eq!(
+        metadata.parameter_kinds,
+        vec![ParameterKind::DevicePin, ParameterKind::DeviceReference]
+    );
+    assert_eq!(metadata.call_sites.len(), 1);
+
+    Ok(())
+}
+
+#[test]
+fn function_invocations_reject_mixed_device_parameter_kinds() -> anyhow::Result<()> {
+    let parsed = parse!(indoc! {
+        r#"
+            device pin = "d0";
+            device ref_id = 4660;
+
+            fn ping(target) {
+                return;
+            };
+
+            ping(pin);
+            ping(ref_id);
+        "#
+    })?
+    .expect("an expression");
+
+    let mut analyzer = Analyzer::default();
+    analyzer.analyze(&parsed);
+
+    assert_eq!(analyzer.errors.len(), 1);
     assert_matches!(
-        analyzer.symbol_table.symbols[0],
-        Symbol {
-            name: "arr",
-            is_read: false,
-            is_written: false,
-            kind: SymbolKind::ManagedArray { size: 3 },
+        analyzer.errors[0],
+        Error::ConflictingFunctionParameterType {
+            ref function,
+            parameter_index: 0,
+            ref expected,
+            ref actual,
             ..
-        }
+        } if function == "ping" && expected == "device pin" && actual == "device reference"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn function_invocations_use_device_alias_declarations() -> anyhow::Result<()> {
+    let parsed = parse!(indoc! {
+        r#"
+            device ref_id = 4660;
+            let alias = ref_id;
+
+            fn ping(target) {
+                return;
+            };
+
+            ping(alias);
+        "#
+    })?
+    .expect("an expression");
+
+    let mut analyzer = Analyzer::default();
+    analyzer.analyze(&parsed);
+
+    assert!(
+        analyzer.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        analyzer.errors
+    );
+
+    let function_symbol = analyzer
+        .symbol_table
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "ping")
+        .expect("function symbol to exist");
+
+    let metadata = analyzer
+        .functions
+        .get(&function_symbol.id)
+        .expect("function metadata to exist");
+
+    assert_eq!(
+        metadata.parameter_kinds,
+        vec![ParameterKind::DeviceReference]
     );
 
     Ok(())
