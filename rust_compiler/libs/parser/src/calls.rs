@@ -248,7 +248,7 @@ impl<'a> Parser<'a> {
             "setBatchedNamed" | "sbn" => {
                 let mut args = args!(4);
                 let device_hash = literal_or_variable!(args.next());
-                let name_hash = literal_or_variable!(args.next());
+                let name_hash = Box::new(args.next().ok_or_else(|| self.unexpected_eof())?);
                 let logic_type = literal_or_variable!(args.next());
                 let expr = Box::new(args.next().ok_or_else(|| self.unexpected_eof())?);
 

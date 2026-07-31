@@ -135,9 +135,8 @@ fn test_set_on_device_batched_named() -> anyhow::Result<()> {
         check
         r#"
         device dev = "d0";
-        const devName = hash("test");
 
-        sbn(dev, devName, "On", 12);
+        sbn(dev, hash("test"), "On", 12);
         "#
     };
 
