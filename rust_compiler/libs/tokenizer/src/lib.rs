@@ -59,18 +59,8 @@ impl<'a> Tokenizer<'a> {
         Token::new(t_type, self.lexer.extras.line_count, span)
     }
 
-    pub fn next_token(&mut self) -> Result<Option<Token<'a>>, Error> {
-        let mut current = self.lexer.next().transpose();
-
-        while matches!(current, Ok(Some(TokenType::Comment(_)))) {
-            current = self.lexer.next().transpose();
-        }
-
-        Ok(current.map(|t| t.map(|t| self.get_token(t)))?)
-    }
-
     /// Returns the next token, including comments. Used to preserve doc comments.
-    pub fn next_token_with_comments(&mut self) -> Result<Option<Token<'a>>, Error> {
+    pub fn next_token(&mut self) -> Result<Option<Token<'a>>, Error> {
         let current = self.lexer.next().transpose();
         Ok(current.map(|t| t.map(|t| self.get_token(t)))?)
     }
@@ -118,6 +108,7 @@ impl<'a> TokenizerBuffer<'a> {
             index: 0,
         }
     }
+
     pub fn next_token(&mut self) -> Result<Option<Token<'a>>, Error> {
         if let Some(token) = self.buffer.pop_front() {
             self.history.push_back(token.clone());
@@ -133,38 +124,24 @@ impl<'a> TokenizerBuffer<'a> {
         self.index += 1;
         Ok(token)
     }
-
-    pub fn next_token_with_comments(&mut self) -> Result<Option<Token<'a>>, Error> {
-        if let Some(token) = self.buffer.pop_front() {
-            self.history.push_back(token.clone());
-            self.index += 1;
-            return Ok(Some(token));
-        }
-        let token = self.tokenizer.next_token_with_comments()?;
-
-        if let Some(ref token) = token {
-            self.history.push_back(token.clone());
-        }
-
-        self.index += 1;
-        Ok(token)
-    }
     pub fn peek(&mut self) -> Result<Option<Token<'a>>, Error> {
-        if let Some(token) = self.buffer.iter().find(|token| {
-            !matches!(
-                token.token_type,
-                TokenType::Comment(_) | TokenType::Newline
-            )
-        }) {
+        if let Some(token) = self
+            .buffer
+            .iter()
+            .find(|token| !matches!(token.token_type, TokenType::Comment(_) | TokenType::Newline))
+        {
             return Ok(Some(token.clone()));
         }
 
         loop {
-            let Some(new_token) = self.tokenizer.next_token_with_comments()? else {
+            let Some(new_token) = self.tokenizer.next_token()? else {
                 return Ok(None);
             };
 
-            let is_significant = !matches!(new_token.token_type, TokenType::Comment(_) | TokenType::Newline);
+            let is_significant = !matches!(
+                new_token.token_type,
+                TokenType::Comment(_) | TokenType::Newline
+            );
             self.buffer.push_back(new_token.clone());
 
             if is_significant {

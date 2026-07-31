@@ -119,7 +119,14 @@ impl<'a> Parser<'a> {
 
     /// Caches a doc comment for attachment to the next declaration
     pub fn cache_doc_comment(&mut self, comment: String) {
-        self.cached_doc_comment = Some(comment);
+        // multi-line doc comments need to be built up across multiple tokens,
+        // so we use a buffer to accumulate them until we have no more doc comments to read
+        if let Some(existing_comment) = &mut self.cached_doc_comment {
+            existing_comment.push('\n');
+            existing_comment.push_str(&comment);
+        } else {
+            self.cached_doc_comment = Some(comment);
+        }
     }
 
     /// Stores a doc comment for a declaration (by name)

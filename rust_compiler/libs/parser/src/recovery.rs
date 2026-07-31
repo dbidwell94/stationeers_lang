@@ -34,7 +34,7 @@ impl<'a> Parser<'a> {
 
         // Keep reading tokens, caching doc comments and skipping them
         loop {
-            self.current_token = self.tokenizer.next_token_with_comments()?;
+            self.current_token = self.tokenizer.next_token()?;
 
             match &self.current_token {
                 Some(token) => {
@@ -67,5 +67,32 @@ impl<'a> Parser<'a> {
     pub(super) fn get_next(&mut self) -> Result<Option<Token<'a>>, Error<'a>> {
         self.assign_next()?;
         Ok(self.current_token.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Parser, parser};
+    use indoc::indoc;
+    use tokenizer::Tokenizer;
+
+    #[test]
+    fn test_block_with_comment_works_as_intended() -> anyhow::Result<()> {
+        let mut parser = parser!(indoc! {
+            r#"
+                loop {
+                    let i = 0;
+
+                    // this is a comment.
+                    // This would break the closing brace if we didn't handle comments correctly
+                }
+            "#
+        });
+
+        let ast = parser.parse_all()?.unwrap();
+
+        assert_eq!("{ (loop { (let i = 0); }); }", ast.to_string());
+
+        Ok(())
     }
 }
