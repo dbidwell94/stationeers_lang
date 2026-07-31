@@ -9,6 +9,9 @@
   incorrect folding
 - Fixed issue where `sbn` wouldn't accept an expression for the second argument -
   it only accepted a variable or literal.
+- Fixed inconsistencies around comments.
+  - Doc comments now correctly gather all lines until the next non-doc token
+  - Comments no longer break closing braces
 
 [0.7.3]
 

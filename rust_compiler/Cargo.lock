@@ -632,6 +632,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "helpers",
+ "indoc",
  "lsp-types",
  "pretty_assertions",
  "safer-ffi",
