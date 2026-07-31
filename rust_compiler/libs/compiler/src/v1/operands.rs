@@ -18,7 +18,7 @@ impl<'a> Compiler<'a> {
             self.metadata
                 .add_variable_with_doc(name.node.clone(), Some(expr.span), doc_comment);
 
-            return Ok((Operand::Device(device_id.clone()), None));
+            return Ok((Operand::Device(device_id.to_string().into()), None));
         }
 
         // Otherwise, compile it as an operand (e.g. it might be a register holding a device hash/id)
@@ -586,7 +586,7 @@ impl<'a> Compiler<'a> {
             // But we already have it.
             return Ok(());
         }
-        self.devices.insert(expr.name.node, expr.device);
+        self.devices.insert(expr.name.node, expr.device.node);
 
         Ok(())
     }
@@ -688,7 +688,15 @@ impl<'a> Compiler<'a> {
                 // We return the NEW temp name to be freed.
                 Ok((Operand::Register(temp_reg), Some(temp_name)))
             }
-            VariableLocation::Device(d) => Ok((Operand::Device(d), None)),
+            VariableLocation::Device(d) => {
+                let device = match d {
+                    DeviceType::Housing => "db".to_owned(),
+                    DeviceType::Pin(pin_id) => format!("d{}", pin_id),
+                    DeviceType::Reference(ref_id) => format!("${ref_id:x}"),
+                };
+
+                Ok((Operand::Device(Cow::Owned(device)), None))
+            }
         }
     }
 

@@ -102,6 +102,17 @@ impl<'a> Token<'a> {
     }
 }
 
+impl<'a> Into<helpers::Span> for &Token<'a> {
+    fn into(self) -> helpers::Span {
+        helpers::Span {
+            start_line: self.line,
+            end_line: self.line,
+            start_col: self.span.start,
+            end_col: self.span.end,
+        }
+    }
+}
+
 macro_rules! symbol {
     ($var:ident) => {
         |_| Symbol::$var

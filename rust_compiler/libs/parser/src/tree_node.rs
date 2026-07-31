@@ -3,7 +3,7 @@ use crate::sys_call;
 use helpers::Span;
 use safer_ffi::prelude::*;
 use std::{borrow::Cow, ops::Deref};
-use tokenizer::token::Number;
+use tokenizer::token::{Number, Token, TokenType, Unit};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Literal<'a> {
@@ -255,12 +255,58 @@ impl<'a> std::fmt::Display for ConstDeclarationExpression<'a> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum DeviceType {
+    /// Represents a device pin (ex. d0, d1, d2, d3, d4, d5)
+    Pin(u8),
+    /// Represents the device itself (db)
+    Housing,
+    /// Represents a device reference (ex. 0x12345678)
+    Reference(i128),
+}
+
+impl<'a> TryFrom<&Token<'a>> for DeviceType {
+    type Error = crate::Error<'a>;
+
+    fn try_from(value: &Token<'a>) -> Result<Self, Self::Error> {
+        match &value.token_type {
+            TokenType::String(s) => {
+                let Some(stripped) = s.strip_prefix('d') else {
+                    return Err(crate::Error::UnexpectedToken(value.into(), value.clone()));
+                };
+                if let Ok(pin) = stripped.parse::<u8>() {
+                    if pin <= 5 {
+                        return Ok(DeviceType::Pin(pin));
+                    }
+                } else if stripped == "b" {
+                    return Ok(DeviceType::Housing);
+                }
+                return Err(crate::Error::UnexpectedToken(value.into(), value.clone()));
+            }
+            TokenType::Number(Number::Integer(ref_id, Unit::None)) => {
+                return Ok(DeviceType::Reference(*ref_id));
+            }
+            _ => Err(crate::Error::UnexpectedToken(value.into(), value.clone())),
+        }
+    }
+}
+
+impl std::fmt::Display for DeviceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeviceType::Pin(pin) => write!(f, "d{}", pin),
+            DeviceType::Housing => write!(f, "db"),
+            DeviceType::Reference(reference) => write!(f, "${:x}", reference),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeviceDeclarationExpression<'a> {
     /// any variable-like name
     pub name: Spanned<Cow<'a, str>>,
     /// The device port, ex. (db, d0, d1, d2, d3, d4, d5)
-    pub device: Cow<'a, str>,
+    pub device: Spanned<DeviceType>,
 }
 
 impl<'a> std::fmt::Display for DeviceDeclarationExpression<'a> {

@@ -34,14 +34,10 @@ impl<'a> Parser<'a> {
         }
 
         let device_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
-        let device = match device_token.token_type {
-            TokenType::String(ref id) => id.clone(),
-            _ => {
-                return Err(Error::UnexpectedToken(
-                    Self::token_to_span(&device_token),
-                    device_token.clone(),
-                ));
-            }
+        let span = self.current_span();
+        let device_type = Spanned {
+            span,
+            node: DeviceType::try_from(&device_token)?,
         };
 
         Ok(DeviceDeclarationExpression {
@@ -49,7 +45,7 @@ impl<'a> Parser<'a> {
                 span: identifier_span,
                 node: identifier,
             },
-            device,
+            device: device_type,
         })
     }
 

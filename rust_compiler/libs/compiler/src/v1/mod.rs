@@ -7,7 +7,7 @@ use parser::{
     sys_call::{Math, SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
-        DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
+        DeviceDeclarationExpression, DeviceType, Expression, FunctionExpression, IfExpression,
         IndexAccessExpression, InvocationExpression, Literal, LiteralOr, LiteralOrVariable,
         LogicalExpression, LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
         TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
@@ -82,7 +82,7 @@ struct FunctionMetadata<'a> {
 pub struct Compiler<'a> {
     pub parser: ASTParser<'a>,
     function_meta: FunctionMetadata<'a>,
-    devices: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    devices: HashMap<Cow<'a, str>, DeviceType>,
 
     // This holds the IL code which will be used in the
     // optimizer

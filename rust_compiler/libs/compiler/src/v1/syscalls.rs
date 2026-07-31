@@ -95,7 +95,7 @@ impl<'a> Compiler<'a> {
                     .devices
                     .get(&device_name)
                     .cloned()
-                    .unwrap_or(Cow::from("d0"));
+                    .unwrap_or(DeviceType::Pin(0));
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
@@ -116,7 +116,7 @@ impl<'a> Compiler<'a> {
 
                 self.write_instruction(
                     Instruction::Store(
-                        Operand::Device(device_val),
+                        Operand::Device(device_val.to_string().into()),
                         Operand::LogicType(logic_type_str),
                         variable,
                     ),
@@ -222,7 +222,7 @@ impl<'a> Compiler<'a> {
                     .devices
                     .get(&device_name)
                     .cloned()
-                    .unwrap_or(Cow::from("d0"));
+                    .unwrap_or(DeviceType::Pin(0));
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match logic_type.node {
@@ -244,7 +244,7 @@ impl<'a> Compiler<'a> {
                 self.write_instruction(
                     Instruction::Load(
                         Operand::Register(VariableScope::RETURN_REGISTER),
-                        Operand::Device(device_val),
+                        Operand::Device(device_val.to_string().into()),
                         Operand::LogicType(logic_type_str),
                     ),
                     Some(span),

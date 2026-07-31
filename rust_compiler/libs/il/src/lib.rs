@@ -87,7 +87,7 @@ impl<'a> InstructionNode<'a> {
 pub enum Operand<'a> {
     /// A hardware register (r0-r15)
     Register(u8),
-    /// A device alias or direct connection (d0-d5, db)
+    /// A device alias or direct connection (d0-d5, db, $ref)
     Device(Cow<'a, str>),
     /// A numeric literal (integer or float)
     Number(Decimal),

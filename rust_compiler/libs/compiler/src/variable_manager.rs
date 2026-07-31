@@ -5,7 +5,7 @@
 
 use helpers::Span;
 use lsp_types::{Diagnostic, DiagnosticSeverity};
-use parser::tree_node::Literal;
+use parser::tree_node::{DeviceType, Literal};
 use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
@@ -64,7 +64,7 @@ pub enum VariableLocation<'a> {
     /// Represents a constant value and should be directly substituted as such.
     Constant(Literal<'a>),
     /// Represents a device pin. This will contain the exact `d0-d5` string
-    Device(Cow<'a, str>),
+    Device(DeviceType),
 }
 
 pub struct VariableScope<'a, 'b> {
