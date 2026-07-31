@@ -410,3 +410,32 @@ fn device_index_db_write_not_allowed() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn device_reference_allowed_to_be_assigned_to_variable() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device dev = \"d0\";
+            let dev_ref = dev;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 0
+            "
+        }
+    );
+
+    Ok(())
+}
