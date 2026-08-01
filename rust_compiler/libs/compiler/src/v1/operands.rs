@@ -12,9 +12,10 @@ impl<'a> Compiler<'a> {
         {
             // Track this device reference in metadata (for tooltips on all usages, not just declaration)
             let doc_comment = self
-                .parser
-                .get_declaration_doc(name.node.as_ref())
-                .map(Cow::Owned);
+                .declaration_docs
+                .get(name.node.as_ref())
+                .map(|s| Cow::Owned(s.to_owned()));
+
             self.metadata
                 .add_variable_with_doc(name.node.clone(), Some(expr.span), doc_comment);
 
@@ -72,9 +73,10 @@ impl<'a> Compiler<'a> {
 
         // Track the variable in metadata
         let doc_comment = self
-            .parser
-            .get_declaration_doc(name_str.as_ref())
-            .map(Cow::Owned);
+            .declaration_docs
+            .get(name_str.as_ref())
+            .map(|s| Cow::Owned(s.to_owned()));
+
         self.metadata
             .add_variable_with_doc(name_str.clone(), Some(name_span), doc_comment);
 
@@ -567,9 +569,9 @@ impl<'a> Compiler<'a> {
     ) -> Result<(), Error<'a>> {
         // Track the device declaration in metadata
         let doc_comment = self
-            .parser
-            .get_declaration_doc(expr.name.node.as_ref())
-            .map(Cow::Owned);
+            .declaration_docs
+            .get(expr.name.node.as_ref())
+            .map(|s| Cow::Owned(s.to_owned()));
         self.metadata.add_variable_with_doc(
             expr.name.node.clone(),
             Some(expr.name.span),

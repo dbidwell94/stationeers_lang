@@ -7,7 +7,7 @@ use super::*;
 
 #[test]
 fn declaration_adds_symbol() -> anyhow::Result<()> {
-    let parsed = parse!("let i = 0;")?.expect("there to be an expression");
+    let parsed = parse!("let i = 0;").expect("there to be an expression");
 
     let analyzer = Analyzer::default();
 
@@ -35,7 +35,7 @@ fn assignment_marks_written() -> anyhow::Result<()> {
         let i = 0;
         i = 3;
        "
-    })?
+    })
     .expect("an expression");
 
     let analyzer = Analyzer::default();
@@ -63,7 +63,7 @@ fn const_expressions_are_marked_as_literals() -> anyhow::Result<()> {
             const item = 34;
             let usedItem = item + 1;
         "
-    })?
+    })
     .expect("an expression");
 
     let analyzer = Analyzer::default();
@@ -102,7 +102,7 @@ fn const_expression_with_allowed_syscalls_are_folded() -> anyhow::Result<()> {
         r#"
             const hashedItem = hash("thisIsAHash");
         "#
-    })?
+    })
     .expect("an expression");
 
     let analyzer = Analyzer::default();
@@ -133,7 +133,7 @@ fn scoped_variables_are_valid() -> anyhow::Result<()> {
                 let i = 23;
             }
         "#
-    })?
+    })
     .expect("a valid expression");
 
     let analyzer = Analyzer::default();
@@ -170,8 +170,8 @@ fn using_variable_in_parent_scope_is_valid() -> anyhow::Result<()> {
                 let item2 = item + 2;
             }
         "#
-    })?
-    .expect("an expression");
+    })
+    .expect("An expression");
 
     let analyzer = Analyzer::default();
     let AnalyzeResult { symbol_table, .. } = analyzer.analyze(&parsed)?;
@@ -214,7 +214,7 @@ fn function_invocations_record_parameter_kinds() -> anyhow::Result<()> {
 
             ping(pin, ref_id);
         "#
-    })?
+    })
     .expect("an expression");
 
     let analyzer = Analyzer::default();
@@ -257,7 +257,7 @@ fn function_invocations_reject_mixed_device_parameter_kinds() -> anyhow::Result<
             ping(pin);
             ping(ref_id);
         "#
-    })?
+    })
     .expect("an expression");
 
     let analyzer = Analyzer::default();
@@ -293,7 +293,7 @@ fn function_invocations_use_device_alias_declarations() -> anyhow::Result<()> {
 
             ping(alias);
         "#
-    })?
+    })
     .expect("an expression");
 
     let analyzer = Analyzer::default();

@@ -3,7 +3,7 @@ use crate::variable_manager::{LocationRequest, VariableLocation, VariableScope};
 use helpers::{Span, prelude::*};
 use il::{Instruction, InstructionNode, Instructions, Operand};
 use parser::{
-    Parser as ASTParser,
+    ParseOutput, Parser as ASTParser,
     sys_call::{Math, SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
@@ -101,6 +101,7 @@ pub struct Compiler<'a> {
     pub errors: Vec<Error<'a>>,
     /// Metadata about symbols encountered during compilation
     pub metadata: crate::CompilationMetadata<'a>,
+    pub declaration_docs: std::collections::HashMap<String, String>,
 }
 
 /// Chains multiple operand compilations together, injecting a "prevent_return_register_clobbering"
@@ -138,7 +139,11 @@ mod syscalls;
 mod tuples;
 
 impl<'a> Compiler<'a> {
-    pub fn new(analyze_result: AnalyzeResult<'a>, config: Option<CompilerConfig>) -> Self {
+    pub fn new(
+        analyze_result: AnalyzeResult<'a>,
+        declaration_docs: std::collections::HashMap<String, String>,
+        config: Option<CompilerConfig>,
+    ) -> Self {
         Self {
             analyze_result,
             function_meta: FunctionMetadata::default(),
@@ -153,6 +158,7 @@ impl<'a> Compiler<'a> {
             source_map: HashMap::new(),
             errors: Vec::new(),
             metadata: crate::CompilationMetadata::new(),
+            declaration_docs,
         }
     }
 
@@ -357,9 +363,9 @@ impl<'a> Compiler<'a> {
                     Ok(loc) => {
                         // Track this variable reference in metadata (for tooltips on all usages, not just declaration)
                         let doc_comment: Option<Cow<'a, str>> = self
-                            .parser
-                            .get_declaration_doc(name.node.as_ref())
-                            .map(|s| Cow::Owned(s) as Cow<'a, str>);
+                            .declaration_docs
+                            .get(name.node.as_ref())
+                            .map(|s| Cow::Owned(s.to_owned()) as Cow<'a, str>);
                         self.metadata.add_variable_with_doc(
                             name.node.clone(),
                             Some(name.span),
@@ -555,9 +561,9 @@ impl<'a> Compiler<'a> {
 
         // Track the const variable in metadata
         let doc_comment = self
-            .parser
-            .get_declaration_doc(const_name.node.as_ref())
-            .map(Cow::Owned);
+            .declaration_docs
+            .get(const_name.node.as_ref())
+            .map(|s| Cow::Owned(s.to_owned()));
         self.metadata.add_variable_with_doc(
             const_name.node.clone(),
             Some(const_name.span),

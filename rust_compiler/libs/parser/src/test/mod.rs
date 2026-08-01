@@ -6,6 +6,8 @@ macro_rules! parser {
 }
 
 mod blocks;
+use crate::ParseOutput;
+
 use super::Parser;
 use super::Tokenizer;
 use anyhow::Result;
@@ -366,9 +368,11 @@ fn test_trailing_line_comments_parse_all() -> Result<()> {
     "#;
 
     let tokenizer = Tokenizer::from(input);
-    let mut parser = Parser::new(tokenizer);
+    let parser = Parser::new(tokenizer);
 
-    let expression = parser.parse_all()?.unwrap();
+    let ParseOutput {
+        root: expression, ..
+    } = parser.parse_all()?.unwrap();
     assert_eq!(
         "{ (let a = 1); (let b = 2); (let c = 3); }",
         expression.to_string()
@@ -386,9 +390,11 @@ fn test_trailing_line_comments_after_syscalls() -> Result<()> {
     "#;
 
     let tokenizer = Tokenizer::from(input);
-    let mut parser = Parser::new(tokenizer);
+    let parser = Parser::new(tokenizer);
 
-    let expression = parser.parse_all()?.unwrap();
+    let ParseOutput {
+        root: expression, ..
+    } = parser.parse_all()?.unwrap();
     assert_eq!(
         "{ setOnDeviceBatchedNamed(displayHash, displayName, \"On\", 0); setOnDeviceBatchedNamed(displayHash, displayName, \"Color\", 7); setOnDeviceBatchedNamed(displayHash, displayName, \"Mode\", 0); }",
         expression.to_string()

@@ -98,10 +98,11 @@ impl<'a> Compiler<'a> {
             .iter()
             .find(|n| n.node.as_ref() != "_")
             .map(|n| n.node.to_string());
-        let doc_comment = first_var_name
-            .as_ref()
-            .and_then(|name| self.parser.get_declaration_doc(name))
-            .map(Cow::Owned);
+        let doc_comment = first_var_name.as_ref().and_then(|name| {
+            self.declaration_docs
+                .get(name)
+                .map(|s| Cow::Owned(s.to_owned()))
+        });
 
         for (i, name_spanned) in names.iter().enumerate() {
             if name_spanned.node.as_ref() != "_" {

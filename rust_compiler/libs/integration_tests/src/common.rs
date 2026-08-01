@@ -1,5 +1,6 @@
 use compiler::Compiler;
 use parser::Parser;
+use static_analysis::Analyzer;
 use tokenizer::Tokenizer;
 
 /// Compile Slang source code and return both unoptimized and optimized output
@@ -7,8 +8,18 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
     // Compile for unoptimized output
     let tokenizer = Tokenizer::from(source);
     let parser = Parser::new(tokenizer);
-    let compiler = Compiler::new(parser, None);
-    let result = compiler.compile();
+    let output = parser
+        .parse_all()
+        .expect("Failed to parse source code")
+        .expect("No parse output");
+
+    let analyzer = Analyzer::default();
+    let analyze_result = analyzer
+        .analyze(&output.root)
+        .expect("Failed to analyze source code");
+
+    let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
+    let result = compiler.compile(output.root);
 
     // Get unoptimized output
     let mut unoptimized_writer = std::io::BufWriter::new(Vec::new());
@@ -24,8 +35,19 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
     // Compile again for optimized output
     let tokenizer2 = Tokenizer::from(source);
     let parser2 = Parser::new(tokenizer2);
-    let compiler2 = Compiler::new(parser2, None);
-    let result2 = compiler2.compile();
+
+    let output2 = parser2
+        .parse_all()
+        .expect("Failed to parse source code")
+        .expect("No parse output");
+
+    let analyzer2 = Analyzer::default();
+    let analyze_result2 = analyzer2
+        .analyze(&output2.root)
+        .expect("Failed to analyze source code");
+
+    let compiler2 = Compiler::new(analyze_result2, output2.declaration_docs, None);
+    let result2 = compiler2.compile(output2.root);
 
     // Apply optimizations
     let optimized_instructions = optimizer::optimize(result2.instructions);

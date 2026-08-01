@@ -488,6 +488,7 @@ dependencies = [
  "insta",
  "optimizer",
  "parser",
+ "static_analysis",
  "tokenizer",
 ]
 

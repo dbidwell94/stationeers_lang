@@ -10,6 +10,36 @@
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IC10EditorZipUrl>
+      https://github.com/aproposmath/StationeersIC10Editor/releases/download/v0.9.100/IC10Editor-v0.9.100.zip</IC10EditorZipUrl>
+
+    <TempDownloadDir>$(MSBuildProjectDirectory)\lib\temp</TempDownloadDir>
+    <ZipFilePath>$(TempDownloadDir)\Release.zip</ZipFilePath>
+    <ExtractDir>$(MSBuildProjectDirectory)\lib\extracted</ExtractDir>
+    <IC10EditorDllPath>$(ExtractDir)\IC10Editor.dll</IC10EditorDllPath>
+  </PropertyGroup>
+
+  <!-- Runs automatically before the build, ONLY if the DLL hasn't been extracted yet -->
+  <Target Name="DownloadAndExtractDependency" BeforeTargets="BeforeBuild"
+    Condition="!Exists('$(IC10EditorDllPath)')">
+    <Message Text="Downloading and extracting dependency from GitHub..." Importance="high" />
+
+    <!-- 1. Create the directories -->
+    <MakeDir Directories="$(TempDownloadDir);$(ExtractDir)" />
+
+    <!-- 2. Download the ZIP file -->
+    <DownloadFile SourceUrl="$(IC10EditorZipUrl)"
+      DestinationFolder="$(TempDownloadDir)"
+      DestinationFileName="Release.zip" />
+
+    <!-- 3. Extract the ZIP file -->
+    <Unzip SourceFiles="$(ZipFilePath)" DestinationFolder="$(ExtractDir)" />
+
+    <!-- 4. Clean up the temporary ZIP file (Optional) -->
+    <Delete Files="$(ZipFilePath)" />
+  </Target>
+
   <PropertyGroup Condition="$([MSBuild]::IsOsPlatform('Linux'))">
     <GameInstallDir>$(HOME)/.local/share/Steam/steamapps/common/Stationeers</GameInstallDir>
   </PropertyGroup>
@@ -23,45 +53,45 @@
   </PropertyGroup>
 
   <ItemGroup>
-      <Reference Include="netstandard">
-        <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/netstandard.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="BepInEx">
-        <HintPath>$(GameInstallDir)/BepInEx/core/BepInEx.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="0Harmony">
-        <HintPath>$(GameInstallDir)/BepInEx/core/0Harmony.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
+    <Reference Include="netstandard">
+      <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/netstandard.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(GameInstallDir)/BepInEx/core/BepInEx.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameInstallDir)/BepInEx/core/0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
 
-      <Reference Include="UnityEngine">
-        <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/UnityEngine.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="UnityEngine.CoreModule">
-        <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="Assembly-CSharp">
-        <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/Assembly-CSharp.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
 
-      <Reference Include="IC10Editor.dll">
-        <HintPath>./ref/IC10Editor.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="LaunchPadBooster.dll">
+    <Reference Include="IC10Editor.dll">
+      <HintPath>$(IC10EditorDllPath)</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="LaunchPadBooster.dll">
       <HintPath>$(GameInstallDir)/BepInEx/plugins/StationeersLaunchPad/LaunchPadBooster.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="StationeersMods.Interface.dll">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="StationeersMods.Interface.dll">
       <HintPath>$(GameInstallDir)/BepInEx/plugins/StationeersLaunchPad/StationeersMods.Interface.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-    </ItemGroup>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="../rust_compiler/target/x86_64-pc-windows-gnu/release/slang.dll">

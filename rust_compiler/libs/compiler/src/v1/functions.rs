@@ -558,9 +558,10 @@ impl<'a> Compiler<'a> {
         // Track the function definition in metadata
         let param_names: Vec<Cow<'a, str>> = arguments.iter().map(|a| a.node.clone()).collect();
         let doc_comment = self
-            .parser
-            .get_declaration_doc(name.node.as_ref())
-            .map(Cow::Owned);
+            .declaration_docs
+            .get(name.node.as_ref())
+            .map(|s| Cow::Owned(s.to_owned()));
+
         self.metadata.add_function_with_doc(
             name.node.clone(),
             param_names,
