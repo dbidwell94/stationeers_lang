@@ -10,37 +10,42 @@
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
-  <PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsOsPlatform('Linux'))">
+    <GameInstallDir>$(HOME)/.local/share/Steam/steamapps/common/Stationeers</GameInstallDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::IsOsPlatform('Windows'))">
+    <GameInstallDir>C:\Program Files (x86)\Steam\steamapps\common\Stationeers</GameInstallDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(STATIONEERS_DIR)' != ''">
+    <GameInstallDir>$(STATIONEERS_DIR)</GameInstallDir>
   </PropertyGroup>
 
   <ItemGroup>
       <Reference Include="netstandard">
-        <HintPath>./ref/netstandard.dll</HintPath>
+        <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/netstandard.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="BepInEx">
-        <HintPath>./ref/BepInEx.dll</HintPath>
+        <HintPath>$(GameInstallDir)/BepInEx/core/BepInEx.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="0Harmony">
-        <HintPath>./ref/0Harmony.dll</HintPath>
+        <HintPath>$(GameInstallDir)/BepInEx/core/0Harmony.dll</HintPath>
         <Private>False</Private>
       </Reference>
 
       <Reference Include="UnityEngine">
-        <HintPath>./ref/UnityEngine.dll</HintPath>
+        <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/UnityEngine.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="UnityEngine.CoreModule">
-        <HintPath>./ref/UnityEngine.CoreModule.dll</HintPath>
+        <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="Assembly-CSharp">
-        <HintPath>./ref/Assembly-CSharp.dll</HintPath>
-        <Private>False</Private>
-      </Reference>
-      <Reference Include="RG.ImGui">
-        <HintPath>./ref/RG.ImGui.dll</HintPath>
+        <HintPath>$(GameInstallDir)/rocketstation_Data/Managed/Assembly-CSharp.dll</HintPath>
         <Private>False</Private>
       </Reference>
 
@@ -49,11 +54,11 @@
         <Private>False</Private>
       </Reference>
       <Reference Include="LaunchPadBooster.dll">
-      <HintPath>./ref/LaunchPadBooster.dll</HintPath>
+      <HintPath>$(GameInstallDir)/BepInEx/plugins/StationeersLaunchPad/LaunchPadBooster.dll</HintPath>
         <Private>False</Private>
       </Reference>
       <Reference Include="StationeersMods.Interface.dll">
-      <HintPath>./ref/StationeersMods.Interface.dll</HintPath>
+      <HintPath>$(GameInstallDir)/BepInEx/plugins/StationeersLaunchPad/StationeersMods.Interface.dll</HintPath>
         <Private>False</Private>
       </Reference>
     </ItemGroup>

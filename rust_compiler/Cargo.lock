@@ -248,6 +248,7 @@ dependencies = [
  "parser",
  "pretty_assertions",
  "rust_decimal",
+ "static_analysis",
  "thiserror",
  "tokenizer",
 ]

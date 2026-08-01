@@ -221,6 +221,7 @@ fn function_invocations_record_parameter_kinds() -> anyhow::Result<()> {
     let AnalyzeResult {
         symbol_table,
         functions,
+        ..
     } = analyzer.analyze(&parsed)?;
 
     let function_symbol = symbol_table
@@ -299,6 +300,7 @@ fn function_invocations_use_device_alias_declarations() -> anyhow::Result<()> {
     let AnalyzeResult {
         symbol_table,
         functions,
+        ..
     } = analyzer.analyze(&parsed)?;
 
     let function_symbol = symbol_table

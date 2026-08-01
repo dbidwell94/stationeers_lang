@@ -14,6 +14,7 @@ use parser::{
     },
 };
 use rust_decimal::Decimal;
+use static_analysis::AnalyzeResult;
 use std::{borrow::Cow, collections::HashMap};
 use tokenizer::token::{Number, Unit};
 
@@ -80,7 +81,7 @@ struct FunctionMetadata<'a> {
 }
 
 pub struct Compiler<'a> {
-    pub parser: ASTParser<'a>,
+    analyze_result: AnalyzeResult<'a>,
     function_meta: FunctionMetadata<'a>,
     devices: HashMap<Cow<'a, str>, DeviceType>,
 
@@ -137,9 +138,9 @@ mod syscalls;
 mod tuples;
 
 impl<'a> Compiler<'a> {
-    pub fn new(parser: ASTParser<'a>, config: Option<CompilerConfig>) -> Self {
+    pub fn new(analyze_result: AnalyzeResult<'a>, config: Option<CompilerConfig>) -> Self {
         Self {
-            parser,
+            analyze_result,
             function_meta: FunctionMetadata::default(),
             devices: HashMap::new(),
             instructions: Instructions::default(),
@@ -155,34 +156,8 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub fn compile(mut self) -> CompilationResult<'a> {
-        let expr = self.parser.parse_all();
-
-        // Copy errors from parser
-        for e in std::mem::take(&mut self.parser.errors) {
-            self.errors.push(Error::Parse(e));
-        }
-
-        // We treat parse_all result as potentially partial
-        let expr = match expr {
-            Ok(Some(expr)) => expr,
-            Ok(None) => {
-                return CompilationResult {
-                    errors: self.errors,
-                    instructions: self.instructions,
-                    metadata: self.metadata,
-                };
-            }
-            Err(e) => {
-                // Should be covered by parser.errors, but just in case
-                self.errors.push(Error::Parse(e));
-                return CompilationResult {
-                    errors: self.errors,
-                    instructions: self.instructions,
-                    metadata: self.metadata,
-                };
-            }
-        };
+    pub fn compile(mut self, ast: Spanned<Expression<'a>>) -> CompilationResult<'a> {
+        let expr = ast;
 
         if let Err(e) = self.write_instruction(
             Instruction::Jump(Operand::Label(Cow::from("main"))),

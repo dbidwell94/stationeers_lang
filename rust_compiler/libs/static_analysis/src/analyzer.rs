@@ -45,13 +45,14 @@ mod tests;
 pub struct AnalyzeResult<'a> {
     pub symbol_table: SymbolTable<'a>,
     pub functions: HashMap<SymbolId, FunctionMetadata<'a>>,
+    pub documentation: HashMap<SymbolId, String>,
 }
 
 #[derive(Default)]
 pub struct Analyzer<'a> {
-    pub symbol_table: SymbolTable<'a>,
-    pub errors: Vec<Error>,
-    pub functions: HashMap<SymbolId, FunctionMetadata<'a>>,
+    symbol_table: SymbolTable<'a>,
+    errors: Vec<Error>,
+    functions: HashMap<SymbolId, FunctionMetadata<'a>>,
 
     is_lhs: bool,
     lhs_vars: Vec<Cow<'a, str>>,
@@ -71,6 +72,7 @@ impl<'a> Analyzer<'a> {
             Ok(AnalyzeResult {
                 symbol_table: self.symbol_table,
                 functions: self.functions,
+                documentation: HashMap::new(),
             })
         } else {
             Err(AnalyzeErrors(self.errors))
