@@ -9,13 +9,13 @@ use super::*;
 fn declaration_adds_symbol() -> anyhow::Result<()> {
     let parsed = parse!("let i = 0;")?.expect("there to be an expression");
 
-    let mut analyzer = Analyzer::default();
+    let analyzer = Analyzer::default();
 
-    analyzer.analyze(&parsed);
+    let AnalyzeResult { symbol_table, .. } = analyzer.analyze(&parsed)?;
 
-    assert_eq!(analyzer.symbol_table.symbols.len(), 1);
+    assert_eq!(symbol_table.symbols.len(), 1);
     assert_matches!(
-        analyzer.symbol_table.symbols[0],
+        symbol_table.symbols[0],
         Symbol {
             name: "i",
             is_read: false,
@@ -38,13 +38,13 @@ fn assignment_marks_written() -> anyhow::Result<()> {
     })?
     .expect("an expression");
 
-    let mut analyzer = Analyzer::default();
+    let analyzer = Analyzer::default();
 
-    analyzer.analyze(&parsed);
+    let AnalyzeResult { symbol_table, .. } = analyzer.analyze(&parsed)?;
 
-    assert_eq!(analyzer.symbol_table.symbols.len(), 1);
+    assert_eq!(symbol_table.symbols.len(), 1);
     assert_matches!(
-        analyzer.symbol_table.symbols[0],
+        symbol_table.symbols[0],
         Symbol {
             name: "i",
             is_written: true,
@@ -66,12 +66,12 @@ fn const_expressions_are_marked_as_literals() -> anyhow::Result<()> {
     })?
     .expect("an expression");
 
-    let mut analyzer = Analyzer::default();
-    analyzer.analyze(&parsed);
+    let analyzer = Analyzer::default();
+    let AnalyzeResult { symbol_table, .. } = analyzer.analyze(&parsed)?;
 
-    assert_eq!(analyzer.symbol_table.symbols.len(), 2);
+    assert_eq!(symbol_table.symbols.len(), 2);
     assert_matches!(
-        analyzer.symbol_table.symbols[0],
+        symbol_table.symbols[0],
         Symbol {
             id: SymbolId(0),
             name: "item",
@@ -82,7 +82,7 @@ fn const_expressions_are_marked_as_literals() -> anyhow::Result<()> {
         }
     );
     assert_matches!(
-        analyzer.symbol_table.symbols[1],
+        symbol_table.symbols[1],
         Symbol {
             id: SymbolId(1),
             name: "usedItem",
@@ -105,14 +105,13 @@ fn const_expression_with_allowed_syscalls_are_folded() -> anyhow::Result<()> {
     })?
     .expect("an expression");
 
-    let mut analyzer = Analyzer::default();
-    analyzer.analyze(&parsed);
+    let analyzer = Analyzer::default();
+    let AnalyzeResult { symbol_table, .. } = analyzer.analyze(&parsed)?;
 
-    assert_eq!(analyzer.errors.len(), 0);
-    assert_eq!(analyzer.symbol_table.symbols.len(), 1);
+    assert_eq!(symbol_table.symbols.len(), 1);
 
     assert_matches!(
-        analyzer.symbol_table.symbols[0],
+        symbol_table.symbols[0],
         Symbol {
             name: "hashedItem",
             is_read: false,
@@ -137,14 +136,13 @@ fn scoped_variables_are_valid() -> anyhow::Result<()> {
     })?
     .expect("a valid expression");
 
-    let mut analyzer = Analyzer::default();
-    analyzer.analyze(&parsed);
+    let analyzer = Analyzer::default();
+    let AnalyzeResult { symbol_table, .. } = analyzer.analyze(&parsed)?;
 
-    assert_eq!(analyzer.errors.len(), 0);
-    assert_eq!(analyzer.symbol_table.symbols.len(), 2);
+    assert_eq!(symbol_table.symbols.len(), 2);
 
     assert_matches!(
-        analyzer.symbol_table.symbols[0],
+        symbol_table.symbols[0],
         Symbol {
             scope_id: 1,
             name: "i",
@@ -152,7 +150,7 @@ fn scoped_variables_are_valid() -> anyhow::Result<()> {
         }
     );
     assert_matches!(
-        analyzer.symbol_table.symbols[1],
+        symbol_table.symbols[1],
         Symbol {
             scope_id: 2,
             name: "i",
@@ -175,14 +173,13 @@ fn using_variable_in_parent_scope_is_valid() -> anyhow::Result<()> {
     })?
     .expect("an expression");
 
-    let mut analyzer = Analyzer::default();
-    analyzer.analyze(&parsed);
+    let analyzer = Analyzer::default();
+    let AnalyzeResult { symbol_table, .. } = analyzer.analyze(&parsed)?;
 
-    assert!(analyzer.errors.is_empty());
-    assert_eq!(analyzer.symbol_table.symbols.len(), 2);
+    assert_eq!(symbol_table.symbols.len(), 2);
 
     assert_matches!(
-        analyzer.symbol_table.symbols[0],
+        symbol_table.symbols[0],
         Symbol {
             name: "item",
             is_read: true,
@@ -192,7 +189,7 @@ fn using_variable_in_parent_scope_is_valid() -> anyhow::Result<()> {
     );
 
     assert_matches!(
-        analyzer.symbol_table.symbols[1],
+        symbol_table.symbols[1],
         Symbol {
             name: "item2",
             is_read: false,
@@ -220,24 +217,19 @@ fn function_invocations_record_parameter_kinds() -> anyhow::Result<()> {
     })?
     .expect("an expression");
 
-    let mut analyzer = Analyzer::default();
-    analyzer.analyze(&parsed);
+    let analyzer = Analyzer::default();
+    let AnalyzeResult {
+        symbol_table,
+        functions,
+    } = analyzer.analyze(&parsed)?;
 
-    assert!(
-        analyzer.errors.is_empty(),
-        "Expected no errors, got: {:?}",
-        analyzer.errors
-    );
-
-    let function_symbol = analyzer
-        .symbol_table
+    let function_symbol = symbol_table
         .symbols
         .iter()
         .find(|symbol| symbol.name == "ping")
         .expect("function symbol to exist");
 
-    let metadata = analyzer
-        .functions
+    let metadata = functions
         .get(&function_symbol.id)
         .expect("function metadata to exist");
 
@@ -267,12 +259,14 @@ fn function_invocations_reject_mixed_device_parameter_kinds() -> anyhow::Result<
     })?
     .expect("an expression");
 
-    let mut analyzer = Analyzer::default();
-    analyzer.analyze(&parsed);
+    let analyzer = Analyzer::default();
+    let Err(e) = analyzer.analyze(&parsed) else {
+        anyhow::bail!("Expected an error, got success");
+    };
 
-    assert_eq!(analyzer.errors.len(), 1);
+    assert_eq!(e.len(), 1);
     assert_matches!(
-        analyzer.errors[0],
+        e[0],
         Error::ConflictingFunctionParameterType {
             ref function,
             parameter_index: 0,
@@ -301,24 +295,19 @@ fn function_invocations_use_device_alias_declarations() -> anyhow::Result<()> {
     })?
     .expect("an expression");
 
-    let mut analyzer = Analyzer::default();
-    analyzer.analyze(&parsed);
+    let analyzer = Analyzer::default();
+    let AnalyzeResult {
+        symbol_table,
+        functions,
+    } = analyzer.analyze(&parsed)?;
 
-    assert!(
-        analyzer.errors.is_empty(),
-        "Expected no errors, got: {:?}",
-        analyzer.errors
-    );
-
-    let function_symbol = analyzer
-        .symbol_table
+    let function_symbol = symbol_table
         .symbols
         .iter()
         .find(|symbol| symbol.name == "ping")
         .expect("function symbol to exist");
 
-    let metadata = analyzer
-        .functions
+    let metadata = functions
         .get(&function_symbol.id)
         .expect("function metadata to exist");
 

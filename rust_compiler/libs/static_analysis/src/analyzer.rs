@@ -7,7 +7,7 @@ use parser::tree_node::DeviceType;
 use parser::tree_node::{Expression, Literal, LiteralOr, Spanned};
 use tokenizer::token::{Number, Unit};
 
-use crate::error::Error;
+use crate::error::{AnalyzeErrors, Error};
 use crate::symbol::*;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -42,6 +42,11 @@ pub struct FunctionMetadata<'a> {
 #[cfg(test)]
 mod tests;
 
+pub struct AnalyzeResult<'a> {
+    pub symbol_table: SymbolTable<'a>,
+    pub functions: HashMap<SymbolId, FunctionMetadata<'a>>,
+}
+
 #[derive(Default)]
 pub struct Analyzer<'a> {
     pub symbol_table: SymbolTable<'a>,
@@ -55,9 +60,21 @@ pub struct Analyzer<'a> {
 impl<'a> Analyzer<'a> {
     /// Takes the root of the AST tree and analyzes it, creating a symbol table
     /// and / or populating errors along the way.
-    pub fn analyze(&mut self, tree: &'a Spanned<Expression<'a>>) {
+    pub fn analyze(
+        mut self,
+        tree: &'a Spanned<Expression<'a>>,
+    ) -> Result<AnalyzeResult<'a>, AnalyzeErrors> {
         use parser::visitor::AstVisitor;
         self.visit_expression(tree);
+
+        if self.errors.is_empty() {
+            Ok(AnalyzeResult {
+                symbol_table: self.symbol_table,
+                functions: self.functions,
+            })
+        } else {
+            Err(AnalyzeErrors(self.errors))
+        }
     }
 
     fn declare(&mut self, name: &'a str, kind: SymbolKind<'a>, span: Span) {

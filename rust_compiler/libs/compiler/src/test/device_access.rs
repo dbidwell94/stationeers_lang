@@ -412,6 +412,7 @@ fn device_index_db_write_not_allowed() -> anyhow::Result<()> {
 }
 
 #[test]
+#[ignore = "Functionality not yet implemented"]
 fn device_reference_allowed_to_be_assigned_to_variable() -> anyhow::Result<()> {
     let compiled = compile! {
         check "

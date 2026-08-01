@@ -3,6 +3,26 @@ use helpers::Span;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+pub struct AnalyzeErrors(pub Vec<Error>);
+
+impl std::ops::Deref for AnalyzeErrors {
+    type Target = Vec<Error>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for AnalyzeErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for error in &self.0 {
+            writeln!(f, "{}", error)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
 pub enum Error {
     #[error(
         "Error: Duplicate variable '{name}' at {current:?}. '{name}' was originally declared at {original:?}"
