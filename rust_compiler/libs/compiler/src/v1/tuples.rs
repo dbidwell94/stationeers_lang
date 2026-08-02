@@ -4,7 +4,7 @@ impl<'a> Compiler<'a> {
     /// Helper: Validate tuple size from function return
     pub(super) fn validate_tuple_function_size(
         &mut self,
-        func_name: &Cow<'a, str>,
+        func_name: &str,
         expected_count: usize,
         span: Span,
     ) {
@@ -119,7 +119,7 @@ impl<'a> Compiler<'a> {
         match &value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call - tuple values will be on the stack
-                self.expression_function_invocation_with_invocation(&invoke_expr, scope, false)?;
+                self.expression_function_invocation_with_invocation(invoke_expr, scope, false)?;
 
                 // Validate tuple return size matches the declaration
                 self.validate_tuple_function_size(
@@ -162,7 +162,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 // Compile each element and assign to corresponding variable
-                for (name_spanned, element) in names.into_iter().zip(tuple_elements) {
+                for (name_spanned, element) in names.iter().zip(tuple_elements) {
                     // Skip underscores
                     if name_spanned.node.as_ref() == "_" {
                         continue;
@@ -176,7 +176,7 @@ impl<'a> Compiler<'a> {
                     )?;
 
                     // Compile the element expression - use compile_operand to handle all expression types
-                    let (value_operand, cleanup) = self.compile_operand(&element, scope)?;
+                    let (value_operand, cleanup) = self.compile_operand(element, scope)?;
                     self.emit_variable_assignment(&var_location, value_operand)?;
 
                     // Clean up any temporary registers used for complex expressions
@@ -207,7 +207,7 @@ impl<'a> Compiler<'a> {
         match &value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call - tuple values will be on the stack
-                self.expression_function_invocation_with_invocation(&invoke_expr, scope, false)?;
+                self.expression_function_invocation_with_invocation(invoke_expr, scope, false)?;
 
                 // Validate tuple return size matches the assignment
                 self.validate_tuple_function_size(
@@ -254,7 +254,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 // Compile each element and assign to corresponding variable
-                for (name_spanned, element) in names.into_iter().zip(tuple_elements) {
+                for (name_spanned, element) in names.iter().zip(tuple_elements) {
                     // Skip underscores
                     if name_spanned.node.as_ref() == "_" {
                         continue;
@@ -274,7 +274,7 @@ impl<'a> Compiler<'a> {
                         };
 
                     // Compile the element expression - use compile_operand to handle all expression types
-                    let (value_operand, cleanup) = self.compile_operand(&element, scope)?;
+                    let (value_operand, cleanup) = self.compile_operand(element, scope)?;
 
                     // Assign the compiled value to the target variable location
                     match &var_location {

@@ -308,7 +308,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_return(
         &mut self,
-        expr: Option<&Box<Spanned<Expression<'a>>>>,
+        expr: Option<&Spanned<Expression<'a>>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<VariableLocation<'a>, Error<'a>> {
         if let Some(expr) = expr {
@@ -458,7 +458,7 @@ impl<'a> Compiler<'a> {
                     let tuple_size = tuple_elements.len();
 
                     // Push each tuple element onto the stack using compile_operand
-                    for ref element in tuple_elements.into_iter() {
+                    for element in tuple_elements.iter() {
                         let (push_operand, cleanup) = self.compile_operand(element, scope)?;
 
                         self.write_instruction(Instruction::Push(push_operand), Some(span))?;
@@ -676,11 +676,11 @@ impl<'a> Compiler<'a> {
         for expr in &body.node.0 {
             match &expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(ret_expr.as_ref(), &mut block_scope)?;
+                    self.expression_return(ret_expr.as_deref(), &mut block_scope)?;
                 }
                 _ => {
                     // Swallow internal errors
-                    if let Err(e) = self.expression(&expr, &mut block_scope).and_then(|result| {
+                    if let Err(e) = self.expression(expr, &mut block_scope).and_then(|result| {
                         if let Some(comp_res) = result
                             && let Some(name) = comp_res.temp_name
                         {

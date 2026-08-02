@@ -16,7 +16,7 @@ impl<'a> Compiler<'a> {
         let cond_span = expr.condition.span;
 
         // Compile Condition
-        let (cond, cleanup) = self.compile_operand(&*expr.condition, scope)?;
+        let (cond, cleanup) = self.compile_operand(&expr.condition, scope)?;
 
         // If condition is FALSE (0), jump to else_label
         self.write_instruction(
@@ -28,7 +28,7 @@ impl<'a> Compiler<'a> {
             scope.free_temp(name, None)?;
         }
 
-        let body_span = expr.body.span.clone();
+        let body_span = expr.body.span;
 
         // Compile Body
         // Scope variables in body are ephemeral to the block, handled by expression_block
@@ -69,11 +69,11 @@ impl<'a> Compiler<'a> {
         self.loop_stack
             .push((start_label.clone(), end_label.clone(), entry_stack_depth));
 
-        let body_span = expr.body.span.clone();
+        let body_span = expr.body.span;
 
         self.write_instruction(
             Instruction::LabelDef(start_label.clone()),
-            Some(body_span.clone()),
+            Some(body_span),
         )?;
 
         // Compile Body
@@ -82,7 +82,7 @@ impl<'a> Compiler<'a> {
         // Jump back to start
         self.write_instruction(
             Instruction::Jump(Operand::Label(start_label)),
-            Some(body_span.clone()),
+            Some(body_span),
         )?;
         self.write_instruction(Instruction::LabelDef(end_label), Some(body_span))?;
 
@@ -221,7 +221,7 @@ impl<'a> Compiler<'a> {
         };
 
         let ((cond, cond_clean), (true_val, true_clean), (false_val, false_clean)) =
-            compile_operands!(self, (&*condition, &*true_value, &*false_value), scope);
+            compile_operands!(self, (condition, true_value, false_value), scope);
 
         let result_name = self.next_temp_name();
         let result_loc = scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
@@ -291,7 +291,7 @@ impl<'a> Compiler<'a> {
 
             match &expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(ret_expr.as_ref(), &mut scope)?;
+                    self.expression_return(ret_expr.as_deref(), &mut scope)?;
                 }
                 _ => {
                     // Swallow errors within expressions so block can continue

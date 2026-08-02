@@ -273,7 +273,7 @@ impl<'a> Compiler<'a> {
                         node: name_str,
                         span: name_span,
                     },
-                    &*inner,
+                    inner,
                     scope,
                 );
             }
@@ -458,7 +458,7 @@ impl<'a> Compiler<'a> {
                     }
                 };
 
-                let (val, cleanup) = self.compile_operand(&*expression, scope)?;
+                let (val, cleanup) = self.compile_operand(expression, scope)?;
 
                 match location {
                     VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
@@ -504,8 +504,8 @@ impl<'a> Compiler<'a> {
                 // Set instruction: s device member value
                 let MemberAccessExpression { object, member } = &access.node;
 
-                let (device, dev_cleanup) = self.resolve_device(&object, scope)?;
-                let (val, val_cleanup) = self.compile_operand(&*expression, scope)?;
+                let (device, dev_cleanup) = self.resolve_device(object, scope)?;
+                let (val, val_cleanup) = self.compile_operand(expression, scope)?;
 
                 self.write_instruction(
                     Instruction::Store(device, Operand::LogicType(member.node.clone()), val),
@@ -523,7 +523,7 @@ impl<'a> Compiler<'a> {
                 // Put instruction: put device address value
                 let IndexAccessExpression { object, index } = &access.node;
 
-                let (device, dev_cleanup) = self.resolve_device(&object, scope)?;
+                let (device, dev_cleanup) = self.resolve_device(object, scope)?;
 
                 // Check if device is "db" (not allowed)
                 if let Operand::Device(ref dev_str) = device
@@ -536,7 +536,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 let ((addr, addr_cleanup), (val, val_cleanup)) =
-                    compile_operands!(self, (&*index, &*expression), scope);
+                    compile_operands!(self, (index, expression), scope);
 
                 self.write_instruction(Instruction::Put(device, addr, val), Some(assignee.span))?;
 
@@ -1014,7 +1014,7 @@ impl<'a> Compiler<'a> {
         match &expr.node {
             LogicalExpression::Not(inner) => {
                 let span = inner.span;
-                let (inner_str, cleanup) = self.compile_operand(&inner, scope)?;
+                let (inner_str, cleanup) = self.compile_operand(inner, scope)?;
 
                 let result_name = self.next_temp_name();
                 let result_loc =

@@ -33,14 +33,14 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             System::Sleep(amt) => {
-                let (op, var_cleanup) = self.compile_operand(&amt, scope)?;
+                let (op, var_cleanup) = self.compile_operand(amt, scope)?;
                 self.write_instruction(Instruction::Sleep(op), Some(span))?;
 
                 cleanup!(var_cleanup);
                 Ok(None)
             }
             System::Clr(device) => {
-                let (op, var_cleanup) = self.compile_operand(&device, scope)?;
+                let (op, var_cleanup) = self.compile_operand(device, scope)?;
                 self.write_instruction(Instruction::Clr(op), Some(span))?;
 
                 cleanup!(var_cleanup);
@@ -59,7 +59,7 @@ impl<'a> Compiler<'a> {
                 };
 
                 let loc = VariableLocation::Constant(Literal::Number(Number::Integer(
-                    crc_hash_signed(&str_lit),
+                    crc_hash_signed(str_lit),
                     Unit::None,
                 )));
 
@@ -69,7 +69,7 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::SetOnDevice(device, logic_type, variable) => {
-                let (variable, var_cleanup) = self.compile_operand(&variable, scope)?;
+                let (variable, var_cleanup) = self.compile_operand(variable, scope)?;
 
                 let Spanned {
                     node: LiteralOrVariable::Variable(device_spanned),
@@ -124,7 +124,7 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             System::SetOnDeviceBatched(device_hash, logic_type, variable) => {
-                let (var, var_cleanup) = self.compile_operand(&variable, scope)?;
+                let (var, var_cleanup) = self.compile_operand(variable, scope)?;
                 let (device_hash_val, device_hash_cleanup) =
                     self.compile_literal_or_variable(device_hash.node.clone(), scope)?;
 
@@ -155,11 +155,11 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             System::SetOnDeviceBatchedNamed(device_hash, name_hash, logic_type, val_expr) => {
-                let (value, value_cleanup) = self.compile_operand(&val_expr, scope)?;
+                let (value, value_cleanup) = self.compile_operand(val_expr, scope)?;
                 let (device_hash, device_hash_cleanup) =
                     self.compile_literal_or_variable(device_hash.node.clone(), scope)?;
 
-                let (name_hash, name_hash_cleanup) = self.compile_operand(&name_hash, scope)?;
+                let (name_hash, name_hash_cleanup) = self.compile_operand(name_hash, scope)?;
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match &logic_type.node {
@@ -245,7 +245,7 @@ impl<'a> Compiler<'a> {
             }
             System::LoadBatch(device_hash, logic_type, batch_mode) => {
                 let (device_hash, device_hash_cleanup) =
-                    self.compile_operand(&device_hash, scope)?;
+                    self.compile_operand(device_hash, scope)?;
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match &logic_type.node {
@@ -447,7 +447,7 @@ impl<'a> Compiler<'a> {
             System::LoadSlot(dev_name, slot_index, logic_type) => {
                 let (dev_hash, hash_cleanup) =
                     self.compile_literal_or_variable(dev_name.node.clone(), scope)?;
-                let (slot_index, slot_cleanup) = self.compile_operand(&slot_index, scope)?;
+                let (slot_index, slot_cleanup) = self.compile_operand(slot_index, scope)?;
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match &logic_type.node {
@@ -544,7 +544,7 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 let (reagent_hash, reagent_hash_cleanup) =
-                    self.compile_operand(&reagent_hash, scope)?;
+                    self.compile_operand(reagent_hash, scope)?;
 
                 self.write_instruction(
                     Instruction::LoadReagent(
@@ -581,7 +581,7 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 let (reagent_hash, reagent_hash_cleanup) =
-                    self.compile_operand(&reagent_hash, scope)?;
+                    self.compile_operand(reagent_hash, scope)?;
 
                 self.write_instruction(
                     Instruction::Rmap(

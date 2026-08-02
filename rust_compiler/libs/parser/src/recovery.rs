@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn test_block_with_comment_works_as_intended() -> anyhow::Result<()> {
-        let mut parser = parser!(indoc! {
+        let parser = parser!(indoc! {
             r#"
                 loop {
                     let i = 0;

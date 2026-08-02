@@ -102,13 +102,13 @@ impl<'a> Token<'a> {
     }
 }
 
-impl<'a> Into<helpers::Span> for &Token<'a> {
-    fn into(self) -> helpers::Span {
+impl<'a> From<&Token<'a>> for helpers::Span {
+    fn from(value: &Token<'a>) -> helpers::Span {
         helpers::Span {
-            start_line: self.line,
-            end_line: self.line,
-            start_col: self.span.start,
-            end_col: self.span.end,
+            start_line: value.line,
+            end_line: value.line,
+            start_col: value.span.start,
+            end_col: value.span.end,
         }
     }
 }

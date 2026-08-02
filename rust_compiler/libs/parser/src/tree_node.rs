@@ -292,10 +292,10 @@ impl<'a> TryFrom<&Token<'a>> for DeviceType {
                 } else if stripped == "b" {
                     return Ok(DeviceType::Housing);
                 }
-                return Err(crate::Error::UnexpectedToken(value.into(), value.clone()));
+                Err(crate::Error::UnexpectedToken(value.into(), value.clone()))
             }
             TokenType::Number(Number::Integer(ref_id, Unit::None)) => {
-                return Ok(DeviceType::Reference(*ref_id));
+                Ok(DeviceType::Reference(*ref_id))
             }
             _ => Err(crate::Error::UnexpectedToken(value.into(), value.clone())),
         }

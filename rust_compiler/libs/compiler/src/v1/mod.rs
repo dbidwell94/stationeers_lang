@@ -167,7 +167,7 @@ impl<'a> Compiler<'a> {
 
         if let Err(e) = self.write_instruction(
             Instruction::Jump(Operand::Label(Cow::from("main"))),
-            Some(expr.span.clone()),
+            Some(expr.span),
         ) {
             self.errors.push(e);
             return CompilationResult {
@@ -282,7 +282,7 @@ impl<'a> Compiler<'a> {
             }
             Expression::Declaration(var_name, decl_expr) => {
                 // decl_expr is Box<Spanned<Expression>>
-                self.expression_declaration(var_name.clone(), &*decl_expr, scope)
+                self.expression_declaration(var_name.clone(), decl_expr, scope)
             }
             Expression::ConstDeclaration(const_decl_expr) => {
                 self.expression_const_declaration(&const_decl_expr.node, scope)?;
@@ -400,7 +400,7 @@ impl<'a> Compiler<'a> {
                 let MemberAccessExpression { object, member } = &access.node;
 
                 // 1. Resolve the object to a device string (e.g., "d0" or "rX")
-                let (device, cleanup) = self.resolve_device(&object, scope)?;
+                let (device, cleanup) = self.resolve_device(object, scope)?;
 
                 // 2. Allocate a temp register for the result
                 let result_name = self.next_temp_name();
@@ -432,7 +432,7 @@ impl<'a> Compiler<'a> {
                 let IndexAccessExpression { object, index } = &access.node;
 
                 // 1. Resolve the object to a device string
-                let (device, dev_cleanup) = self.resolve_device(&object, scope)?;
+                let (device, dev_cleanup) = self.resolve_device(object, scope)?;
 
                 // Check if device is "db" (not allowed)
                 if let Operand::Device(ref dev_str) = device
@@ -445,7 +445,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 // 2. Compile the index expression to get the address
-                let (addr, addr_cleanup) = self.compile_operand(&index, scope)?;
+                let (addr, addr_cleanup) = self.compile_operand(index, scope)?;
 
                 // 3. Allocate a temp register for the result
                 let result_name = self.next_temp_name();
@@ -482,10 +482,10 @@ impl<'a> Compiler<'a> {
                     Some(call.span),
                 ))
             }
-            Expression::Priority(inner_expr) => self.expression(&*inner_expr, scope),
+            Expression::Priority(inner_expr) => self.expression(inner_expr, scope),
             Expression::Negation(inner_expr) => {
                 // Compile negation as 0 - inner
-                let (inner_str, cleanup) = self.compile_operand(&inner_expr, scope)?;
+                let (inner_str, cleanup) = self.compile_operand(inner_expr, scope)?;
                 let result_name = self.next_temp_name();
                 let result_loc =
                     scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
@@ -511,7 +511,7 @@ impl<'a> Compiler<'a> {
             }
             Expression::BitwiseNot(inner_expr) => {
                 // Compile bitwise NOT using the NOT instruction
-                let (inner_str, cleanup) = self.compile_operand(&inner_expr, scope)?;
+                let (inner_str, cleanup) = self.compile_operand(inner_expr, scope)?;
                 let result_name = self.next_temp_name();
                 let result_loc =
                     scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
@@ -579,7 +579,7 @@ impl<'a> Compiler<'a> {
                         ..
                     })),
                 ..
-            }) => Literal::Number(Number::Integer(crc_hash_signed(&str_to_hash), Unit::None)),
+            }) => Literal::Number(Number::Integer(crc_hash_signed(str_to_hash), Unit::None)),
             LiteralOr::Or(Spanned { span, .. }) => {
                 return Err(Error::Unknown(
                     "hash only supports string literals in this context.".into(),

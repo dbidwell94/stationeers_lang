@@ -88,7 +88,7 @@ fn run_logic() -> Result<(), CliError> {
     let parser = ASTParser::new(tokenizer);
     let output = parser.parse_all().map_err(CliError::from)?;
     let output =
-        output.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No parse output"))?;
+        output.ok_or_else(|| std::io::Error::other("No parse output"))?;
 
     let mut writer: BufWriter<Box<dyn Write>> = match args.output_file {
         Some(output_file) => BufWriter::new(Box::new(File::create(output_file)?)),
@@ -97,7 +97,7 @@ fn run_logic() -> Result<(), CliError> {
 
     let analyze_result = Analyzer::default()
         .analyze(&output.root)
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))?;
+        .map_err(|err| std::io::Error::other(err.to_string()))?;
     let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
 
     let CompilationResult {
