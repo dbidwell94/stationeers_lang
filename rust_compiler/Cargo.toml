@@ -44,6 +44,7 @@ parser = { path = "libs/parser" }
 compiler = { path = "libs/compiler" }
 helpers = { path = "libs/helpers" }
 optimizer = { path = "libs/optimizer" }
+static_analysis = { path = "libs/static_analysis" }
 safer-ffi = { workspace = true }
 anyhow = { workspace = true }
 

@@ -25,6 +25,26 @@ pub enum Error<'a> {
     UnexpectedEOF(Option<Span>),
 }
 
+impl<'a> Error<'a> {
+    pub fn into_owned(self) -> Error<'static> {
+        match self {
+            Error::Tokenizer(err) => Error::Tokenizer(err),
+            Error::UnexpectedToken(span, token) => {
+                Error::UnexpectedToken(span, Token::new(TokenType::EOF, token.line, token.span))
+            }
+            Error::DuplicateIdentifier(span, token) => {
+                Error::DuplicateIdentifier(span, Token::new(TokenType::EOF, token.line, token.span))
+            }
+            Error::InvalidSyntax(span, message) => Error::InvalidSyntax(span, message),
+            Error::UnsupportedKeyword(span, token) => {
+                Error::UnsupportedKeyword(span, Token::new(TokenType::EOF, token.line, token.span))
+            }
+            Error::MissingSemicolon(span) => Error::MissingSemicolon(span),
+            Error::UnexpectedEOF(span) => Error::UnexpectedEOF(span),
+        }
+    }
+}
+
 impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
     fn from(value: Error) -> Self {
         use Error::*;

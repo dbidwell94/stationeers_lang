@@ -2,6 +2,7 @@ use compiler::{CompilationResult, Compiler};
 use helpers::{Documentation, Span};
 use parser::{sys_call::SysCall, Parser};
 use safer_ffi::prelude::*;
+use static_analysis::Analyzer;
 use std::io::BufWriter;
 use tokenizer::{
     token::{Token, TokenType},
@@ -159,9 +160,16 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilat
 
         let tokenizer = Tokenizer::from(input.as_str());
         let parser = Parser::new(tokenizer);
-        let compiler = Compiler::new(parser, None);
+        let output = parser
+            .parse_all()
+            .expect("Failed to parse source code")
+            .expect("No parse output");
+        let analyze_result = Analyzer::default()
+            .analyze(&output.root)
+            .expect("Failed to analyze source code");
+        let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
 
-        let res = compiler.compile();
+        let res = compiler.compile(&output.root);
 
         if !res.errors.is_empty() {
             return (safer_ffi::String::EMPTY, res.instructions.source_map());
@@ -285,11 +293,19 @@ pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<
         let input = String::from_utf16_lossy(input.as_slice());
 
         let tokenizer = Tokenizer::from(input.as_str());
-        let compiler = Compiler::new(Parser::new(tokenizer), None);
+        let parser = Parser::new(tokenizer);
+        let output = parser
+            .parse_all()
+            .expect("Failed to parse source code")
+            .expect("No parse output");
+        let analyze_result = Analyzer::default()
+            .analyze(&output.root)
+            .expect("Failed to analyze source code");
+        let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
 
         let CompilationResult {
             errors: diagnosis, ..
-        } = compiler.compile();
+        } = compiler.compile(&output.root);
 
         let mut result_vec: Vec<FfiDiagnostic> = Vec::with_capacity(diagnosis.len());
 
@@ -311,13 +327,21 @@ pub fn diagnose_source_with_symbols(
         let input = String::from_utf16_lossy(input.as_slice());
 
         let tokenizer = Tokenizer::from(input.as_str());
-        let compiler = Compiler::new(Parser::new(tokenizer), None);
+        let parser = Parser::new(tokenizer);
+        let output = parser
+            .parse_all()
+            .expect("Failed to parse source code")
+            .expect("No parse output");
+        let analyze_result = Analyzer::default()
+            .analyze(&output.root)
+            .expect("Failed to analyze source code");
+        let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
 
         let CompilationResult {
             errors: diagnosis,
             metadata,
             ..
-        } = compiler.compile();
+        } = compiler.compile(&output.root);
 
         // Convert diagnostics
         let mut diagnostics_vec: Vec<FfiDiagnostic> = Vec::with_capacity(diagnosis.len());

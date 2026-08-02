@@ -15,46 +15,137 @@ pub struct CompilationCheckResult {
 #[cfg_attr(test, macro_export)]
 macro_rules! compile {
     ($source:expr) => {{
+        let owned_source = $source.to_string();
+        let source = owned_source.as_str();
+        let tokenizer = tokenizer::Tokenizer::from(source);
+        let parser = parser::Parser::new(tokenizer);
         let mut writer = std::io::BufWriter::new(Vec::new());
-        let compiler = ::Compiler::new(
-            parser::Parser::new(tokenizer::Tokenizer::from(String::from($source))),
-            None,
-        );
-        let res = compiler.compile();
-        res.instructions.write(&mut writer)?;
+
+        match parser.parse_all() {
+            Ok(Some(output)) => {
+                let analyze_result =
+                    match static_analysis::Analyzer::default().analyze(&output.root) {
+                        Ok(result) => result,
+                        Err(_) => static_analysis::AnalyzeResult {
+                            symbol_table: Default::default(),
+                            functions: Default::default(),
+                            documentation: Default::default(),
+                        },
+                    };
+
+                let compiler =
+                    crate::Compiler::new(analyze_result, output.declaration_docs.clone(), None);
+                let res = compiler.compile(&output.root);
+                res.instructions.write(&mut writer)?;
+            }
+            Ok(None) => {}
+            Err(err) => {
+                let res = crate::CompilationResult {
+                    errors: vec![crate::Error::from(err)],
+                    instructions: il::Instructions::default(),
+                    metadata: crate::CompilationMetadata::new(),
+                };
+                res.instructions.write(&mut writer)?;
+            }
+        }
+
         output!(writer)
     }};
 
     (result $source:expr) => {{
-        let compiler = crate::Compiler::new(
-            parser::Parser::new(tokenizer::Tokenizer::from($source)),
-            Some(crate::CompilerConfig { debug: true }),
-        );
-        compiler.compile().errors
-    }};
+        let owned_source = $source.to_string();
+        let source = owned_source.as_str();
+        let tokenizer = tokenizer::Tokenizer::from(source);
+        let parser = parser::Parser::new(tokenizer);
 
-    (check $source:expr) => {{
-        let mut writer = std::io::BufWriter::new(Vec::new());
-        let compiler = crate::Compiler::new(
-            parser::Parser::new(tokenizer::Tokenizer::from($source)),
-            Some(crate::CompilerConfig { debug: true }),
-        );
-        let res = compiler.compile();
-        res.instructions.write(&mut writer)?;
-        let output = output!(writer);
-        crate::test::CompilationCheckResult {
-            errors: res.errors,
-            output,
+        match parser.parse_all() {
+            Ok(Some(output)) => {
+                let analyze_result =
+                    match static_analysis::Analyzer::default().analyze(&output.root) {
+                        Ok(result) => result,
+                        Err(_) => static_analysis::AnalyzeResult {
+                            symbol_table: Default::default(),
+                            functions: Default::default(),
+                            documentation: Default::default(),
+                        },
+                    };
+
+                let compiler =
+                    crate::Compiler::new(analyze_result, output.declaration_docs.clone(), None);
+                let res = compiler.compile(&output.root);
+                res.errors.into_iter().map(|err| err.into_owned()).collect()
+            }
+            Ok(None) => Vec::new(),
+            Err(err) => vec![crate::Error::from(err).into_owned()],
         }
     }};
 
+    (check $source:expr) => {{
+        let owned_source = $source.to_string();
+        let source = owned_source.as_str();
+        let tokenizer = tokenizer::Tokenizer::from(source);
+        let parser = parser::Parser::new(tokenizer);
+        let mut writer = std::io::BufWriter::new(Vec::new());
+        let errors = match parser.parse_all() {
+            Ok(Some(output)) => {
+                let analyze_result =
+                    match static_analysis::Analyzer::default().analyze(&output.root) {
+                        Ok(result) => result,
+                        Err(_) => static_analysis::AnalyzeResult {
+                            symbol_table: Default::default(),
+                            functions: Default::default(),
+                            documentation: Default::default(),
+                        },
+                    };
+
+                let compiler =
+                    crate::Compiler::new(analyze_result, output.declaration_docs.clone(), None);
+                let res = compiler.compile(&output.root);
+                res.instructions.write(&mut writer)?;
+                res.errors.into_iter().map(|err| err.into_owned()).collect()
+            }
+            Ok(None) => Vec::new(),
+            Err(err) => {
+                let res = crate::CompilationResult {
+                    errors: vec![crate::Error::from(err)],
+                    instructions: il::Instructions::default(),
+                    metadata: crate::CompilationMetadata::new(),
+                };
+                res.instructions.write(&mut writer)?;
+                res.errors.into_iter().map(|err| err.into_owned()).collect()
+            }
+        };
+
+        let output = output!(writer);
+        crate::test::CompilationCheckResult { errors, output }
+    }};
+
     (metadata $source:expr) => {{
-        let compiler = crate::Compiler::new(
-            parser::Parser::new(tokenizer::Tokenizer::from($source)),
-            None,
-        );
-        let res = compiler.compile();
-        res.metadata
+        let owned_source = $source.to_string();
+        let source = owned_source.as_str();
+        let tokenizer = tokenizer::Tokenizer::from(source);
+        let parser = parser::Parser::new(tokenizer);
+
+        match parser.parse_all() {
+            Ok(Some(output)) => {
+                let analyze_result =
+                    match static_analysis::Analyzer::default().analyze(&output.root) {
+                        Ok(result) => result,
+                        Err(_) => static_analysis::AnalyzeResult {
+                            symbol_table: Default::default(),
+                            functions: Default::default(),
+                            documentation: Default::default(),
+                        },
+                    };
+
+                let compiler =
+                    crate::Compiler::new(analyze_result, output.declaration_docs.clone(), None);
+                let res = compiler.compile(&output.root);
+                res.metadata.into_owned()
+            }
+            Ok(None) => crate::CompilationMetadata::new().into_owned(),
+            Err(_) => crate::CompilationMetadata::new().into_owned(),
+        }
     }};
 }
 mod binary_expression;

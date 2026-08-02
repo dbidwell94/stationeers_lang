@@ -3,44 +3,45 @@
 use clap::Parser;
 use compiler::{CompilationResult, Compiler};
 use parser::Parser as ASTParser;
+use static_analysis::Analyzer;
 use std::{
     fs::File,
     io::{stderr, BufWriter, Read, Write},
     path::PathBuf,
 };
-use thiserror::Error;
+use thiserror::Error as ThisError;
 use tokenizer::{self, Tokenizer};
 
-#[derive(Error, Debug)]
-enum Error<'a> {
-    #[error(transparent)]
-    Tokenizer(tokenizer::Error),
+#[derive(ThisError, Debug)]
+enum CliError {
+    #[error("{0}")]
+    Tokenizer(String),
 
-    #[error(transparent)]
-    Parser(parser::Error<'a>),
+    #[error("{0}")]
+    Parser(String),
 
-    #[error(transparent)]
-    Compile(compiler::Error<'a>),
+    #[error("{0}")]
+    Compile(String),
 
     #[error(transparent)]
     IO(#[from] std::io::Error),
 }
 
-impl<'a> From<parser::Error<'a>> for Error<'a> {
-    fn from(value: parser::Error<'a>) -> Self {
-        Self::Parser(value)
+impl From<parser::Error<'_>> for CliError {
+    fn from(value: parser::Error<'_>) -> Self {
+        Self::Parser(value.to_string())
     }
 }
 
-impl<'a> From<compiler::Error<'a>> for Error<'a> {
-    fn from(value: compiler::Error<'a>) -> Self {
-        Self::Compile(value)
+impl From<compiler::Error<'_>> for CliError {
+    fn from(value: compiler::Error<'_>) -> Self {
+        Self::Compile(value.to_string())
     }
 }
 
-impl<'a> From<tokenizer::Error> for Error<'a> {
+impl From<tokenizer::Error> for CliError {
     fn from(value: tokenizer::Error) -> Self {
-        Self::Tokenizer(value)
+        Self::Tokenizer(value.to_string())
     }
 }
 
@@ -58,7 +59,7 @@ struct Args {
     optimize: bool,
 }
 
-fn run_logic<'a>() -> Result<(), Error<'a>> {
+fn run_logic() -> Result<(), CliError> {
     let args = Args::parse();
     let input_file = args.input_file;
 
@@ -85,23 +86,29 @@ fn run_logic<'a>() -> Result<(), Error<'a>> {
 
     let tokenizer = Tokenizer::from(input_string.as_str());
     let parser = ASTParser::new(tokenizer);
+    let output = parser.parse_all().map_err(CliError::from)?;
+    let output =
+        output.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No parse output"))?;
 
     let mut writer: BufWriter<Box<dyn Write>> = match args.output_file {
         Some(output_file) => BufWriter::new(Box::new(File::create(output_file)?)),
         None => BufWriter::new(Box::new(std::io::stdout())),
     };
 
-    let compiler = Compiler::new(parser, None);
+    let analyze_result = Analyzer::default()
+        .analyze(&output.root)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))?;
+    let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
 
     let CompilationResult {
         errors,
         instructions,
         ..
-    } = compiler.compile();
+    } = compiler.compile(&output.root);
 
     if !errors.is_empty() {
         let mut std_error = stderr();
-        let errors = errors.into_iter().map(Error::from);
+        let errors = errors.into_iter().map(CliError::from);
 
         std_error.write_all(b"Compilation error:\n")?;
 

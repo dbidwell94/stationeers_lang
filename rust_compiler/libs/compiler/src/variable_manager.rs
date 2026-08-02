@@ -27,6 +27,20 @@ pub enum Error<'a> {
     Unknown(Cow<'a, str>, Option<Span>),
 }
 
+impl<'a> Error<'a> {
+    pub fn into_owned(self) -> Error<'static> {
+        match self {
+            Error::DuplicateVariable(name, span) => {
+                Error::DuplicateVariable(Cow::Owned(name.into_owned()), span)
+            }
+            Error::UnknownVariable(name, span) => {
+                Error::UnknownVariable(Cow::Owned(name.into_owned()), span)
+            }
+            Error::Unknown(message, span) => Error::Unknown(Cow::Owned(message.into_owned()), span),
+        }
+    }
+}
+
 impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
     fn from(value: Error) -> Self {
         match value {

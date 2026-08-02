@@ -42,6 +42,41 @@ pub enum Error<'a> {
     Unknown(String, Option<Span>),
 }
 
+impl<'a> Error<'a> {
+    pub fn into_owned(self) -> Error<'static> {
+        match self {
+            Error::Parse(err) => Error::Parse(err.into_owned()),
+            Error::Scope(err) => Error::Scope(err.into_owned()),
+            Error::IO(message) => Error::IO(message),
+            Error::DuplicateIdentifier(name, span) => {
+                Error::DuplicateIdentifier(Cow::Owned(name.into_owned()), span)
+            }
+            Error::UnknownIdentifier(name, span) => {
+                Error::UnknownIdentifier(Cow::Owned(name.into_owned()), span)
+            }
+            Error::InvalidDevice(name, span) => {
+                Error::InvalidDevice(Cow::Owned(name.into_owned()), span)
+            }
+            Error::AgrumentMismatch(name, span) => {
+                Error::AgrumentMismatch(Cow::Owned(name.into_owned()), span)
+            }
+            Error::ConstAssignment(name, span) => {
+                Error::ConstAssignment(Cow::Owned(name.into_owned()), span)
+            }
+            Error::DeviceAssignment(name, span) => {
+                Error::DeviceAssignment(Cow::Owned(name.into_owned()), span)
+            }
+            Error::TupleSizeMismatch(expected, actual, span) => {
+                Error::TupleSizeMismatch(expected, actual, span)
+            }
+            Error::OperationNotSupported(message, span) => {
+                Error::OperationNotSupported(message, span)
+            }
+            Error::Unknown(message, span) => Error::Unknown(message, span),
+        }
+    }
+}
+
 impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
     fn from(value: Error) -> Self {
         use Error::*;

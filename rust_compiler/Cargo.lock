@@ -1019,6 +1019,7 @@ dependencies = [
  "parser",
  "rust_decimal",
  "safer-ffi",
+ "static_analysis",
  "thiserror",
  "tokenizer",
 ]

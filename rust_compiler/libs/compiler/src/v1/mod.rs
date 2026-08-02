@@ -3,7 +3,6 @@ use crate::variable_manager::{LocationRequest, VariableLocation, VariableScope};
 use helpers::{Span, prelude::*};
 use il::{Instruction, InstructionNode, Instructions, Operand};
 use parser::{
-    ParseOutput, Parser as ASTParser,
     sys_call::{Math, SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
@@ -81,6 +80,7 @@ struct FunctionMetadata<'a> {
 }
 
 pub struct Compiler<'a> {
+    #[allow(dead_code)]
     analyze_result: AnalyzeResult<'a>,
     function_meta: FunctionMetadata<'a>,
     devices: HashMap<Cow<'a, str>, DeviceType>,
