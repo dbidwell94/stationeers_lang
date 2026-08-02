@@ -179,10 +179,10 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_function_invocation(
         &mut self,
-        invoke_expr: Spanned<InvocationExpression<'a>>,
+        invoke_expr: &Spanned<InvocationExpression<'a>>,
         parent_scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
-        let InvocationExpression { name, arguments } = invoke_expr.node;
+        let InvocationExpression { name, arguments } = &invoke_expr.node;
 
         if !self.function_meta.locations.contains_key(&name.node) {
             self.errors
@@ -196,12 +196,12 @@ impl<'a> Compiler<'a> {
 
         let Some(args) = self.function_meta.params.get(&name.node) else {
             // Should be covered by check above
-            return Err(Error::UnknownIdentifier(name.node, name.span));
+            return Err(Error::UnknownIdentifier(name.node.clone(), name.span));
         };
 
         if args.len() != arguments.len() {
             self.errors
-                .push(Error::AgrumentMismatch(name.node, name.span));
+                .push(Error::AgrumentMismatch(name.node.clone(), name.span));
             // Proceed anyway? The assembly will likely crash or act weird.
             // Best to skip generation of this call to prevent bad IC10
             return Ok(());
@@ -275,7 +275,7 @@ impl<'a> Compiler<'a> {
 
         // jump to the function and store current line in ra
         self.write_instruction(
-            Instruction::JumpAndLink(Operand::Label(name.node)),
+            Instruction::JumpAndLink(Operand::Label(name.node.clone())),
             Some(name.span),
         )?;
 
@@ -308,7 +308,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_return(
         &mut self,
-        expr: Option<Box<Spanned<Expression<'a>>>>,
+        expr: Option<&Box<Spanned<Expression<'a>>>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<VariableLocation<'a>, Error<'a>> {
         if let Some(expr) = expr {
@@ -322,7 +322,7 @@ impl<'a> Compiler<'a> {
                 return Ok(loc);
             };
 
-            match expr.node {
+            match &expr.node {
                 Expression::Variable(var_name) => {
                     match scope.get_location_of(&var_name.node, Some(var_name.span)) {
                         Ok(loc) => match loc {
@@ -431,8 +431,8 @@ impl<'a> Compiler<'a> {
                     let span = access.span;
                     // Return result of member access
                     let res_opt = self.expression(
-                        Spanned {
-                            node: Expression::MemberAccess(access),
+                        &Spanned {
+                            node: Expression::MemberAccess(access.clone()),
                             span: expr.span,
                         },
                         scope,
@@ -454,11 +454,11 @@ impl<'a> Compiler<'a> {
                 }
                 Expression::Tuple(tuple_expr) => {
                     let span = expr.span;
-                    let tuple_elements = tuple_expr.node;
+                    let tuple_elements = &tuple_expr.node;
                     let tuple_size = tuple_elements.len();
 
                     // Push each tuple element onto the stack using compile_operand
-                    for element in tuple_elements.into_iter() {
+                    for ref element in tuple_elements.into_iter() {
                         let (push_operand, cleanup) = self.compile_operand(element, scope)?;
 
                         self.write_instruction(Instruction::Push(push_operand), Some(span))?;
@@ -544,14 +544,14 @@ impl<'a> Compiler<'a> {
     // register
     pub(super) fn expression_function(
         &mut self,
-        expr: Spanned<FunctionExpression<'a>>,
+        expr: &Spanned<FunctionExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let FunctionExpression {
             name,
             arguments,
             body,
-        } = expr.node;
+        } = &expr.node;
 
         let span = expr.span;
 
@@ -673,14 +673,14 @@ impl<'a> Compiler<'a> {
 
         self.write_instruction(Instruction::Push(Operand::ReturnAddress), Some(span))?;
 
-        for expr in body.node.0 {
-            match expr.node {
+        for expr in &body.node.0 {
+            match &expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(ret_expr, &mut block_scope)?;
+                    self.expression_return(ret_expr.as_ref(), &mut block_scope)?;
                 }
                 _ => {
                     // Swallow internal errors
-                    if let Err(e) = self.expression(expr, &mut block_scope).and_then(|result| {
+                    if let Err(e) = self.expression(&expr, &mut block_scope).and_then(|result| {
                         if let Some(comp_res) = result
                             && let Some(name) = comp_res.temp_name
                         {

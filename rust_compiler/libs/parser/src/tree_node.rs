@@ -37,7 +37,7 @@ impl<'a> std::fmt::Display for Literal<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinaryExpression<'a> {
     Add(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
     Multiply(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
@@ -72,7 +72,7 @@ impl<'a> std::fmt::Display for BinaryExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LogicalExpression<'a> {
     And(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
     Or(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
@@ -101,7 +101,7 @@ impl<'a> std::fmt::Display for LogicalExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AssignmentExpression<'a> {
     pub assignee: Box<Spanned<Expression<'a>>>,
     pub expression: Box<Spanned<Expression<'a>>>,
@@ -113,7 +113,7 @@ impl<'a> std::fmt::Display for AssignmentExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FunctionExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
     pub arguments: Vec<Spanned<Cow<'a, str>>>,
@@ -136,7 +136,7 @@ impl<'a> std::fmt::Display for FunctionExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BlockExpression<'a>(pub Vec<Spanned<Expression<'a>>>);
 
 impl<'a> std::fmt::Display for BlockExpression<'a> {
@@ -153,7 +153,7 @@ impl<'a> std::fmt::Display for BlockExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InvocationExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
     pub arguments: Vec<Spanned<Expression<'a>>>,
@@ -174,7 +174,7 @@ impl<'a> std::fmt::Display for InvocationExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MemberAccessExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
     pub member: Spanned<Cow<'a, str>>,
@@ -186,7 +186,7 @@ impl<'a> std::fmt::Display for MemberAccessExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MethodCallExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
     pub method: Spanned<Cow<'a, str>>,
@@ -209,7 +209,7 @@ impl<'a> std::fmt::Display for MethodCallExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IndexAccessExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
     pub index: Box<Spanned<Expression<'a>>>,
@@ -221,7 +221,7 @@ impl<'a> std::fmt::Display for IndexAccessExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LiteralOrVariable<'a> {
     Literal(Spanned<Literal<'a>>),
     Variable(Spanned<Cow<'a, str>>),
@@ -247,7 +247,7 @@ impl<'a> std::fmt::Display for LiteralOrVariable<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConstDeclarationExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
     pub value: LiteralOr<'a, SysCall<'a>>,
@@ -312,7 +312,7 @@ impl std::fmt::Display for DeviceType {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DeviceDeclarationExpression<'a> {
     /// any variable-like name
     pub name: Spanned<Cow<'a, str>>,
@@ -326,7 +326,7 @@ impl<'a> std::fmt::Display for DeviceDeclarationExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TupleDeclarationExpression<'a> {
     pub names: Vec<Spanned<Cow<'a, str>>>,
     pub value: Box<Spanned<Expression<'a>>>,
@@ -344,7 +344,7 @@ impl<'a> std::fmt::Display for TupleDeclarationExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TupleAssignmentExpression<'a> {
     pub names: Vec<Spanned<Cow<'a, str>>>,
     pub value: Box<Spanned<Expression<'a>>>,
@@ -362,7 +362,7 @@ impl<'a> std::fmt::Display for TupleAssignmentExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IfExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
     pub body: Spanned<BlockExpression<'a>>,
@@ -379,7 +379,7 @@ impl<'a> std::fmt::Display for IfExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LoopExpression<'a> {
     pub body: Spanned<BlockExpression<'a>>,
 }
@@ -390,13 +390,13 @@ impl<'a> std::fmt::Display for LoopExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct WhileExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
     pub body: Spanned<BlockExpression<'a>>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TernaryExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
     pub true_value: Box<Spanned<Expression<'a>>>,
@@ -442,7 +442,7 @@ impl<T> Deref for Spanned<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expression<'a> {
     Assignment(Spanned<AssignmentExpression<'a>>),
     Binary(Spanned<BinaryExpression<'a>>),

@@ -4,11 +4,11 @@ impl<'a> Compiler<'a> {
     /// Helper: Validate tuple size from function return
     pub(super) fn validate_tuple_function_size(
         &mut self,
-        func_name: Cow<'a, str>,
+        func_name: &Cow<'a, str>,
         expected_count: usize,
         span: Span,
     ) {
-        if let Some(&actual_size) = self.function_meta.tuple_return_sizes.get(&func_name)
+        if let Some(&actual_size) = self.function_meta.tuple_return_sizes.get(func_name)
             && actual_size != expected_count
         {
             self.errors
@@ -87,7 +87,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_tuple_declaration(
         &mut self,
-        tuple_decl: TupleDeclarationExpression<'a>,
+        tuple_decl: &TupleDeclarationExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let TupleDeclarationExpression { names, value } = tuple_decl;
@@ -116,14 +116,14 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        match value.node {
+        match &value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call - tuple values will be on the stack
                 self.expression_function_invocation_with_invocation(&invoke_expr, scope, false)?;
 
                 // Validate tuple return size matches the declaration
                 self.validate_tuple_function_size(
-                    invoke_expr.node.name.node,
+                    &invoke_expr.node.name.node,
                     names.len(),
                     value.span,
                 );
@@ -150,7 +150,7 @@ impl<'a> Compiler<'a> {
             }
             Expression::Tuple(tuple_expr) => {
                 // Direct tuple literal: (value1, value2, ...)
-                let tuple_elements = tuple_expr.node;
+                let tuple_elements = &tuple_expr.node;
 
                 // Validate tuple size matches names
                 if tuple_elements.len() != names.len() {
@@ -176,7 +176,7 @@ impl<'a> Compiler<'a> {
                     )?;
 
                     // Compile the element expression - use compile_operand to handle all expression types
-                    let (value_operand, cleanup) = self.compile_operand(element, scope)?;
+                    let (value_operand, cleanup) = self.compile_operand(&element, scope)?;
                     self.emit_variable_assignment(&var_location, value_operand)?;
 
                     // Clean up any temporary registers used for complex expressions
@@ -199,19 +199,19 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_tuple_assignment(
         &mut self,
-        tuple_assign: TupleAssignmentExpression<'a>,
+        tuple_assign: &TupleAssignmentExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let TupleAssignmentExpression { names, value } = tuple_assign;
 
-        match value.node {
+        match &value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call - tuple values will be on the stack
                 self.expression_function_invocation_with_invocation(&invoke_expr, scope, false)?;
 
                 // Validate tuple return size matches the assignment
                 self.validate_tuple_function_size(
-                    invoke_expr.node.name.node,
+                    &invoke_expr.node.name.node,
                     names.len(),
                     value.span,
                 );
@@ -242,7 +242,7 @@ impl<'a> Compiler<'a> {
             }
             Expression::Tuple(tuple_expr) => {
                 // Direct tuple literal: (value1, value2, ...)
-                let tuple_elements = tuple_expr.node;
+                let tuple_elements = &tuple_expr.node;
 
                 // Validate tuple size matches names
                 if tuple_elements.len() != names.len() {
@@ -274,7 +274,7 @@ impl<'a> Compiler<'a> {
                         };
 
                     // Compile the element expression - use compile_operand to handle all expression types
-                    let (value_operand, cleanup) = self.compile_operand(element, scope)?;
+                    let (value_operand, cleanup) = self.compile_operand(&element, scope)?;
 
                     // Assign the compiled value to the target variable location
                     match &var_location {

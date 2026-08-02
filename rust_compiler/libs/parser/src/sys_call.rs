@@ -6,7 +6,7 @@ use crate::{
 use helpers::prelude::*;
 
 documented! {
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
     pub enum Math<'a> {
         /// Returns the angle in radians whose cosine is the specified number.
         /// ## IC10
@@ -199,7 +199,7 @@ impl<'a> Math<'a> {
 }
 
 documented! {
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
     pub enum System<'a> {
         /// Pauses execution for exactly 1 tick and then resumes.
         /// ## IC10
@@ -524,7 +524,7 @@ impl<'a> System<'a> {
 }
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// This represents built in functions that cannot be overwritten, but can be invoked by the user as functions.
 pub enum SysCall<'a> {
     System(System<'a>),

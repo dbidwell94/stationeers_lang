@@ -3,7 +3,7 @@ use super::*;
 impl<'a> Compiler<'a> {
     pub(super) fn resolve_device(
         &mut self,
-        expr: Spanned<Expression<'a>>,
+        expr: &Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
         // If it's a direct variable reference, check if it's a known device alias first
@@ -65,7 +65,7 @@ impl<'a> Compiler<'a> {
     pub(super) fn expression_declaration(
         &mut self,
         var_name: Spanned<Cow<'a, str>>,
-        expr: Spanned<Expression<'a>>,
+        expr: &Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
         let name_str = var_name.node;
@@ -93,7 +93,7 @@ impl<'a> Compiler<'a> {
             }));
         }
 
-        let (loc, temp_name) = match expr.node {
+        let (loc, temp_name) = match &expr.node {
             Expression::Literal(spanned_lit) => match spanned_lit.node {
                 Literal::Number(num) => {
                     let var_location = scope.add_variable(
@@ -135,7 +135,7 @@ impl<'a> Compiler<'a> {
                 (loc, None)
             }
             Expression::Syscall(spanned_call) => {
-                let sys_call = spanned_call.node;
+                let sys_call = &spanned_call.node;
                 let res = match sys_call {
                     SysCall::System(s) => {
                         self.expression_syscall_system(s, spanned_call.span, scope)?
@@ -273,15 +273,15 @@ impl<'a> Compiler<'a> {
                         node: name_str,
                         span: name_span,
                     },
-                    *inner,
+                    &*inner,
                     scope,
                 );
             }
             Expression::MemberAccess(access) => {
                 // Compile the member access (load instruction)
                 let result = self.expression(
-                    Spanned {
-                        node: Expression::MemberAccess(access),
+                    &Spanned {
+                        node: Expression::MemberAccess(access.clone()),
                         span: name_span, // Use declaration span roughly
                     },
                     scope,
@@ -311,7 +311,7 @@ impl<'a> Compiler<'a> {
                 (var_loc, None)
             }
             Expression::Ternary(ternary) => {
-                let res = self.expression_ternary(ternary.node, scope)?;
+                let res = self.expression_ternary(&ternary.node, scope)?;
                 let var_loc = scope.add_variable(
                     name_str.clone(),
                     LocationRequest::Persist,
@@ -434,7 +434,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_assignment(
         &mut self,
-        expr: AssignmentExpression<'a>,
+        expr: &AssignmentExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let AssignmentExpression {
@@ -444,7 +444,7 @@ impl<'a> Compiler<'a> {
 
         let expr_span = expression.span;
 
-        match assignee.node {
+        match &assignee.node {
             Expression::Variable(identifier) => {
                 let location = match scope.get_location_of(&identifier.node, Some(identifier.span))
                 {
@@ -458,7 +458,7 @@ impl<'a> Compiler<'a> {
                     }
                 };
 
-                let (val, cleanup) = self.compile_operand(*expression, scope)?;
+                let (val, cleanup) = self.compile_operand(&*expression, scope)?;
 
                 match location {
                     VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
@@ -489,10 +489,10 @@ impl<'a> Compiler<'a> {
                         )?;
                     }
                     VariableLocation::Constant(_) => {
-                        return Err(Error::ConstAssignment(identifier.node, identifier.span));
+                        return Err(Error::ConstAssignment(identifier.node.clone(), identifier.span));
                     }
                     VariableLocation::Device(_) => {
-                        return Err(Error::DeviceAssignment(identifier.node, identifier.span));
+                        return Err(Error::DeviceAssignment(identifier.node.clone(), identifier.span));
                     }
                 }
 
@@ -502,13 +502,13 @@ impl<'a> Compiler<'a> {
             }
             Expression::MemberAccess(access) => {
                 // Set instruction: s device member value
-                let MemberAccessExpression { object, member } = access.node;
+                let MemberAccessExpression { object, member } = &access.node;
 
-                let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
-                let (val, val_cleanup) = self.compile_operand(*expression, scope)?;
+                let (device, dev_cleanup) = self.resolve_device(&object, scope)?;
+                let (val, val_cleanup) = self.compile_operand(&*expression, scope)?;
 
                 self.write_instruction(
-                    Instruction::Store(device, Operand::LogicType(member.node), val),
+                    Instruction::Store(device, Operand::LogicType(member.node.clone()), val),
                     Some(member.span),
                 )?;
 
@@ -521,9 +521,9 @@ impl<'a> Compiler<'a> {
             }
             Expression::IndexAccess(access) => {
                 // Put instruction: put device address value
-                let IndexAccessExpression { object, index } = access.node;
+                let IndexAccessExpression { object, index } = &access.node;
 
-                let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
+                let (device, dev_cleanup) = self.resolve_device(&object, scope)?;
 
                 // Check if device is "db" (not allowed)
                 if let Operand::Device(ref dev_str) = device
@@ -536,7 +536,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 let ((addr, addr_cleanup), (val, val_cleanup)) =
-                    compile_operands!(self, (*index, *expression), scope);
+                    compile_operands!(self, (&*index, &*expression), scope);
 
                 self.write_instruction(Instruction::Put(device, addr, val), Some(assignee.span))?;
 
@@ -565,7 +565,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_device(
         &mut self,
-        expr: DeviceDeclarationExpression<'a>,
+        expr: &DeviceDeclarationExpression<'a>,
     ) -> Result<(), Error<'a>> {
         // Track the device declaration in metadata
         let doc_comment = self
@@ -588,7 +588,7 @@ impl<'a> Compiler<'a> {
             // But we already have it.
             return Ok(());
         }
-        self.devices.insert(expr.name.node, expr.device.node);
+        self.devices.insert(expr.name.node.clone(), expr.device.node.clone());
 
         Ok(())
     }
@@ -617,7 +617,7 @@ impl<'a> Compiler<'a> {
     /// so the caller can free it.
     pub(super) fn compile_operand(
         &mut self,
-        expr: Spanned<Expression<'a>>,
+        expr: &Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
         // Optimization for literals
@@ -737,7 +737,7 @@ impl<'a> Compiler<'a> {
             LiteralOrVariable::Literal(l) => (l.span, Expression::Literal(l)),
             LiteralOrVariable::Variable(v) => (v.span, Expression::Variable(v)),
         };
-        self.compile_operand(Spanned { node: expr, span }, scope)
+        self.compile_operand(&Spanned { node: expr, span }, scope)
     }
 
     /// Compiles an expression and validates that it must result in a constant string value.
@@ -748,7 +748,7 @@ impl<'a> Compiler<'a> {
     /// - The expression is not a string
     pub(super) fn compile_const_string(
         &mut self,
-        expr: Spanned<Expression<'a>>,
+        expr: &Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
         span: Span,
     ) -> Result<Cow<'a, str>, Error<'a>> {
@@ -788,7 +788,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_binary(
         &mut self,
-        expr: Spanned<BinaryExpression<'a>>,
+        expr: &Spanned<BinaryExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompileLocation<'a>, Error<'a>> {
         fn fold_binary_expression<'a>(
@@ -940,9 +940,9 @@ impl<'a> Compiler<'a> {
         #[allow(clippy::type_complexity)]
         let (op_instr, left_expr, right_expr): (
             fn(Operand<'a>, Operand<'a>, Operand<'a>) -> Instruction<'a>,
-            Box<Spanned<Expression<'a>>>,
-            Box<Spanned<Expression<'a>>>,
-        ) = match expr.node {
+            &Box<Spanned<Expression<'a>>>,
+            &Box<Spanned<Expression<'a>>>,
+        ) = match &expr.node {
             BinaryExpression::Add(l, r) => {
                 (|into, lhs, rhs| Instruction::Add(into, lhs, rhs), l, r)
             }
@@ -984,7 +984,7 @@ impl<'a> Compiler<'a> {
         let span = Self::merge_spans(left_expr.span, right_expr.span);
 
         // Compile LHS
-        let (lhs_tup, rhs_tup) = compile_operands!(self, (*left_expr, *right_expr), scope);
+        let (lhs_tup, rhs_tup) = compile_operands!(self, (&left_expr, &right_expr), scope);
 
         // Allocate result register
         let result_name = self.next_temp_name();
@@ -1008,13 +1008,13 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_logical(
         &mut self,
-        expr: Spanned<LogicalExpression<'a>>,
+        expr: &Spanned<LogicalExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompileLocation<'a>, Error<'a>> {
-        match expr.node {
+        match &expr.node {
             LogicalExpression::Not(inner) => {
                 let span = inner.span;
-                let (inner_str, cleanup) = self.compile_operand(*inner, scope)?;
+                let (inner_str, cleanup) = self.compile_operand(&inner, scope)?;
 
                 let result_name = self.next_temp_name();
                 let result_loc =
@@ -1044,9 +1044,9 @@ impl<'a> Compiler<'a> {
                 #[allow(clippy::type_complexity)]
                 let (op_instr, left_expr, right_expr): (
                     fn(Operand<'a>, Operand<'a>, Operand<'a>) -> Instruction<'a>,
-                    Box<Spanned<Expression<'a>>>,
-                    Box<Spanned<Expression<'a>>>,
-                ) = match expr.node {
+                    &Box<Spanned<Expression<'a>>>,
+                    &Box<Spanned<Expression<'a>>>,
+                ) = match &expr.node {
                     LogicalExpression::And(l, r) => {
                         (|into, lhs, rhs| Instruction::And(into, lhs, rhs), l, r)
                     }
@@ -1077,7 +1077,7 @@ impl<'a> Compiler<'a> {
                 let span = Self::merge_spans(left_expr.span, right_expr.span);
 
                 let ((lhs, lhs_cleanup), (rhs, rhs_cleanup)) =
-                    compile_operands!(self, (*left_expr, *right_expr), scope);
+                    compile_operands!(self, (&left_expr, &right_expr), scope);
 
                 // Allocate result register
                 let result_name = self.next_temp_name();

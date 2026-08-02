@@ -3,7 +3,7 @@ use super::*;
 impl<'a> Compiler<'a> {
     pub(super) fn expression_if(
         &mut self,
-        expr: IfExpression<'a>,
+        expr: &IfExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let end_label = self.next_label_name();
@@ -16,7 +16,7 @@ impl<'a> Compiler<'a> {
         let cond_span = expr.condition.span;
 
         // Compile Condition
-        let (cond, cleanup) = self.compile_operand(*expr.condition, scope)?;
+        let (cond, cleanup) = self.compile_operand(&*expr.condition, scope)?;
 
         // If condition is FALSE (0), jump to else_label
         self.write_instruction(
@@ -32,10 +32,10 @@ impl<'a> Compiler<'a> {
 
         // Compile Body
         // Scope variables in body are ephemeral to the block, handled by expression_block
-        self.expression_block(expr.body, scope)?;
+        self.expression_block(&expr.body, scope)?;
 
         // If we have an else branch, we need to jump over it after the 'if' body
-        if let Some(else_branch) = expr.else_branch {
+        if let Some(ref else_branch) = expr.else_branch {
             self.write_instruction(
                 Instruction::Jump(Operand::Label(end_label.clone())),
                 Some(else_branch.span),
@@ -43,8 +43,8 @@ impl<'a> Compiler<'a> {
             self.write_instruction(Instruction::LabelDef(else_label), Some(else_branch.span))?;
 
             match else_branch.node {
-                Expression::Block(block) => self.expression_block(block, scope)?,
-                Expression::If(if_expr) => self.expression_if(if_expr.node, scope)?,
+                Expression::Block(ref block) => self.expression_block(block, scope)?,
+                Expression::If(ref if_expr) => self.expression_if(&if_expr.node, scope)?,
                 _ => unreachable!("Parser ensures else branch is Block or If"),
             }
         }
@@ -56,7 +56,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_loop(
         &mut self,
-        expr: LoopExpression<'a>,
+        expr: &LoopExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let start_label = self.next_label_name();
@@ -77,7 +77,7 @@ impl<'a> Compiler<'a> {
         )?;
 
         // Compile Body
-        self.expression_block(expr.body, scope)?;
+        self.expression_block(&expr.body, scope)?;
 
         // Jump back to start
         self.write_instruction(
@@ -93,7 +93,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_while(
         &mut self,
-        expr: WhileExpression<'a>,
+        expr: &WhileExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let start_label = self.next_label_name();
@@ -110,7 +110,7 @@ impl<'a> Compiler<'a> {
         self.write_instruction(Instruction::LabelDef(start_label.clone()), Some(span))?;
 
         // Compile Condition
-        let (cond, cleanup) = self.compile_operand(*expr.condition, scope)?;
+        let (cond, cleanup) = self.compile_operand(&expr.condition, scope)?;
 
         // If condition is FALSE, jump to end
         self.write_instruction(
@@ -123,7 +123,7 @@ impl<'a> Compiler<'a> {
         }
 
         // Compile Body
-        self.expression_block(expr.body, scope)?;
+        self.expression_block(&expr.body, scope)?;
 
         // Jump back to start
         self.write_instruction(Instruction::Jump(Operand::Label(start_label)), Some(span))?;
@@ -204,7 +204,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_ternary(
         &mut self,
-        expr: TernaryExpression<'a>,
+        expr: &TernaryExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompileLocation<'a>, Error<'a>> {
         let TernaryExpression {
@@ -221,7 +221,7 @@ impl<'a> Compiler<'a> {
         };
 
         let ((cond, cond_clean), (true_val, true_clean), (false_val, false_clean)) =
-            compile_operands!(self, (*condition, *true_value, *false_value), scope);
+            compile_operands!(self, (&*condition, &*true_value, &*false_value), scope);
 
         let result_name = self.next_temp_name();
         let result_loc = scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
@@ -252,7 +252,7 @@ impl<'a> Compiler<'a> {
     /// instruction emission to load. Use `compile_operand` for general handling.
     pub(super) fn expression_block<'v>(
         &mut self,
-        mut expr: Spanned<BlockExpression<'a>>,
+        expr: &Spanned<BlockExpression<'a>>,
         parent_scope: &'v mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         fn get_expression_priority<'a>(expr: &Spanned<Expression<'a>>) -> u32 {
@@ -264,17 +264,18 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        // First, sort the expressions to ensure functions are hoisted
-        expr.node.0.sort_by(|a, b| {
-            let a_cost = get_expression_priority(a);
-            let b_cost = get_expression_priority(b);
+        let mut indices = (0..expr.node.0.len()).collect::<Vec<usize>>();
 
+        indices.sort_by(|&i, &j| {
+            let a_cost = get_expression_priority(&expr.node.0[i]);
+            let b_cost = get_expression_priority(&expr.node.0[j]);
             a_cost.cmp(&b_cost)
         });
 
         let mut scope = VariableScope::scoped(parent_scope);
 
-        for expr in expr.node.0 {
+        for &i in &indices {
+            let expr = &expr.node.0[i];
             if !self.declared_main
                 && !matches!(
                     expr.node,
@@ -288,9 +289,9 @@ impl<'a> Compiler<'a> {
                 self.declared_main = true;
             }
 
-            match expr.node {
+            match &expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(ret_expr, &mut scope)?;
+                    self.expression_return(ret_expr.as_ref(), &mut scope)?;
                 }
                 _ => {
                     // Swallow errors within expressions so block can continue

@@ -19,7 +19,7 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
         .expect("Failed to analyze source code");
 
     let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
-    let result = compiler.compile(output.root);
+    let result = compiler.compile(&output.root);
 
     // Get unoptimized output
     let mut unoptimized_writer = std::io::BufWriter::new(Vec::new());
@@ -47,7 +47,7 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
         .expect("Failed to analyze source code");
 
     let compiler2 = Compiler::new(analyze_result2, output2.declaration_docs, None);
-    let result2 = compiler2.compile(output2.root);
+    let result2 = compiler2.compile(&output2.root);
 
     // Apply optimizations
     let optimized_instructions = optimizer::optimize(result2.instructions);
