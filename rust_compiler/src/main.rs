@@ -33,6 +33,12 @@ impl From<parser::Error<'_>> for CliError {
     }
 }
 
+impl From<parser::Errors<'_>> for CliError {
+    fn from(value: parser::Errors<'_>) -> Self {
+        Self::Parser(value.to_string())
+    }
+}
+
 impl From<compiler::Error<'_>> for CliError {
     fn from(value: compiler::Error<'_>) -> Self {
         Self::Compile(value.to_string())
@@ -87,8 +93,7 @@ fn run_logic() -> Result<(), CliError> {
     let tokenizer = Tokenizer::from(input_string.as_str());
     let parser = ASTParser::new(tokenizer);
     let output = parser.parse_all().map_err(CliError::from)?;
-    let output =
-        output.ok_or_else(|| std::io::Error::other("No parse output"))?;
+    let output = output.ok_or_else(|| std::io::Error::other("No parse output"))?;
 
     let mut writer: BufWriter<Box<dyn Write>> = match args.output_file {
         Some(output_file) => BufWriter::new(Box::new(File::create(output_file)?)),

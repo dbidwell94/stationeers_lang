@@ -39,13 +39,10 @@ macro_rules! compile {
                 res.instructions.write(&mut writer)?;
             }
             Ok(None) => {}
-            Err(err) => {
-                let res = crate::CompilationResult {
-                    errors: vec![crate::Error::from(err)],
-                    instructions: il::Instructions::default(),
-                    metadata: crate::CompilationMetadata::new(),
-                };
-                res.instructions.write(&mut writer)?;
+            Err(parser_errs) => {
+                for e in parser_errs.0 {
+                    let _ = e; // parse errors can't produce instructions
+                }
             }
         }
 
@@ -76,7 +73,11 @@ macro_rules! compile {
                 res.errors.into_iter().map(|err| err.into_owned()).collect()
             }
             Ok(None) => Vec::new(),
-            Err(err) => vec![crate::Error::from(err).into_owned()],
+            Err(parser_errs) => parser_errs
+                .0
+                .into_iter()
+                .map(|e| crate::Error::Parse(e).into_owned())
+                .collect(),
         }
     }};
 
@@ -105,15 +106,11 @@ macro_rules! compile {
                 res.errors.into_iter().map(|err| err.into_owned()).collect()
             }
             Ok(None) => Vec::new(),
-            Err(err) => {
-                let res = crate::CompilationResult {
-                    errors: vec![crate::Error::from(err)],
-                    instructions: il::Instructions::default(),
-                    metadata: crate::CompilationMetadata::new(),
-                };
-                res.instructions.write(&mut writer)?;
-                res.errors.into_iter().map(|err| err.into_owned()).collect()
-            }
+            Err(parser_errs) => parser_errs
+                .0
+                .into_iter()
+                .map(|e| crate::Error::Parse(e).into_owned())
+                .collect(),
         };
 
         let output = output!(writer);

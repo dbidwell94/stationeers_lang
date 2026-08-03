@@ -160,10 +160,10 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilat
 
         let tokenizer = Tokenizer::from(input.as_str());
         let parser = Parser::new(tokenizer);
-        let output = parser
-            .parse_all()
-            .expect("Failed to parse source code")
-            .expect("No parse output");
+        let output = match parser.parse_all() {
+            Ok(Some(o)) => o,
+            Ok(None) | Err(_) => return (safer_ffi::String::EMPTY, Default::default()),
+        };
         let analyze_result = Analyzer::default()
             .analyze(&output.root)
             .expect("Failed to analyze source code");
@@ -294,10 +294,18 @@ pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<
 
         let tokenizer = Tokenizer::from(input.as_str());
         let parser = Parser::new(tokenizer);
-        let output = parser
-            .parse_all()
-            .expect("Failed to parse source code")
-            .expect("No parse output");
+        let output = match parser.parse_all() {
+            Ok(Some(o)) => o,
+            Ok(None) => return vec![].into(),
+            Err(parse_errs) => {
+                return parse_errs
+                    .0
+                    .into_iter()
+                    .map(|e| lsp_types::Diagnostic::from(compiler::Error::Parse(e)).into())
+                    .collect::<Vec<_>>()
+                    .into();
+            }
+        };
         let analyze_result = Analyzer::default()
             .analyze(&output.root)
             .expect("Failed to analyze source code");
@@ -328,10 +336,19 @@ pub fn diagnose_source_with_symbols(
 
         let tokenizer = Tokenizer::from(input.as_str());
         let parser = Parser::new(tokenizer);
-        let output = parser
-            .parse_all()
-            .expect("Failed to parse source code")
-            .expect("No parse output");
+        let output = match parser.parse_all() {
+            Ok(Some(o)) => o,
+            Ok(None) => return FfiDiagnosticsAndSymbols { diagnostics: vec![].into(), symbols: vec![].into() },
+            Err(parse_errs) => {
+                let diagnostics = parse_errs
+                    .0
+                    .into_iter()
+                    .map(|e| lsp_types::Diagnostic::from(compiler::Error::Parse(e)).into())
+                    .collect::<Vec<_>>()
+                    .into();
+                return FfiDiagnosticsAndSymbols { diagnostics, symbols: vec![].into() };
+            }
+        };
         let analyze_result = Analyzer::default()
             .analyze(&output.root)
             .expect("Failed to analyze source code");

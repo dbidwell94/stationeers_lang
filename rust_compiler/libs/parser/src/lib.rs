@@ -21,7 +21,9 @@ pub trait Documentation {
 #[macro_export]
 macro_rules! parse {
     ($input:expr) => {
-        Parser::new(Tokenizer::from($input)).parse_all()?.map(|output| output.root)
+        Parser::new(Tokenizer::from($input))
+            .parse_all()?
+            .map(|output| output.root)
     };
 }
 
@@ -73,7 +75,7 @@ mod error;
 mod expressions;
 mod recovery;
 
-pub use error::Error;
+pub use error::{Error, Errors};
 
 pub struct Parser<'a> {
     tokenizer: TokenizerBuffer<'a>,
@@ -192,7 +194,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_all(mut self) -> Result<Option<ParseOutput<'a>>, Error<'a>> {
+    pub fn parse_all(mut self) -> Result<Option<ParseOutput<'a>>, Errors<'a>> {
         let first_token = self.tokenizer.peek().unwrap_or(None);
         let (start_line, start_col) = first_token
             .as_ref()
@@ -245,10 +247,14 @@ impl<'a> Parser<'a> {
             span,
         };
 
-        Ok(Some(ParseOutput {
-            root: root_node,
-            declaration_docs: self.declaration_docs,
-        }))
+        if self.errors.is_empty() {
+            Ok(Some(ParseOutput {
+                root: root_node,
+                declaration_docs: self.declaration_docs,
+            }))
+        } else {
+            Err(Errors(self.errors))
+        }
     }
 
     pub fn parse(&mut self) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {
