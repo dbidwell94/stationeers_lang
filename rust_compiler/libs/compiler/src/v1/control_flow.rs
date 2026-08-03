@@ -71,10 +71,7 @@ impl<'a> Compiler<'a> {
 
         let body_span = expr.body.span;
 
-        self.write_instruction(
-            Instruction::LabelDef(start_label.clone()),
-            Some(body_span),
-        )?;
+        self.write_instruction(Instruction::LabelDef(start_label.clone()), Some(body_span))?;
 
         // Compile Body
         self.expression_block(&expr.body, scope)?;
@@ -255,27 +252,9 @@ impl<'a> Compiler<'a> {
         expr: &Spanned<BlockExpression<'a>>,
         parent_scope: &'v mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
-        fn get_expression_priority<'a>(expr: &Spanned<Expression<'a>>) -> u32 {
-            match expr.node {
-                Expression::ConstDeclaration(_) => 0,
-                Expression::DeviceDeclaration(_) => 1,
-                Expression::Function(_) => 2,
-                _ => 3,
-            }
-        }
-
-        let mut indices = (0..expr.node.0.len()).collect::<Vec<usize>>();
-
-        indices.sort_by(|&i, &j| {
-            let a_cost = get_expression_priority(&expr.node.0[i]);
-            let b_cost = get_expression_priority(&expr.node.0[j]);
-            a_cost.cmp(&b_cost)
-        });
-
         let mut scope = VariableScope::scoped(parent_scope);
 
-        for &i in &indices {
-            let expr = &expr.node.0[i];
+        for expr in expr.node.hoisted() {
             if !self.declared_main
                 && !matches!(
                     expr.node,

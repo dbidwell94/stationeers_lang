@@ -5,6 +5,7 @@ use safer_ffi::prelude::*;
 use std::{borrow::Cow, ops::Deref};
 use tokenizer::token::{Number, Token, TokenType, Unit};
 
+/// Represents a literal value in the abstract syntax tree (AST).
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Literal<'a> {
     Number(Number),
@@ -12,6 +13,7 @@ pub enum Literal<'a> {
     Boolean(bool),
 }
 
+/// Represents either a literal value or an alternative type `T`.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum LiteralOr<'a, T> {
     Literal(Spanned<Literal<'a>>),
@@ -37,6 +39,7 @@ impl<'a> std::fmt::Display for Literal<'a> {
     }
 }
 
+/// Represents a binary expression, which includes operations like addition, subtraction, multiplication, division, and more.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinaryExpression<'a> {
     Add(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
@@ -72,6 +75,7 @@ impl<'a> std::fmt::Display for BinaryExpression<'a> {
     }
 }
 
+/// Represents a logical expression, which includes logical operations like AND, OR, NOT, and comparison operations.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LogicalExpression<'a> {
     And(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
@@ -101,6 +105,7 @@ impl<'a> std::fmt::Display for LogicalExpression<'a> {
     }
 }
 
+/// Represents an assignment expression, where a value is assigned to a variable or a property.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AssignmentExpression<'a> {
     pub assignee: Box<Spanned<Expression<'a>>>,
@@ -113,6 +118,7 @@ impl<'a> std::fmt::Display for AssignmentExpression<'a> {
     }
 }
 
+/// Represents a function expression, which includes the function's name, its arguments, and its body.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FunctionExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
@@ -136,8 +142,33 @@ impl<'a> std::fmt::Display for FunctionExpression<'a> {
     }
 }
 
+/// Represents a block of expressions, which can be executed in sequence.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BlockExpression<'a>(pub Vec<Spanned<Expression<'a>>>);
+
+impl<'a> BlockExpression<'a> {
+    /// Returns an iterator over the expressions in the block, sorted by their "hoisted" order.
+    ///
+    /// # Example
+    /// ```no_run
+    ///
+    /// for expr in block_expr.hoisted() {
+    ///     // Process the expression in hoisted order
+    /// }
+    /// ```
+    pub fn hoisted(&self) -> impl Iterator<Item = &Spanned<Expression<'a>>> {
+        let mut indices = (0..self.0.len()).collect::<Vec<usize>>();
+
+        indices.sort_by_key(|&index| match self.0[index].node {
+            Expression::DeviceDeclaration(_) => 0,
+            Expression::ConstDeclaration(_) => 1,
+            Expression::Function(_) => 2,
+            _ => 3,
+        });
+
+        indices.into_iter().map(move |index| &self.0[index])
+    }
+}
 
 impl<'a> std::fmt::Display for BlockExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -153,6 +184,7 @@ impl<'a> std::fmt::Display for BlockExpression<'a> {
     }
 }
 
+/// Represents an invocation expression, which includes the function's name and its arguments.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InvocationExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
@@ -174,6 +206,7 @@ impl<'a> std::fmt::Display for InvocationExpression<'a> {
     }
 }
 
+/// Represents a member access expression, which includes the object and the member being accessed.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MemberAccessExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
@@ -186,6 +219,7 @@ impl<'a> std::fmt::Display for MemberAccessExpression<'a> {
     }
 }
 
+/// Represents a method call expression, which includes the object, the method being called, and its arguments.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MethodCallExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
@@ -209,6 +243,7 @@ impl<'a> std::fmt::Display for MethodCallExpression<'a> {
     }
 }
 
+/// Represents an index access expression, which includes the object and the index being accessed.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IndexAccessExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
@@ -221,6 +256,7 @@ impl<'a> std::fmt::Display for IndexAccessExpression<'a> {
     }
 }
 
+/// Represents either a literal value or a variable name in the abstract syntax tree (AST).
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LiteralOrVariable<'a> {
     Literal(Spanned<Literal<'a>>),
@@ -228,6 +264,7 @@ pub enum LiteralOrVariable<'a> {
 }
 
 impl<'a> Spanned<LiteralOrVariable<'a>> {
+    /// Walks the AST node and applies the provided visitor to each node.
     pub fn walk<V: AstVisitor<'a>>(&'a self, visitor: &mut V) {
         match &self.node {
             LiteralOrVariable::Literal(l) => visitor.visit_literal(l),
@@ -247,6 +284,7 @@ impl<'a> std::fmt::Display for LiteralOrVariable<'a> {
     }
 }
 
+/// Represents a constant declaration expression, which includes the constant's name and its value.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConstDeclarationExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
@@ -266,6 +304,7 @@ impl<'a> std::fmt::Display for ConstDeclarationExpression<'a> {
     }
 }
 
+/// Represents a device type in the abstract syntax tree (AST), which can be a pin, housing, or reference.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum DeviceType {
     /// Represents a device pin (ex. d0, d1, d2, d3, d4, d5)

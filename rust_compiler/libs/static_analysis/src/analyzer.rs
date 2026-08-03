@@ -260,17 +260,10 @@ impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
         &mut self,
         spanned: &'a Spanned<parser::tree_node::BlockExpression<'a>>,
     ) {
-        let mut expression_indexes = (0..spanned.0.len()).collect::<Vec<_>>();
-        expression_indexes.sort_by_key(|&index| match spanned.0[index].node {
-            Expression::DeviceDeclaration(_) => 0,
-            Expression::ConstDeclaration(_) => 1,
-            Expression::Function(_) => 2,
-            _ => 3,
-        });
-
         self.symbol_table.enter_scope();
-        for index in expression_indexes {
-            self.visit_expression(&spanned.0[index]);
+
+        for expr in spanned.hoisted() {
+            self.visit_expression(expr);
         }
         self.symbol_table.exit_scope();
     }

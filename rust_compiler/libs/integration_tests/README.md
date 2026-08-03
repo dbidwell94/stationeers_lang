@@ -1,92 +1,87 @@
-# Integration Tests for Slang Compiler with Optimizer
+# Integration Tests
 
-This crate contains end-to-end integration tests for the Slang compiler that verify the complete compilation pipeline including all optimization passes.
+## What is this?
 
-## Snapshot Testing with Insta
+The integration_tests crate runs end-to-end checks for the full Slang compilation pipeline.
 
-These tests use [insta](https://insta.rs/) for snapshot testing, which captures the entire compiled output and stores it in snapshot files for comparison.
+Instead of testing one crate in isolation, it validates that tokenizer, parser, analysis, compiler, and optimizer all work together on real programs.
 
-### Running Tests
+## What does it do?
+
+This crate compiles Slang source through the full pipeline and snapshot-tests the resulting output.
+
+Its test helper compiles the same source twice:
+
+- Once without optimizer passes
+- Once with optimizer passes
+
+Then it stores and compares both outputs in a snapshot, so behavior changes are easy to spot.
+
+**Example:**
+
+```rust
+let output = compile_with_and_without_optimization(source);
+insta::assert_snapshot!(output);
+```
+
+Snapshot text typically contains sections like:
+
+```text
+## Unoptimized Output
+...
+## Optimized Output
+...
+```
+
+## Why is this useful?
+
+Unit tests can prove small pieces are correct, but integration tests prove the whole system behaves correctly when all stages are connected.
+
+This crate helps by:
+
+- Catching regressions across crate boundaries
+- Verifying optimizer changes against real compiled output
+- Making output changes easy to review with snapshot diffs
+- Acting as living documentation of expected pipeline behavior
+
+## Who should care?
+
+- Compiler developers changing parsing, analysis, or codegen behavior
+- Optimizer contributors validating pass interactions
+- Contributors reviewing output regressions across the full pipeline
+
+## How does it work?
+
+At a high level, each integration test follows this flow:
+
+- Parse source into AST
+- Run static analysis
+- Compile to IL/IC10 instructions
+- Capture unoptimized output
+- Run optimizer and capture optimized output
+- Compare both outputs against stored snapshots
+
+In short: unit tests answer "does this piece work?" and integration tests answer "does the full pipeline still work together?"
+
+## Running tests
 
 ```bash
 # Run all integration tests
 cargo test --package integration_tests
 
 # Run a specific test
-cargo test --package integration_tests test_simple_leaf_function
+cargo test --package integration_tests test_tuples
 ```
 
-### Updating Snapshots
-
-When you make changes to the compiler or optimizer that affect the output:
+## Updating snapshots
 
 ```bash
 # Update all snapshots automatically
 INSTA_UPDATE=always cargo test --package integration_tests
 
-# Or use cargo-insta for interactive review (install first: cargo install cargo-insta)
+# Interactive review (requires cargo-insta)
 cargo insta test --package integration_tests
 cargo insta review --package integration_tests
 ```
 
-### Understanding Snapshots
-
-Snapshot files are stored in `src/snapshots/` and contain:
-
-- The full IC10 assembly output from compiling Slang source code
-- Metadata about which test generated them
-- The expression that produced the output
-
-Example snapshot structure:
-
-```
----
-source: libs/integration_tests/src/lib.rs
-expression: output
----
-j main
-move r8 10
-j ra
-```
-
-### What We Test
-
-1. **Leaf Function Optimization** - Removal of unnecessary `push sp/ra` and `pop ra/sp`
-2. **Function Calls** - Preservation of stack frame when calling functions
-3. **Constant Folding** - Compile-time evaluation of constant expressions
-4. **Algebraic Simplification** - Identity operations like `x * 1` → `x`
-5. **Strength Reduction** - Converting expensive operations like `x * 2` → `x + x`
-6. **Dead Code Elimination** - Removal of unused variables
-7. **Peephole Comparison Fusion** - Combining comparison + branch instructions
-8. **Select Optimization** - Converting if/else to single `select` instruction
-9. **Complex Arithmetic** - Multiple optimizations working together
-10. **Nested Function Calls** - Full program optimization
-
-### Adding New Tests
-
-To add a new integration test:
-
-1. Add a new `#[test]` function in `src/lib.rs`
-2. Call `compile_optimized()` with your Slang source code
-3. Use `insta::assert_snapshot!(output)` to capture the output
-4. Run with `INSTA_UPDATE=always` to create the initial snapshot
-5. Review the snapshot file to ensure it looks correct
-
-Example:
-
-```rust
-#[test]
-fn test_my_optimization() {
-    let source = "fn foo(x) { return x + 1; }";
-    let output = compile_optimized(source);
-    insta::assert_snapshot!(output);
-}
-```
-
-### Benefits of Snapshot Testing
-
-- **Full Output Verification**: Tests the entire compiled output, not just snippets
-- **Easy to Review**: Visual diffs show exactly what changed in the output
-- **Regression Detection**: Any change to output is immediately visible
-- **Living Documentation**: Snapshots serve as examples of compiler output
-- **Less Brittle**: No need to manually update expected strings when making intentional changes
+Snapshots are stored under src/snapshots/.
