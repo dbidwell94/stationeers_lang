@@ -190,6 +190,9 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         Ok(var_location)
     }
 
+    /// Adds and tracks a new constant variable. This is used to track literal values that are
+    /// used in the code. These are not stored in registers, but are instead substituted directly
+    /// into the code.
     pub fn define_const(
         &mut self,
         var_name: Cow<'a, str>,
@@ -201,6 +204,24 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         }
 
         let new_value = VariableLocation::Constant(value);
+
+        self.var_lookup_table.insert(var_name, new_value.clone());
+        Ok(new_value)
+    }
+
+    /// Defines a device variable. This is used to track device pins, references, etc.
+    /// Device _channels_ are not implemented yet, but those will also be tracked here.
+    pub fn define_device(
+        &mut self,
+        var_name: Cow<'a, str>,
+        device: DeviceType,
+        span: Option<Span>,
+    ) -> Result<VariableLocation<'a>, Error<'a>> {
+        if self.var_lookup_table.contains_key(&var_name) {
+            return Err(Error::DuplicateVariable(var_name, span));
+        }
+
+        let new_value = VariableLocation::Device(device);
 
         self.var_lookup_table.insert(var_name, new_value.clone());
         Ok(new_value)

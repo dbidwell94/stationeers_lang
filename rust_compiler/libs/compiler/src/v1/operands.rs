@@ -1,31 +1,6 @@
 use super::*;
 
 impl<'a> Compiler<'a> {
-    pub(super) fn resolve_device(
-        &mut self,
-        expr: &Spanned<Expression<'a>>,
-        scope: &mut VariableScope<'a, '_>,
-    ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
-        // If it's a direct variable reference, check if it's a known device alias first
-        if let Expression::Variable(ref name) = expr.node
-            && let Some(device_id) = self.devices.get(&name.node)
-        {
-            // Track this device reference in metadata (for tooltips on all usages, not just declaration)
-            let doc_comment = self
-                .declaration_docs
-                .get(name.node.as_ref())
-                .map(|s| Cow::Owned(s.to_owned()));
-
-            self.metadata
-                .add_variable_with_doc(name.node.clone(), Some(expr.span), doc_comment);
-
-            return Ok((Operand::Device(device_id.to_string().into()), None));
-        }
-
-        // Otherwise, compile it as an operand (e.g. it might be a register holding a device hash/id)
-        self.compile_operand(expr, scope)
-    }
-
     pub(super) fn emit_variable_assignment(
         &mut self,
         location: &VariableLocation<'a>,
@@ -489,10 +464,16 @@ impl<'a> Compiler<'a> {
                         )?;
                     }
                     VariableLocation::Constant(_) => {
-                        return Err(Error::ConstAssignment(identifier.node.clone(), identifier.span));
+                        return Err(Error::ConstAssignment(
+                            identifier.node.clone(),
+                            identifier.span,
+                        ));
                     }
                     VariableLocation::Device(_) => {
-                        return Err(Error::DeviceAssignment(identifier.node.clone(), identifier.span));
+                        return Err(Error::DeviceAssignment(
+                            identifier.node.clone(),
+                            identifier.span,
+                        ));
                     }
                 }
 
@@ -504,7 +485,7 @@ impl<'a> Compiler<'a> {
                 // Set instruction: s device member value
                 let MemberAccessExpression { object, member } = &access.node;
 
-                let (device, dev_cleanup) = self.resolve_device(object, scope)?;
+                let (device, dev_cleanup) = self.compile_operand(object, scope)?;
                 let (val, val_cleanup) = self.compile_operand(expression, scope)?;
 
                 self.write_instruction(
@@ -523,7 +504,7 @@ impl<'a> Compiler<'a> {
                 // Put instruction: put device address value
                 let IndexAccessExpression { object, index } = &access.node;
 
-                let (device, dev_cleanup) = self.resolve_device(object, scope)?;
+                let (device, dev_cleanup) = self.compile_operand(object, scope)?;
 
                 // Check if device is "db" (not allowed)
                 if let Operand::Device(ref dev_str) = device
@@ -566,6 +547,7 @@ impl<'a> Compiler<'a> {
     pub(super) fn expression_device(
         &mut self,
         expr: &DeviceDeclarationExpression<'a>,
+        scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         // Track the device declaration in metadata
         let doc_comment = self
@@ -578,17 +560,11 @@ impl<'a> Compiler<'a> {
             doc_comment,
         );
 
-        if self.devices.contains_key(&expr.name.node) {
-            self.errors.push(Error::DuplicateIdentifier(
-                expr.name.node.clone(),
-                expr.name.span,
-            ));
-            // We can overwrite or ignore. Let's ignore new declaration to avoid cascading errors?
-            // Actually, for recovery, maybe we want to allow it so subsequent uses work?
-            // But we already have it.
-            return Ok(());
-        }
-        self.devices.insert(expr.name.node.clone(), expr.device.node.clone());
+        scope.define_device(
+            expr.name.node.clone(),
+            expr.device.node.clone(),
+            Some(expr.name.span),
+        )?;
 
         Ok(())
     }

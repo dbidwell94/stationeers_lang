@@ -83,7 +83,6 @@ pub struct Compiler<'a> {
     #[allow(dead_code)]
     analyze_result: AnalyzeResult<'a>,
     function_meta: FunctionMetadata<'a>,
-    devices: HashMap<Cow<'a, str>, DeviceType>,
 
     // This holds the IL code which will be used in the
     // optimizer
@@ -147,7 +146,6 @@ impl<'a> Compiler<'a> {
         Self {
             analyze_result,
             function_meta: FunctionMetadata::default(),
-            devices: HashMap::new(),
             instructions: Instructions::default(),
             current_line: 1,
             declared_main: false,
@@ -277,7 +275,7 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             Expression::DeviceDeclaration(expr_dev) => {
-                self.expression_device(&expr_dev.node)?;
+                self.expression_device(&expr_dev.node, scope)?;
                 Ok(None)
             }
             Expression::Declaration(var_name, decl_expr) => {
@@ -378,20 +376,12 @@ impl<'a> Compiler<'a> {
                         }))
                     }
                     Err(_) => {
-                        // fallback, check devices
-                        if let Some(device) = self.devices.get(&name.node) {
-                            Ok(Some(CompileLocation {
-                                location: VariableLocation::Device(device.clone()),
-                                temp_name: None,
-                            }))
-                        } else {
-                            self.errors
-                                .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-                            Ok(Some(CompileLocation {
-                                location: VariableLocation::Temporary(0),
-                                temp_name: None,
-                            }))
-                        }
+                        self.errors
+                            .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+                        Ok(Some(CompileLocation {
+                            location: VariableLocation::Temporary(0),
+                            temp_name: None,
+                        }))
                     }
                 }
             }
@@ -400,7 +390,7 @@ impl<'a> Compiler<'a> {
                 let MemberAccessExpression { object, member } = &access.node;
 
                 // 1. Resolve the object to a device string (e.g., "d0" or "rX")
-                let (device, cleanup) = self.resolve_device(object, scope)?;
+                let (device, cleanup) = self.compile_operand(object, scope)?;
 
                 // 2. Allocate a temp register for the result
                 let result_name = self.next_temp_name();
@@ -432,7 +422,7 @@ impl<'a> Compiler<'a> {
                 let IndexAccessExpression { object, index } = &access.node;
 
                 // 1. Resolve the object to a device string
-                let (device, dev_cleanup) = self.resolve_device(object, scope)?;
+                let (device, dev_cleanup) = self.compile_operand(object, scope)?;
 
                 // Check if device is "db" (not allowed)
                 if let Operand::Device(ref dev_str) = device

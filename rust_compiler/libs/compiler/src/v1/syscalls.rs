@@ -69,33 +69,10 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::SetOnDevice(device, logic_type, variable) => {
+                let (device_val, device_cleanup) =
+                    self.compile_literal_or_variable(device.node.clone(), scope)?;
+
                 let (variable, var_cleanup) = self.compile_operand(variable, scope)?;
-
-                let Spanned {
-                    node: LiteralOrVariable::Variable(device_spanned),
-                    ..
-                } = device
-                else {
-                    return Err(Error::AgrumentMismatch(
-                        "Arg1 expected to be a variable".into(),
-                        span,
-                    ));
-                };
-
-                let device_name = &device_spanned.node;
-
-                if !self.devices.contains_key(device_name) {
-                    self.errors.push(Error::InvalidDevice(
-                        device_name.clone(),
-                        device_spanned.span,
-                    ));
-                }
-
-                let device_val = self
-                    .devices
-                    .get(device_name)
-                    .cloned()
-                    .unwrap_or(DeviceType::Pin(0));
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match &logic_type.node {
@@ -119,7 +96,7 @@ impl<'a> Compiler<'a> {
                     ),
                     Some(span),
                 )?;
-                cleanup!(var_cleanup);
+                cleanup!(var_cleanup, device_cleanup);
 
                 Ok(None)
             }
@@ -189,31 +166,8 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             System::LoadFromDevice(device, logic_type) => {
-                let Spanned {
-                    node: LiteralOrVariable::Variable(device_spanned),
-                    ..
-                } = device
-                else {
-                    return Err(Error::AgrumentMismatch(
-                        "Arg1 expected to be a variable".into(),
-                        span,
-                    ));
-                };
-
-                let device_name = &device_spanned.node;
-
-                if !self.devices.contains_key(device_name) {
-                    self.errors.push(Error::InvalidDevice(
-                        device_name.clone(),
-                        device_spanned.span,
-                    ));
-                }
-
-                let device_val = self
-                    .devices
-                    .get(device_name)
-                    .cloned()
-                    .unwrap_or(DeviceType::Pin(0));
+                let (device_val, device_cleanup) =
+                    self.compile_literal_or_variable(device.node.clone(), scope)?;
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match &logic_type.node {
@@ -237,6 +191,8 @@ impl<'a> Compiler<'a> {
                     ),
                     Some(span),
                 )?;
+
+                cleanup!(device_cleanup);
 
                 Ok(Some(CompileLocation {
                     location: VariableLocation::Temporary(VariableScope::RETURN_REGISTER),
