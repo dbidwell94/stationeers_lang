@@ -321,17 +321,37 @@ impl<'a> TryFrom<&Token<'a>> for DeviceType {
     fn try_from(value: &Token<'a>) -> Result<Self, Self::Error> {
         match &value.token_type {
             TokenType::String(s) => {
-                let Some(stripped) = s.strip_prefix('d') else {
+                match s.strip_prefix('d') {
+                    Some("b") => return Ok(DeviceType::Housing),
+                    Some(stripped) => {
+                        if let Ok(pin) = stripped.parse::<u8>()
+                            && pin <= 5
+                        {
+                            return Ok(DeviceType::Pin(pin));
+                        }
+                    }
+                    None => {}
+                };
+
+                // fall through to supporting legacy reference formats. Because current code
+                // allows `device test = 0x123` without quotes, some legacy code DOES use
+                // quotes. We need to maintain this standard until we can phase it out.
+                if let Ok(Number::Integer(reference, Unit::None)) =
+                    tokenizer::token::parse_number_literal(s)
+                {
+                    return Ok(DeviceType::Reference(reference));
+                }
+
+                let Some(reference) = s.strip_prefix('$') else {
                     return Err(crate::Error::UnexpectedToken(value.into(), value.clone()));
                 };
-                if let Ok(pin) = stripped.parse::<u8>() {
-                    if pin <= 5 {
-                        return Ok(DeviceType::Pin(pin));
+                let reference = format!("0x{reference}");
+                match tokenizer::token::parse_number_literal(&reference) {
+                    Ok(Number::Integer(reference, Unit::None)) => {
+                        Ok(DeviceType::Reference(reference))
                     }
-                } else if stripped == "b" {
-                    return Ok(DeviceType::Housing);
+                    _ => Err(crate::Error::UnexpectedToken(value.into(), value.clone())),
                 }
-                Err(crate::Error::UnexpectedToken(value.into(), value.clone()))
             }
             TokenType::Number(Number::Integer(ref_id, Unit::None)) => {
                 Ok(DeviceType::Reference(*ref_id))

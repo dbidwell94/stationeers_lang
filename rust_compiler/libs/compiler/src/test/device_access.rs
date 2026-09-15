@@ -75,6 +75,62 @@ fn device_property_write() -> anyhow::Result<()> {
 }
 
 #[test]
+fn legacy_quoted_ref_id_device_property_write() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device something = \"$123_ab_c\";
+            something.Setting = 1;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            s $123abc Setting 1
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn quoted_decimal_ref_id_device_property_write() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device something = \"123\";
+            something.Setting = 1;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            s $7b Setting 1
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn multiple_device_declarations() -> anyhow::Result<()> {
     let compiled = compile! {
         check "
@@ -412,12 +468,12 @@ fn device_index_db_write_not_allowed() -> anyhow::Result<()> {
 }
 
 #[test]
-#[ignore = "Functionality not yet implemented"]
-fn device_reference_allowed_to_be_assigned_to_variable() -> anyhow::Result<()> {
+fn device_pin_reference_allowed_to_be_assigned_to_variable() -> anyhow::Result<()> {
     let compiled = compile! {
         check "
             device dev = \"d0\";
             let dev_ref = dev;
+            let on = dev_ref.On;
         "
     };
 
@@ -434,8 +490,200 @@ fn device_reference_allowed_to_be_assigned_to_variable() -> anyhow::Result<()> {
             j main
             main:
             move r8 0
+            l r1 dr8 On
+            move r9 r1
             "
         }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn device_ref_id_reference_allowed_to_be_assigned_to_variable() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device dev = 1194684;
+            let dev_ref = dev;
+            let on = dev_ref.On;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 1194684
+            l r1 r8 On
+            move r9 r1
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn device_pin_passed_to_function_uses_indirect_pin_operand() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device pin0 = \"d0\";
+            fn set_on(dev, value) {
+                dev.On = value;
+            };
+            set_on(pin0, true);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert!(
+        compiled.output.contains("s dr9 On r8"),
+        "Expected indirect pin operand, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
+fn device_ref_id_passed_to_function_uses_indirect_reference_operand() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device ref_id = 1194684;
+            fn set_on(dev, value) {
+                dev.On = value;
+            };
+            set_on(ref_id, false);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert!(
+        compiled.output.contains("s r9 On r8"),
+        "Expected indirect RefID operand, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
+fn spilled_device_pin_parameter_uses_indirect_pin_operand() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device pin0 = \"d0\";
+            fn set_on(dev, value, a, b, c, d, e, f) {
+                dev.On = value;
+            };
+            set_on(pin0, true, 0, 0, 0, 0, 0, 0);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert!(
+        compiled.output.contains("s dr1 On r14"),
+        "Expected spilled indirect pin operand, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
+fn spilled_device_ref_id_parameter_uses_indirect_reference_operand() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device ref_id = 1194684;
+            fn set_on(dev, value, a, b, c, d, e, f) {
+                dev.On = value;
+            };
+            set_on(ref_id, false, 0, 0, 0, 0, 0, 0);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert!(
+        compiled.output.contains("s r1 On r14"),
+        "Expected spilled indirect RefID operand, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
+fn device_pin_last_parameter_uses_indirect_pin_operand_when_arguments_spill() -> anyhow::Result<()>
+{
+    let compiled = compile! {
+        check "
+            device pin0 = \"d0\";
+            fn set_on(value, a, b, c, d, e, f, dev) {
+                dev.On = value;
+            };
+            set_on(true, 0, 0, 0, 0, 0, 0, pin0);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert!(
+        compiled.output.contains("s dr8 On r1"),
+        "Expected indirect pin operand with a spilled value, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
+fn device_ref_id_last_parameter_uses_indirect_reference_operand_when_arguments_spill()
+-> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device ref_id = 1194684;
+            fn set_on(value, a, b, c, d, e, f, dev) {
+                dev.On = value;
+            };
+            set_on(false, 0, 0, 0, 0, 0, 0, ref_id);
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert!(
+        compiled.output.contains("s r8 On r1"),
+        "Expected indirect RefID operand with a spilled value, got:\n{}",
+        compiled.output
     );
 
     Ok(())

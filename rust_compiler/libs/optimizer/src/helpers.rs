@@ -1,4 +1,4 @@
-use il::{Instruction, Operand};
+use il::{DeviceReference, Instruction, LiteralOrReference, Operand};
 
 /// Returns the register number written to by an instruction, if any.
 pub fn get_destination_reg(instr: &Instruction) -> Option<u8> {
@@ -142,7 +142,15 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
 
 /// Checks if a register is read by an instruction.
 pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
-    let check = |op: &Operand| matches!(op, Operand::Register(r) if *r == reg);
+    let check = |op: &Operand| match op {
+        Operand::Register(register) => *register == reg,
+        Operand::DeviceReference(
+            DeviceReference::Housing(LiteralOrReference::Reference(register))
+            | DeviceReference::Pin(LiteralOrReference::Reference(register))
+            | DeviceReference::Reference(LiteralOrReference::Reference(register)),
+        ) => *register == reg,
+        _ => false,
+    };
 
     match instr {
         Instruction::Move(_, a)
@@ -219,5 +227,43 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
         }
 
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn indirect_pin_operand_reads_its_reference_register() {
+        let instruction = Instruction::Load(
+            Operand::Register(1),
+            Operand::DeviceReference(DeviceReference::Pin(LiteralOrReference::Reference(8))),
+            Operand::LogicType("On".into()),
+        );
+
+        assert!(reg_is_read(&instruction, 8));
+    }
+
+    #[test]
+    fn indirect_ref_id_operand_reads_its_reference_register() {
+        let instruction = Instruction::Store(
+            Operand::DeviceReference(DeviceReference::Reference(LiteralOrReference::Reference(8))),
+            Operand::LogicType("On".into()),
+            Operand::Number(1.into()),
+        );
+
+        assert!(reg_is_read(&instruction, 8));
+    }
+
+    #[test]
+    fn literal_device_reference_does_not_read_a_register() {
+        let instruction = Instruction::Load(
+            Operand::Register(1),
+            Operand::DeviceReference(DeviceReference::Pin(LiteralOrReference::Literal(0.into()))),
+            Operand::LogicType("On".into()),
+        );
+
+        assert!(!reg_is_read(&instruction, 8));
     }
 }

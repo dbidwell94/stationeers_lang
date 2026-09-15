@@ -199,6 +199,11 @@ impl<'a> Compiler<'a> {
                     }
                 };
 
+                let device_reference = match &src_loc {
+                    VariableLocation::Device(device) => Some(device.clone()),
+                    _ => scope.get_device_reference(&name.node),
+                };
+
                 let var_loc = scope.add_variable(
                     name_str.clone(),
                     LocationRequest::Persist,
@@ -240,20 +245,17 @@ impl<'a> Compiler<'a> {
                         Operand::LogicType(s)
                     }
                     VariableLocation::Device(device) => match device {
-                        DeviceType::Housing => Operand::DeviceReference(DeviceReference::Housing(
-                            LiteralOrReference::Literal(i64::MAX.into()),
-                        )),
-                        DeviceType::Pin(pin_id) => Operand::DeviceReference(DeviceReference::Pin(
-                            LiteralOrReference::Literal(pin_id.into()),
-                        )),
+                        DeviceType::Housing => Operand::Number(i64::MAX.into()),
+                        DeviceType::Pin(pin_id) => Operand::Number(pin_id.into()),
                         DeviceType::Reference(reference_num) => {
-                            Operand::DeviceReference(DeviceReference::Reference(
-                                LiteralOrReference::Literal(reference_num.into()),
-                            ))
+                            Operand::Number(reference_num.into())
                         }
                     },
                 };
                 self.emit_variable_assignment(&var_loc, src)?;
+                if let Some(device) = device_reference {
+                    scope.define_device_reference(name_str.clone(), device);
+                }
                 (var_loc, None)
             }
             Expression::Priority(inner) => {
@@ -499,7 +501,7 @@ impl<'a> Compiler<'a> {
                 // Set instruction: s device member value
                 let MemberAccessExpression { object, member } = &access.node;
 
-                let (device, dev_cleanup) = self.compile_operand(object, scope)?;
+                let (device, dev_cleanup) = self.compile_device_operand(object, scope)?;
                 let (val, val_cleanup) = self.compile_operand(expression, scope)?;
 
                 self.write_instruction(
@@ -680,6 +682,30 @@ impl<'a> Compiler<'a> {
             }
             VariableLocation::Device(d) => Ok((Operand::Device(d), None)),
         }
+    }
+
+    pub(super) fn compile_device_operand(
+        &mut self,
+        expr: &Spanned<Expression<'a>>,
+        scope: &mut VariableScope<'a, '_>,
+    ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
+        let Expression::Variable(name) = &expr.node else {
+            return self.compile_operand(expr, scope);
+        };
+
+        let device_reference = scope.get_device_reference(&name.node);
+        let (operand, cleanup) = self.compile_operand(expr, scope)?;
+        let (Operand::Register(register), Some(device)) = (&operand, device_reference) else {
+            return Ok((operand, cleanup));
+        };
+
+        let reference = LiteralOrReference::Reference(*register);
+        let operand = match device {
+            DeviceType::Housing => DeviceReference::Housing(reference),
+            DeviceType::Pin(_) => DeviceReference::Pin(reference),
+            DeviceType::Reference(_) => DeviceReference::Reference(reference),
+        };
+        Ok((Operand::DeviceReference(operand), cleanup))
     }
 
     /// Prevents clobbering of the return-register in multi-operand expressions

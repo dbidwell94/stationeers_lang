@@ -19,6 +19,9 @@ pub enum LexError {
     Other,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NumberParseError;
+
 impl From<LexError> for Diagnostic {
     fn from(value: LexError) -> Self {
         match value {
@@ -242,37 +245,27 @@ pub enum Comment<'a> {
     Doc(Cow<'a, str>),
 }
 
-fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexError> {
-    let slice = lexer.slice();
-
-    let line = lexer.extras.line_count;
-    let mut span = lexer.span();
-    span.end -= lexer.extras.line_start_index;
-    span.start -= lexer.extras.line_start_index;
-
+pub fn parse_number_literal(slice: &str) -> Result<Number, NumberParseError> {
     // Determine the base and parse accordingly
     if slice.starts_with("0x") || slice.starts_with("0X") {
         // Hexadecimal - no temperature suffix allowed
         let clean_str = slice[2..].replace('_', "");
         Ok(Number::Integer(
-            i128::from_str_radix(&clean_str, 16)
-                .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
+            i128::from_str_radix(&clean_str, 16).map_err(|_| NumberParseError)?,
             Unit::None,
         ))
     } else if slice.starts_with("0o") || slice.starts_with("0O") {
         // Octal - no temperature suffix allowed
         let clean_str = slice[2..].replace('_', "");
         Ok(Number::Integer(
-            i128::from_str_radix(&clean_str, 8)
-                .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
+            i128::from_str_radix(&clean_str, 8).map_err(|_| NumberParseError)?,
             Unit::None,
         ))
     } else if slice.starts_with("0b") || slice.starts_with("0B") {
         // Binary - no temperature suffix allowed
         let clean_str = slice[2..].replace('_', "");
         Ok(Number::Integer(
-            i128::from_str_radix(&clean_str, 2)
-                .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
+            i128::from_str_radix(&clean_str, 2).map_err(|_| NumberParseError)?,
             Unit::None,
         ))
     } else {
@@ -299,21 +292,27 @@ fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexE
         if clean_str.contains('.') {
             // Decimal floating point
             Ok(Number::Decimal(
-                clean_str
-                    .parse::<Decimal>()
-                    .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
+                clean_str.parse::<Decimal>().map_err(|_| NumberParseError)?,
                 unit,
             ))
         } else {
             // Decimal integer
             Ok(Number::Integer(
-                clean_str
-                    .parse::<i128>()
-                    .map_err(|_| LexError::NumberParse(line, span, slice.to_string()))?,
+                clean_str.parse::<i128>().map_err(|_| NumberParseError)?,
                 unit,
             ))
         }
     }
+}
+
+fn parse_number<'a>(lexer: &mut Lexer<'a, TokenType<'a>>) -> Result<Number, LexError> {
+    let slice = lexer.slice();
+    let line = lexer.extras.line_count;
+    let mut span = lexer.span();
+    span.end -= lexer.extras.line_start_index;
+    span.start -= lexer.extras.line_start_index;
+
+    parse_number_literal(slice).map_err(|_| LexError::NumberParse(line, span, slice.to_string()))
 }
 
 impl<'a> std::fmt::Display for Comment<'a> {
@@ -953,8 +952,8 @@ documented! {
 
 #[cfg(test)]
 mod tests {
-    use super::TokenType;
     use super::{Number, Unit};
+    use super::{TokenType, parse_number_literal};
     use logos::Logos;
 
     #[test]
@@ -1101,5 +1100,13 @@ mod tests {
             "Expected hex 0xcd_ef = 52719"
         );
         Ok(())
+    }
+
+    #[test]
+    fn parse_number_literal_accepts_prefixed_hex_with_separators() {
+        assert_eq!(
+            parse_number_literal("0x123_ab_c"),
+            Ok(Number::Integer(0x123abc, Unit::None))
+        );
     }
 }

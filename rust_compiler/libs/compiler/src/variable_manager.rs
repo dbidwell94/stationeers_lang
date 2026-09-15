@@ -85,6 +85,7 @@ pub struct VariableScope<'a, 'b> {
     temporary_vars: VecDeque<u8>,
     persistant_vars: VecDeque<u8>,
     var_lookup_table: HashMap<Cow<'a, str>, VariableLocation<'a>>,
+    device_reference_lookup_table: HashMap<Cow<'a, str>, DeviceType>,
     stack_offset: u16,
     parent: Option<&'b VariableScope<'a, 'b>>,
 }
@@ -97,6 +98,7 @@ impl<'a, 'b> Default for VariableScope<'a, 'b> {
             persistant_vars: PERSIST.to_vec().into(),
             temporary_vars: TEMP.to_vec().into(),
             var_lookup_table: HashMap::new(),
+            device_reference_lookup_table: HashMap::new(),
         }
     }
 }
@@ -225,6 +227,20 @@ impl<'a, 'b> VariableScope<'a, 'b> {
 
         self.var_lookup_table.insert(var_name, new_value.clone());
         Ok(new_value)
+    }
+
+    pub fn define_device_reference(&mut self, var_name: Cow<'a, str>, device: DeviceType) {
+        self.device_reference_lookup_table.insert(var_name, device);
+    }
+
+    pub fn get_device_reference(&self, var_name: &Cow<'a, str>) -> Option<DeviceType> {
+        self.device_reference_lookup_table
+            .get(var_name)
+            .cloned()
+            .or_else(|| {
+                self.parent
+                    .and_then(|parent| parent.get_device_reference(var_name))
+            })
     }
 
     pub fn get_location_of(

@@ -118,10 +118,14 @@ impl<'a> Compiler<'a> {
                             )?;
                         }
                         VariableLocation::Device(_) => {
-                            self.errors.push(Error::Unknown(
-                                "Device references not supported in function arguments".into(),
+                            let (operand, cleanup) = self.compile_operand(arg, &mut stack)?;
+                            self.write_instruction(
+                                Instruction::Push(operand),
                                 Some(var_name.span),
-                            ));
+                            )?;
+                            if let Some(name) = cleanup {
+                                stack.free_temp(name, None)?;
+                            }
                         }
                     }
                 }
@@ -609,6 +613,14 @@ impl<'a> Compiler<'a> {
             arguments.iter().map(|a| a.node.clone()).collect(),
         );
 
+        let parameter_kinds = self
+            .analyze_result
+            .functions
+            .values()
+            .find(|metadata| metadata.symbol.name == name.node)
+            .map(|metadata| metadata.parameter_kinds.clone())
+            .unwrap_or_else(|| vec![ParameterKind::Unknown; arguments.len()]);
+
         // Set the current function being compiled
         self.function_meta.current_name = Some(name.node.clone());
 
@@ -625,10 +637,11 @@ impl<'a> Compiler<'a> {
         let mut saved_variables = 0;
 
         // do a reverse pass to pop variables from the stack and put them into registers
-        for var_name in arguments
+        for (var_name, parameter_kind) in arguments
             .iter()
             .rev()
             .take(VariableScope::PERSIST_REGISTER_COUNT as usize)
+            .zip(parameter_kinds.iter().rev())
         {
             let loc = block_scope.add_variable(
                 var_name.node.clone(),
@@ -660,18 +673,48 @@ impl<'a> Compiler<'a> {
                     ));
                 }
             }
+            match parameter_kind {
+                ParameterKind::DevicePin => {
+                    block_scope.define_device_reference(var_name.node.clone(), DeviceType::Pin(0));
+                }
+                ParameterKind::DeviceReference => {
+                    block_scope
+                        .define_device_reference(var_name.node.clone(), DeviceType::Reference(0));
+                }
+                ParameterKind::DeviceHousing => {
+                    block_scope.define_device_reference(var_name.node.clone(), DeviceType::Housing);
+                }
+                ParameterKind::Unknown | ParameterKind::Value => {}
+            }
             saved_variables += 1;
         }
 
         // now do a forward pass in case we have spilled into the stack. We don't need to push
         // anything as they already exist on the stack, but we DO need to let our block_scope be
         // aware that the variables exist on the stack (left to right)
-        for var_name in arguments.iter().take(arguments.len() - saved_variables) {
+        for (var_name, parameter_kind) in arguments
+            .iter()
+            .take(arguments.len() - saved_variables)
+            .zip(parameter_kinds.iter())
+        {
             block_scope.add_variable(
                 var_name.node.clone(),
                 LocationRequest::Stack,
                 Some(var_name.span),
             )?;
+            match parameter_kind {
+                ParameterKind::DevicePin => {
+                    block_scope.define_device_reference(var_name.node.clone(), DeviceType::Pin(0));
+                }
+                ParameterKind::DeviceReference => {
+                    block_scope
+                        .define_device_reference(var_name.node.clone(), DeviceType::Reference(0));
+                }
+                ParameterKind::DeviceHousing => {
+                    block_scope.define_device_reference(var_name.node.clone(), DeviceType::Housing);
+                }
+                ParameterKind::Unknown | ParameterKind::Value => {}
+            }
         }
 
         // Save the caller's stack pointer FIRST (before any pushes modify it)

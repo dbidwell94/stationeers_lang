@@ -13,7 +13,7 @@ use parser::{
     },
 };
 use rust_decimal::Decimal;
-use static_analysis::AnalyzeResult;
+use static_analysis::{AnalyzeResult, ParameterKind};
 use std::{borrow::Cow, collections::HashMap};
 use tokenizer::token::{Number, Unit};
 
@@ -390,7 +390,7 @@ impl<'a> Compiler<'a> {
                 let MemberAccessExpression { object, member } = &access.node;
 
                 // 1. Resolve the object to a device string (e.g., "d0" or "rX")
-                let (device, cleanup) = self.compile_operand(object, scope)?;
+                let (device, cleanup) = self.compile_device_operand(object, scope)?;
 
                 // 2. Allocate a temp register for the result
                 let result_name = self.next_temp_name();
