@@ -266,7 +266,9 @@ impl<'a> Parser<'a> {
                     node: Expression::Syscall(spanned_call),
                 })
             }
-            TokenType::Identifier(_) if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) => {
+            TokenType::Identifier(_)
+                if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
+            {
                 let spanned_invoke = self.spanned(|p| p.invocation())?;
                 Some(Spanned {
                     span: spanned_invoke.span,
@@ -313,6 +315,24 @@ impl<'a> Parser<'a> {
                 Some(Spanned {
                     span: combined_span,
                     node: Expression::Negation(boxed!(inner_with_postfix)),
+                })
+            }
+            TokenType::Symbol(Symbol::Asterisk) => {
+                let start_span = self.current_span();
+                self.assign_next()?;
+                let inner_expr = self.unary()?.ok_or_else(|| self.unexpected_eof())?;
+                let inner_with_postfix = self.parse_postfix(inner_expr)?;
+
+                let combined_span = Span {
+                    start_line: start_span.start_line,
+                    start_col: start_span.start_col,
+                    end_line: inner_with_postfix.span.end_line,
+                    end_col: inner_with_postfix.span.end_col,
+                };
+
+                Some(Spanned {
+                    span: combined_span,
+                    node: Expression::Dereference(boxed!(inner_with_postfix)),
                 })
             }
             TokenType::Symbol(Symbol::LogicalNot) => {
@@ -403,7 +423,9 @@ impl<'a> Parser<'a> {
                     node: Expression::Syscall(spanned_call),
                 }
             }
-            TokenType::Identifier(_) if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) => {
+            TokenType::Identifier(_)
+                if self_matches_peek!(self, TokenType::Symbol(Symbol::LParen)) =>
+            {
                 let inv = self.spanned(|p| p.invocation())?;
                 Spanned {
                     span: inv.span,
@@ -968,3 +990,4 @@ impl<'a> Parser<'a> {
         Ok(literal)
     }
 }
+

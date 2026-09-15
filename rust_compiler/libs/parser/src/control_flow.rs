@@ -179,6 +179,7 @@ impl<'a> Parser<'a> {
                 self.condition_contains_assignment(&tuple_decl.value)
             }
             Expression::Return(Some(value)) => self.condition_contains_assignment(value),
+            Expression::Dereference(expr) => self.condition_contains_assignment(expr),
             Expression::If(_)
             | Expression::While(_)
             | Expression::Loop(_)

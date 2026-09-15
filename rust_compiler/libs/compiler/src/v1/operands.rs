@@ -1,3 +1,5 @@
+use il::{DeviceReference, LiteralOrReference};
+
 use super::*;
 
 impl<'a> Compiler<'a> {
@@ -221,7 +223,7 @@ impl<'a> Compiler<'a> {
                         self.write_instruction(
                             Instruction::Get(
                                 Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                Operand::Device(Cow::from("db")),
+                                Operand::Device(DeviceType::Housing),
                                 Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                             ),
                             Some(expr.span),
@@ -237,7 +239,19 @@ impl<'a> Compiler<'a> {
                         // String constants can be used in expressions like `let x = STRINGCONST;`
                         Operand::LogicType(s)
                     }
-                    VariableLocation::Device(_) => unreachable!(),
+                    VariableLocation::Device(device) => match device {
+                        DeviceType::Housing => Operand::DeviceReference(DeviceReference::Housing(
+                            LiteralOrReference::Literal(i64::MAX.into()),
+                        )),
+                        DeviceType::Pin(pin_id) => Operand::DeviceReference(DeviceReference::Pin(
+                            LiteralOrReference::Literal(pin_id.into()),
+                        )),
+                        DeviceType::Reference(reference_num) => {
+                            Operand::DeviceReference(DeviceReference::Reference(
+                                LiteralOrReference::Literal(reference_num.into()),
+                            ))
+                        }
+                    },
                 };
                 self.emit_variable_assignment(&var_loc, src)?;
                 (var_loc, None)
@@ -456,7 +470,7 @@ impl<'a> Compiler<'a> {
                         // Store value to stack/db at address
                         self.write_instruction(
                             Instruction::Put(
-                                Operand::Device(Cow::from("db")),
+                                Operand::Device(DeviceType::Housing),
                                 Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                 val,
                             ),
@@ -507,9 +521,7 @@ impl<'a> Compiler<'a> {
                 let (device, dev_cleanup) = self.compile_operand(object, scope)?;
 
                 // Check if device is "db" (not allowed)
-                if let Operand::Device(ref dev_str) = device
-                    && dev_str.as_ref() == "db"
-                {
+                if let Operand::Device(DeviceType::Housing) = device {
                     return Err(Error::OperationNotSupported(
                         "Direct stack access on 'db' is not yet supported".to_string(),
                         assignee.span,
@@ -655,7 +667,7 @@ impl<'a> Compiler<'a> {
                 self.write_instruction(
                     Instruction::Get(
                         Operand::Register(temp_reg),
-                        Operand::Device(Cow::from("db")),
+                        Operand::Device(DeviceType::Housing),
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                     ),
                     None,
@@ -666,15 +678,7 @@ impl<'a> Compiler<'a> {
                 // We return the NEW temp name to be freed.
                 Ok((Operand::Register(temp_reg), Some(temp_name)))
             }
-            VariableLocation::Device(d) => {
-                let device = match d {
-                    DeviceType::Housing => "db".to_owned(),
-                    DeviceType::Pin(pin_id) => format!("d{}", pin_id),
-                    DeviceType::Reference(ref_id) => format!("${ref_id:x}"),
-                };
-
-                Ok((Operand::Device(Cow::Owned(device)), None))
-            }
+            VariableLocation::Device(d) => Ok((Operand::Device(d), None)),
         }
     }
 

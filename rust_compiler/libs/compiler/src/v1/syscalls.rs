@@ -89,11 +89,7 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 self.write_instruction(
-                    Instruction::Store(
-                        Operand::Device(device_val.to_string().into()),
-                        Operand::LogicType(logic_type_str),
-                        variable,
-                    ),
+                    Instruction::Store(device_val, Operand::LogicType(logic_type_str), variable),
                     Some(span),
                 )?;
                 cleanup!(var_cleanup, device_cleanup);
@@ -186,7 +182,7 @@ impl<'a> Compiler<'a> {
                 self.write_instruction(
                     Instruction::Load(
                         Operand::Register(VariableScope::RETURN_REGISTER),
-                        Operand::Device(device_val.to_string().into()),
+                        device_val,
                         Operand::LogicType(logic_type_str),
                     ),
                     Some(span),

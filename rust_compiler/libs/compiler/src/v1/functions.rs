@@ -1,3 +1,5 @@
+use il::DeviceReference;
+
 use super::*;
 
 impl<'a> Compiler<'a> {
@@ -102,7 +104,7 @@ impl<'a> Compiler<'a> {
                             self.write_instruction(
                                 Instruction::Get(
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::Device(Cow::from("db")),
+                                    Operand::Device(DeviceType::Housing),
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                 ),
                                 Some(var_name.span),
@@ -187,23 +189,16 @@ impl<'a> Compiler<'a> {
         if !self.function_meta.locations.contains_key(&name.node) {
             self.errors
                 .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-            // Don't emit call, just pretend we did?
-            // Actually, we should probably emit a dummy call or just skip to avoid logic errors
-            // But if we skip, registers might be unbalanced if something expected a return.
-            // For now, let's just return early.
             return Ok(());
         }
 
         let Some(args) = self.function_meta.params.get(&name.node) else {
-            // Should be covered by check above
             return Err(Error::UnknownIdentifier(name.node.clone(), name.span));
         };
 
         if args.len() != arguments.len() {
             self.errors
                 .push(Error::AgrumentMismatch(name.node.clone(), name.span));
-            // Proceed anyway? The assembly will likely crash or act weird.
-            // Best to skip generation of this call to prevent bad IC10
             return Ok(());
         }
         let mut stack = VariableScope::scoped(parent_scope);
@@ -238,11 +233,44 @@ impl<'a> Compiler<'a> {
                         Some(arg_span),
                     )?;
                 }
-                Operand::Device(_) => {
-                    return Err(Error::Unknown(
-                        r#"Attempted to pass a device constant into a function argument. These values can be used without scope."#.into(),
-                        Some(arg_span),
-                    ));
+                Operand::DeviceReference(d_ref) => match d_ref {
+                    DeviceReference::Pin(_) | DeviceReference::Reference(_) => {
+                        self.write_instruction(
+                            Instruction::Push(Operand::DeviceReference(d_ref)),
+                            Some(arg_span),
+                        )?;
+                    }
+                    _ => {
+                        return Err(Error::Unknown(
+                                "Only External Pin and Reference device types are supported in function arguments".into(),
+                                Some(arg_span),
+                            ));
+                    }
+                },
+                Operand::Device(device) => {
+                    match device {
+                        DeviceType::Pin(pin_id) => {
+                            self.write_instruction(
+                                Instruction::Push(Operand::Number(pin_id.into())),
+                                Some(arg_span),
+                            )?;
+                        }
+                        DeviceType::Reference(ref_id) => {
+                            self.write_instruction(
+                                Instruction::Push(Operand::Number(Decimal::from_i128_with_scale(
+                                    ref_id, 0,
+                                ))),
+                                Some(arg_span),
+                            )?;
+                        }
+                        DeviceType::Housing => {
+                            // TODO! Validate if i64::MAX is indeed the correct "pin" for the housing device
+                            self.write_instruction(
+                                Instruction::Push(Operand::Number(i64::MAX.into())),
+                                Some(arg_span),
+                            )?;
+                        }
+                    }
                 }
                 Operand::Label(l) => {
                     self.write_instruction(Instruction::Push(Operand::Label(l)), Some(arg_span))?;
@@ -358,7 +386,7 @@ impl<'a> Compiler<'a> {
                                 self.write_instruction(
                                     Instruction::Get(
                                         Operand::Register(VariableScope::RETURN_REGISTER),
-                                        Operand::Device(Cow::from("db")),
+                                        Operand::Device(DeviceType::Housing),
                                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                     ),
                                     Some(span),
@@ -492,7 +520,7 @@ impl<'a> Compiler<'a> {
                             self.write_instruction(
                                 Instruction::Get(
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::Device(Cow::from("db")),
+                                    Operand::Device(DeviceType::Housing),
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                 ),
                                 Some(span),
@@ -748,7 +776,7 @@ impl<'a> Compiler<'a> {
             self.write_instruction(
                 Instruction::Get(
                     Operand::ReturnAddress,
-                    Operand::Device(Cow::from("db")),
+                    Operand::Device(DeviceType::Housing),
                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                 ),
                 Some(span),
@@ -773,7 +801,7 @@ impl<'a> Compiler<'a> {
                 self.write_instruction(
                     Instruction::Get(
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                        Operand::Device(Cow::from("db")),
+                        Operand::Device(DeviceType::Housing),
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                     ),
                     Some(span),

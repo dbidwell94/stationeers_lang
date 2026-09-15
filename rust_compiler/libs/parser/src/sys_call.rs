@@ -207,7 +207,7 @@ documented! {
         /// ## Slang
         /// `yield();`
         Yield,
-        /// Represents a function that can be called to sleep for a certain amount of time.
+        /// Represents a function that can be called to sleep for a certain amount of seconds.
         /// ## IC10
         /// `sleep a(r?|num)`
         /// ## Slang

@@ -40,7 +40,7 @@ impl<'a> Compiler<'a> {
 
                         self.write_instruction(
                             Instruction::Sub(
-                                Operand::Register(0),
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                 Operand::StackPointer,
                                 Operand::Number(offset.into()),
                             ),
@@ -49,8 +49,8 @@ impl<'a> Compiler<'a> {
 
                         self.write_instruction(
                             Instruction::Put(
-                                Operand::Device(Cow::from("db")),
-                                Operand::Register(0),
+                                Operand::Device(DeviceType::Housing),
+                                Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                 Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                             ),
                             Some(span),
@@ -296,7 +296,7 @@ impl<'a> Compiler<'a> {
 
                             self.write_instruction(
                                 Instruction::Put(
-                                    Operand::Device(Cow::from("db")),
+                                    Operand::Device(DeviceType::Housing),
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                     value_operand,
                                 ),

@@ -58,6 +58,10 @@ pub trait AstVisitor<'a>: Sized {
         self.visit_expression(spanned);
     }
 
+    fn visit_dereference_expression(&mut self, spanned: &'a Spanned<Expression<'a>>) {
+        walk_expression(self, spanned);
+    }
+
     fn visit_device_declaration_expression(
         &mut self,
         _spanned: &'a Spanned<DeviceDeclarationExpression<'a>>,
@@ -227,6 +231,7 @@ pub fn walk_expression<'a, V: AstVisitor<'a>>(
         Expression::BitwiseNot(expr) => visitor.visit_bitwise_not(expr),
         Expression::Continue(span) => visitor.visit_continue_expression(span),
         Expression::Declaration(name, expr) => visitor.visit_declaration_expression(name, expr),
+        Expression::Dereference(deref) => visitor.visit_dereference_expression(deref),
         Expression::DeviceDeclaration(expr) => visitor.visit_device_declaration_expression(expr),
         Expression::Function(expr) => visitor.visit_function_expression(expr),
         Expression::If(exp) => visitor.visit_if_expression(exp),

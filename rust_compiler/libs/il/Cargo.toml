@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 helpers = { path = "../helpers" }
+parser = { path = "../parser" }
 rust_decimal = { workspace = true }

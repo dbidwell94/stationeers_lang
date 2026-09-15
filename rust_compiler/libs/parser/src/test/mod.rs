@@ -178,6 +178,15 @@ fn test_negative_literal_const() -> Result<()> {
 }
 
 #[test]
+fn test_dereference_with_variable() -> Result<()> {
+    let expr = parser!(r#"(*devVar).Setting = 3;"#).parse()?.unwrap();
+
+    assert_eq!("(((*devVar)).Setting = 3)", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
 fn test_ternary_expression() -> Result<()> {
     let expr = parser!(r#"let i = x ? 1 : 2;"#).parse()?.unwrap();
 
@@ -219,6 +228,7 @@ fn test_tuple_declaration() -> Result<()> {
 
     Ok(())
 }
+
 #[test]
 fn test_tuple_assignment() -> Result<()> {
     let expr = parser!("(x, y) = (1, 2);").parse()?.unwrap();
@@ -306,6 +316,7 @@ fn test_tuple_declaration_all_complex_expressions() -> Result<()> {
 
     Ok(())
 }
+
 #[test]
 fn test_eof_error_has_span() -> Result<()> {
     // Test that UnexpectedEOF errors capture the span of the last token

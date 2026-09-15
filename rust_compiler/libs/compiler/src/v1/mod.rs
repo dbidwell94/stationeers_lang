@@ -425,9 +425,7 @@ impl<'a> Compiler<'a> {
                 let (device, dev_cleanup) = self.compile_operand(object, scope)?;
 
                 // Check if device is "db" (not allowed)
-                if let Operand::Device(ref dev_str) = device
-                    && dev_str.as_ref() == "db"
-                {
+                if let Operand::Device(DeviceType::Housing) = device {
                     return Err(Error::OperationNotSupported(
                         "Direct stack access on 'db' is not yet supported".to_string(),
                         expr.span,

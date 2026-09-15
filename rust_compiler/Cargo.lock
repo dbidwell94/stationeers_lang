@@ -443,6 +443,7 @@ name = "il"
 version = "0.1.0"
 dependencies = [
  "helpers",
+ "parser",
  "rust_decimal",
 ]
 
