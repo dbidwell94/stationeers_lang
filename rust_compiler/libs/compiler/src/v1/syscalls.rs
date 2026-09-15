@@ -40,7 +40,7 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             System::Clr(device) => {
-                let (op, var_cleanup) = self.compile_operand(device, scope)?;
+                let (op, var_cleanup) = self.compile_device_operand(device, scope)?;
                 self.write_instruction(Instruction::Clr(op), Some(span))?;
 
                 cleanup!(var_cleanup);
@@ -69,8 +69,7 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::SetOnDevice(device, logic_type, variable) => {
-                let (device_val, device_cleanup) =
-                    self.compile_literal_or_variable(device.node.clone(), scope)?;
+                let (device_val, device_cleanup) = self.compile_device_operand(device, scope)?;
 
                 let (variable, var_cleanup) = self.compile_operand(variable, scope)?;
 
@@ -162,8 +161,7 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             System::LoadFromDevice(device, logic_type) => {
-                let (device_val, device_cleanup) =
-                    self.compile_literal_or_variable(device.node.clone(), scope)?;
+                let (device_val, device_cleanup) = self.compile_device_operand(device, scope)?;
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let logic_type_expr = match &logic_type.node {
@@ -397,8 +395,7 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::LoadSlot(dev_name, slot_index, logic_type) => {
-                let (dev_hash, hash_cleanup) =
-                    self.compile_literal_or_variable(dev_name.node.clone(), scope)?;
+                let (dev_hash, hash_cleanup) = self.compile_device_operand(dev_name, scope)?;
                 let (slot_index, slot_cleanup) = self.compile_operand(slot_index, scope)?;
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
@@ -432,8 +429,7 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::SetSlot(dev_name, slot_index, logic_type, var) => {
-                let (dev_name, name_cleanup) =
-                    self.compile_literal_or_variable(dev_name.node.clone(), scope)?;
+                let (dev_name, name_cleanup) = self.compile_device_operand(dev_name, scope)?;
                 let ((slot_index, index_cleanup), (var, var_cleanup)) =
                     compile_operands!(self, (&slot_index, &var), scope);
 
@@ -465,21 +461,7 @@ impl<'a> Compiler<'a> {
                 Ok(None)
             }
             System::LoadReagent(device, reagent_mode, reagent_hash) => {
-                let Spanned {
-                    node: LiteralOrVariable::Variable(device_spanned),
-                    ..
-                } = device
-                else {
-                    return Err(Error::AgrumentMismatch(
-                        "Arg1 expected to be a variable".into(),
-                        span,
-                    ));
-                };
-
-                let (device, device_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Variable(device_spanned.clone()),
-                    scope,
-                )?;
+                let (device, device_cleanup) = self.compile_device_operand(device, scope)?;
 
                 // Convert LiteralOrVariable to Expression and validate it's a constant string
                 let reagent_mode_expr = match &reagent_mode.node {
@@ -516,21 +498,7 @@ impl<'a> Compiler<'a> {
                 }))
             }
             System::Rmap(device, reagent_hash) => {
-                let Spanned {
-                    node: LiteralOrVariable::Variable(device_spanned),
-                    ..
-                } = device
-                else {
-                    return Err(Error::AgrumentMismatch(
-                        "Arg1 expected to be a variable".into(),
-                        span,
-                    ));
-                };
-
-                let (device, device_cleanup) = self.compile_literal_or_variable(
-                    LiteralOrVariable::Variable(device_spanned.clone()),
-                    scope,
-                )?;
+                let (device, device_cleanup) = self.compile_device_operand(device, scope)?;
 
                 let (reagent_hash, reagent_hash_cleanup) =
                     self.compile_operand(reagent_hash, scope)?;

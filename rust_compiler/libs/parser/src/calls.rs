@@ -156,11 +156,12 @@ impl<'a> Parser<'a> {
             }
             "load" | "l" => {
                 let mut args = args!(2);
-                let device = literal_or_variable!(args.next());
+                let device = args.next().ok_or_else(|| self.unexpected_eof())?;
                 let logic_type = literal_or_variable!(args.next());
 
                 Ok(SysCall::System(sys_call::System::LoadFromDevice(
-                    device, logic_type,
+                    boxed!(device),
+                    logic_type,
                 )))
             }
             "loadBatched" | "lb" => {
@@ -221,11 +222,11 @@ impl<'a> Parser<'a> {
             }
             "set" | "s" => {
                 let mut args = args!(3);
-                let device = literal_or_variable!(args.next());
+                let device = args.next().ok_or_else(|| self.unexpected_eof())?;
                 let logic_type = literal_or_variable!(args.next());
                 let variable = args.next().ok_or_else(|| self.unexpected_eof())?;
                 Ok(SysCall::System(sys_call::System::SetOnDevice(
-                    device,
+                    boxed!(device),
                     logic_type,
                     boxed!(variable),
                 )))
@@ -258,25 +259,25 @@ impl<'a> Parser<'a> {
             }
             "loadSlot" | "ls" => {
                 let mut args = args!(3);
-                let dev_name = literal_or_variable!(args.next());
+                let dev_name = args.next().ok_or_else(|| self.unexpected_eof())?;
                 let slot_index = args.next().ok_or_else(|| self.unexpected_eof())?;
                 let slot_logic = literal_or_variable!(args.next());
 
                 Ok(SysCall::System(System::LoadSlot(
-                    dev_name,
+                    boxed!(dev_name),
                     boxed!(slot_index),
                     slot_logic,
                 )))
             }
             "setSlot" | "ss" => {
                 let mut args = args!(4);
-                let dev_name = literal_or_variable!(args.next());
+                let dev_name = args.next().ok_or_else(|| self.unexpected_eof())?;
                 let slot_index = args.next().ok_or_else(|| self.unexpected_eof())?;
                 let slot_logic = literal_or_variable!(args.next());
                 let expr = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::System(System::SetSlot(
-                    dev_name,
+                    boxed!(dev_name),
                     boxed!(slot_index),
                     slot_logic,
                     boxed!(expr),
@@ -284,23 +285,23 @@ impl<'a> Parser<'a> {
             }
             "loadReagent" | "lr" => {
                 let mut args = args!(3);
-                let device = literal_or_variable!(args.next());
+                let device = args.next().ok_or_else(|| self.unexpected_eof())?;
                 let reagent_mode = literal_or_variable!(args.next());
                 let reagent_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::System(System::LoadReagent(
-                    device,
+                    boxed!(device),
                     reagent_mode,
                     Box::new(reagent_hash),
                 )))
             }
             "rmap" => {
                 let mut args = args!(2);
-                let device = literal_or_variable!(args.next());
+                let device = args.next().ok_or_else(|| self.unexpected_eof())?;
                 let reagent_hash = args.next().ok_or_else(|| self.unexpected_eof())?;
 
                 Ok(SysCall::System(System::Rmap(
-                    device,
+                    boxed!(device),
                     Box::new(reagent_hash),
                 )))
             }

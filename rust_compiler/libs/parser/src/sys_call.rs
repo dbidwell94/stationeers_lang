@@ -240,7 +240,7 @@ documented! {
         /// `let item = load(deviceHash, "LogicType");`
         /// `let item = l(deviceHash, "LogicType");`
         /// `let item = deviceAlias.LogicType;`
-        LoadFromDevice(Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>),
+        LoadFromDevice(Box<Spanned<Expression<'a>>>, Spanned<LiteralOrVariable<'a>>),
         /// Function which gets a LogicType from all connected network devices that match
         /// the provided device hash and name, aggregating them via a batchMode
         /// ## IC10
@@ -296,7 +296,7 @@ documented! {
         /// `set(deviceHash, "LogicType", (number|var));`
         /// `s(deviceHash, "LogicType", (number|var));`
         /// `deviceAlias.LogicType = (number|var);`
-        SetOnDevice(Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>, Box<Spanned<Expression<'a>>>),
+        SetOnDevice(Box<Spanned<Expression<'a>>>, Spanned<LiteralOrVariable<'a>>, Box<Spanned<Expression<'a>>>),
         /// Represents a function which stores a setting to all devices that match
         /// the given deviceHash
         /// ## IC10
@@ -326,7 +326,7 @@ documented! {
         /// `let isOccupied = loadSlot(deviceHash, 2, "Occupied");`
         /// `let isOccupied = ls(deviceHash, 2, "Occupied");`
         LoadSlot(
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Box<Spanned<Expression<'a>>>,
             Spanned<LiteralOrVariable<'a>>,
         ),
@@ -337,7 +337,7 @@ documented! {
         /// `setSlot(deviceHash, 0, "Open", true);`
         /// `ss(deviceHash, 0, "Open", true);`
         SetSlot(
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Box<Spanned<Expression<'a>>>,
             Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>
@@ -350,7 +350,7 @@ documented! {
         /// `let result = loadReagent(deviceHash, "ReagentMode", reagentHash);`
         /// `let result = lr(deviceHash, "ReagentMode", reagentHash);`
         LoadReagent(
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>
         ),
@@ -362,7 +362,7 @@ documented! {
         /// `let itemHash = rmap(device, reagentHash);`
         /// `let itemHash = rmap(device, reagentHashValue);`
         Rmap(
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Box<Spanned<Expression<'a>>>
         )
     }
@@ -456,11 +456,11 @@ impl<'a> System<'a> {
                 visitor.visit_literal(e);
             }
             Self::LoadFromDevice(l, r) => {
-                l.walk(visitor);
+                visitor.visit_expression(l);
                 r.walk(visitor);
             }
             Self::Rmap(l, r) => {
-                l.walk(visitor);
+                visitor.visit_expression(l);
                 visitor.visit_expression(r);
             }
             Self::LoadBatchNamed(a, b, c, d) => {
@@ -488,7 +488,7 @@ impl<'a> System<'a> {
                 e.walk(visitor);
             }
             Self::SetOnDevice(a, b, c) => {
-                a.walk(visitor);
+                visitor.visit_expression(a);
                 b.walk(visitor);
                 visitor.visit_expression(c);
             }
@@ -504,18 +504,18 @@ impl<'a> System<'a> {
                 visitor.visit_expression(d);
             }
             Self::LoadSlot(a, b, c) => {
-                a.walk(visitor);
+                visitor.visit_expression(a);
                 visitor.visit_expression(b);
                 c.walk(visitor);
             }
             Self::SetSlot(a, b, c, d) => {
-                a.walk(visitor);
+                visitor.visit_expression(a);
                 visitor.visit_expression(b);
                 c.walk(visitor);
                 visitor.visit_expression(d);
             }
             Self::LoadReagent(a, b, c) => {
-                a.walk(visitor);
+                visitor.visit_expression(a);
                 b.walk(visitor);
                 visitor.visit_expression(c);
             }

@@ -131,6 +131,124 @@ fn quoted_decimal_ref_id_device_property_write() -> anyhow::Result<()> {
 }
 
 #[test]
+fn dereferenced_runtime_value_uses_indirect_pin_operand() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device remote = \"d0\";
+            let pin = remote[0];
+            let setting = (*pin).Setting;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            get r1 d0 0
+            move r8 r1
+            l r2 dr8 Setting
+            move r9 r2
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn runtime_value_without_dereference_uses_reference_operand() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device remote = \"d0\";
+            let ref_id = remote[0];
+            let setting = ref_id.Setting;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            get r1 d0 0
+            move r8 r1
+            l r2 r8 Setting
+            move r9 r2
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn dereferenced_computed_value_uses_indirect_pin_operand() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            let setting = (*(1 + 2)).Setting;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r1 3
+            l r2 dr1 Setting
+            move r8 r2
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn dereferenced_function_result_uses_indirect_pin_operand() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            fn get_pin() {
+                return 1;
+            };
+            let setting = (*(get_pin() + 1)).Setting;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert!(
+        compiled.output.contains("l r3 dr2 Setting"),
+        "Expected an indirect pin operand for the function result, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
 fn multiple_device_declarations() -> anyhow::Result<()> {
     let compiled = compile! {
         check "

@@ -689,6 +689,51 @@ impl<'a> Compiler<'a> {
         expr: &Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
+        if let Expression::Priority(inner) = &expr.node {
+            return self.compile_device_operand(inner, scope);
+        }
+
+        if let Expression::Dereference(inner) = &expr.node {
+            let (operand, cleanup) = self.compile_operand(inner, scope)?;
+            if let Operand::Register(register) = operand {
+                return Ok((
+                    Operand::DeviceReference(DeviceReference::Pin(LiteralOrReference::Reference(
+                        register,
+                    ))),
+                    cleanup,
+                ));
+            }
+
+            let value = match operand {
+                Operand::Number(value) => value,
+                Operand::Device(DeviceType::Pin(pin)) => pin.into(),
+                Operand::Device(DeviceType::Reference(reference)) => reference.into(),
+                Operand::Device(DeviceType::Housing) => i64::MAX.into(),
+                _ => {
+                    return Err(Error::Unknown(
+                        "Device dereference requires a numeric expression".into(),
+                        Some(expr.span),
+                    ));
+                }
+            };
+
+            if let Some(name) = cleanup {
+                scope.free_temp(name, None)?;
+            }
+            let temp_name = self.next_temp_name();
+            let temp_location =
+                scope.add_variable(temp_name.clone(), LocationRequest::Temp, Some(expr.span))?;
+            let register = self.resolve_register(&temp_location)?;
+            self.emit_variable_assignment(&temp_location, Operand::Number(value))?;
+
+            return Ok((
+                Operand::DeviceReference(DeviceReference::Pin(LiteralOrReference::Reference(
+                    register,
+                ))),
+                Some(temp_name),
+            ));
+        }
+
         let Expression::Variable(name) = &expr.node else {
             return self.compile_operand(expr, scope);
         };
