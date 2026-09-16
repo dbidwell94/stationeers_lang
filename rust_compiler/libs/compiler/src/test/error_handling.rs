@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::Error;
 use crate::variable_manager::Error as ScopeError;
 use parser::Error as ParserError;
@@ -177,11 +179,12 @@ fn device_reassignment_error() {
         "
     };
 
-    assert!(
-        errors
-            .iter()
-            .any(|e| matches!(e, Error::DuplicateIdentifier(_, _)))
-    );
+    let _d0 = String::from("d0");
+
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        Error::Scope(ScopeError::DuplicateVariable(Cow::Owned(_d0), ..))
+    )));
 }
 
 #[test]

@@ -16,6 +16,15 @@ pub struct SymbolInfo<'a> {
 }
 
 impl<'a> SymbolInfo<'a> {
+    pub fn into_owned(self) -> SymbolInfo<'static> {
+        SymbolInfo {
+            name: Cow::Owned(self.name.into_owned()),
+            kind: self.kind.into_owned(),
+            span: self.span,
+            description: self.description.map(|d| Cow::Owned(d.into_owned())),
+        }
+    }
+
     /// Converts to an LSP SymbolInformation for protocol compatibility.
     pub fn to_lsp_symbol_information(&self, uri: lsp_types::Uri) -> lsp_types::SymbolInformation {
         lsp_types::SymbolInformation {
@@ -72,6 +81,31 @@ pub enum SymbolKind<'a> {
 }
 
 impl<'a> SymbolKind<'a> {
+    pub fn into_owned(self) -> SymbolKind<'static> {
+        match self {
+            SymbolKind::Function {
+                parameters,
+                return_type,
+            } => SymbolKind::Function {
+                parameters: parameters
+                    .into_iter()
+                    .map(|p| Cow::Owned(p.into_owned()))
+                    .collect(),
+                return_type: return_type.map(|t| Cow::Owned(t.into_owned())),
+            },
+            SymbolKind::Syscall {
+                syscall_type,
+                argument_count,
+            } => SymbolKind::Syscall {
+                syscall_type,
+                argument_count,
+            },
+            SymbolKind::Variable { type_hint } => SymbolKind::Variable {
+                type_hint: type_hint.map(|t| Cow::Owned(t.into_owned())),
+            },
+        }
+    }
+
     /// Converts to LSP SymbolKind for protocol compatibility.
     fn to_lsp_symbol_kind(&self) -> lsp_types::SymbolKind {
         match self {
@@ -144,6 +178,16 @@ pub struct CompilationMetadata<'a> {
 }
 
 impl<'a> CompilationMetadata<'a> {
+    pub fn into_owned(self) -> CompilationMetadata<'static> {
+        CompilationMetadata {
+            symbols: self
+                .symbols
+                .into_iter()
+                .map(|sym| sym.into_owned())
+                .collect(),
+        }
+    }
+
     /// Creates a new empty compilation metadata.
     pub fn new() -> Self {
         Self {

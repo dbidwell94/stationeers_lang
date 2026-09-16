@@ -1,3 +1,5 @@
+use il::DeviceReference;
+
 use super::*;
 
 impl<'a> Compiler<'a> {
@@ -102,7 +104,7 @@ impl<'a> Compiler<'a> {
                             self.write_instruction(
                                 Instruction::Get(
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::Device(Cow::from("db")),
+                                    Operand::Device(DeviceType::Housing),
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                 ),
                                 Some(var_name.span),
@@ -116,10 +118,14 @@ impl<'a> Compiler<'a> {
                             )?;
                         }
                         VariableLocation::Device(_) => {
-                            self.errors.push(Error::Unknown(
-                                "Device references not supported in function arguments".into(),
+                            let (operand, cleanup) = self.compile_operand(arg, &mut stack)?;
+                            self.write_instruction(
+                                Instruction::Push(operand),
                                 Some(var_name.span),
-                            ));
+                            )?;
+                            if let Some(name) = cleanup {
+                                stack.free_temp(name, None)?;
+                            }
                         }
                     }
                 }
@@ -179,31 +185,24 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_function_invocation(
         &mut self,
-        invoke_expr: Spanned<InvocationExpression<'a>>,
+        invoke_expr: &Spanned<InvocationExpression<'a>>,
         parent_scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
-        let InvocationExpression { name, arguments } = invoke_expr.node;
+        let InvocationExpression { name, arguments } = &invoke_expr.node;
 
         if !self.function_meta.locations.contains_key(&name.node) {
             self.errors
                 .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-            // Don't emit call, just pretend we did?
-            // Actually, we should probably emit a dummy call or just skip to avoid logic errors
-            // But if we skip, registers might be unbalanced if something expected a return.
-            // For now, let's just return early.
             return Ok(());
         }
 
         let Some(args) = self.function_meta.params.get(&name.node) else {
-            // Should be covered by check above
-            return Err(Error::UnknownIdentifier(name.node, name.span));
+            return Err(Error::UnknownIdentifier(name.node.clone(), name.span));
         };
 
         if args.len() != arguments.len() {
             self.errors
-                .push(Error::AgrumentMismatch(name.node, name.span));
-            // Proceed anyway? The assembly will likely crash or act weird.
-            // Best to skip generation of this call to prevent bad IC10
+                .push(Error::AgrumentMismatch(name.node.clone(), name.span));
             return Ok(());
         }
         let mut stack = VariableScope::scoped(parent_scope);
@@ -238,11 +237,44 @@ impl<'a> Compiler<'a> {
                         Some(arg_span),
                     )?;
                 }
-                Operand::Device(_) => {
-                    return Err(Error::Unknown(
-                        r#"Attempted to pass a device constant into a function argument. These values can be used without scope."#.into(),
-                        Some(arg_span),
-                    ));
+                Operand::DeviceReference(d_ref) => match d_ref {
+                    DeviceReference::Pin(_) | DeviceReference::Reference(_) => {
+                        self.write_instruction(
+                            Instruction::Push(Operand::DeviceReference(d_ref)),
+                            Some(arg_span),
+                        )?;
+                    }
+                    _ => {
+                        return Err(Error::Unknown(
+                                "Only External Pin and Reference device types are supported in function arguments".into(),
+                                Some(arg_span),
+                            ));
+                    }
+                },
+                Operand::Device(device) => {
+                    match device {
+                        DeviceType::Pin(pin_id) => {
+                            self.write_instruction(
+                                Instruction::Push(Operand::Number(pin_id.into())),
+                                Some(arg_span),
+                            )?;
+                        }
+                        DeviceType::Reference(ref_id) => {
+                            self.write_instruction(
+                                Instruction::Push(Operand::Number(Decimal::from_i128_with_scale(
+                                    ref_id, 0,
+                                ))),
+                                Some(arg_span),
+                            )?;
+                        }
+                        DeviceType::Housing => {
+                            // TODO! Validate if i64::MAX is indeed the correct "pin" for the housing device
+                            self.write_instruction(
+                                Instruction::Push(Operand::Number(i64::MAX.into())),
+                                Some(arg_span),
+                            )?;
+                        }
+                    }
                 }
                 Operand::Label(l) => {
                     self.write_instruction(Instruction::Push(Operand::Label(l)), Some(arg_span))?;
@@ -275,7 +307,7 @@ impl<'a> Compiler<'a> {
 
         // jump to the function and store current line in ra
         self.write_instruction(
-            Instruction::JumpAndLink(Operand::Label(name.node)),
+            Instruction::JumpAndLink(Operand::Label(name.node.clone())),
             Some(name.span),
         )?;
 
@@ -308,7 +340,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn expression_return(
         &mut self,
-        expr: Option<Box<Spanned<Expression<'a>>>>,
+        expr: Option<&Spanned<Expression<'a>>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<VariableLocation<'a>, Error<'a>> {
         if let Some(expr) = expr {
@@ -322,7 +354,7 @@ impl<'a> Compiler<'a> {
                 return Ok(loc);
             };
 
-            match expr.node {
+            match &expr.node {
                 Expression::Variable(var_name) => {
                     match scope.get_location_of(&var_name.node, Some(var_name.span)) {
                         Ok(loc) => match loc {
@@ -358,7 +390,7 @@ impl<'a> Compiler<'a> {
                                 self.write_instruction(
                                     Instruction::Get(
                                         Operand::Register(VariableScope::RETURN_REGISTER),
-                                        Operand::Device(Cow::from("db")),
+                                        Operand::Device(DeviceType::Housing),
                                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                     ),
                                     Some(span),
@@ -431,8 +463,8 @@ impl<'a> Compiler<'a> {
                     let span = access.span;
                     // Return result of member access
                     let res_opt = self.expression(
-                        Spanned {
-                            node: Expression::MemberAccess(access),
+                        &Spanned {
+                            node: Expression::MemberAccess(access.clone()),
                             span: expr.span,
                         },
                         scope,
@@ -454,11 +486,11 @@ impl<'a> Compiler<'a> {
                 }
                 Expression::Tuple(tuple_expr) => {
                     let span = expr.span;
-                    let tuple_elements = tuple_expr.node;
+                    let tuple_elements = &tuple_expr.node;
                     let tuple_size = tuple_elements.len();
 
                     // Push each tuple element onto the stack using compile_operand
-                    for element in tuple_elements.into_iter() {
+                    for element in tuple_elements.iter() {
                         let (push_operand, cleanup) = self.compile_operand(element, scope)?;
 
                         self.write_instruction(Instruction::Push(push_operand), Some(span))?;
@@ -492,7 +524,7 @@ impl<'a> Compiler<'a> {
                             self.write_instruction(
                                 Instruction::Get(
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                                    Operand::Device(Cow::from("db")),
+                                    Operand::Device(DeviceType::Housing),
                                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                                 ),
                                 Some(span),
@@ -544,23 +576,24 @@ impl<'a> Compiler<'a> {
     // register
     pub(super) fn expression_function(
         &mut self,
-        expr: Spanned<FunctionExpression<'a>>,
+        expr: &Spanned<FunctionExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let FunctionExpression {
             name,
             arguments,
             body,
-        } = expr.node;
+        } = &expr.node;
 
         let span = expr.span;
 
         // Track the function definition in metadata
         let param_names: Vec<Cow<'a, str>> = arguments.iter().map(|a| a.node.clone()).collect();
         let doc_comment = self
-            .parser
-            .get_declaration_doc(name.node.as_ref())
-            .map(Cow::Owned);
+            .declaration_docs
+            .get(name.node.as_ref())
+            .map(|s| Cow::Owned(s.to_owned()));
+
         self.metadata.add_function_with_doc(
             name.node.clone(),
             param_names,
@@ -580,6 +613,14 @@ impl<'a> Compiler<'a> {
             arguments.iter().map(|a| a.node.clone()).collect(),
         );
 
+        let parameter_kinds = self
+            .analyze_result
+            .functions
+            .values()
+            .find(|metadata| metadata.symbol.name == name.node)
+            .map(|metadata| metadata.parameter_kinds.clone())
+            .unwrap_or_else(|| vec![ParameterKind::Unknown; arguments.len()]);
+
         // Set the current function being compiled
         self.function_meta.current_name = Some(name.node.clone());
 
@@ -596,10 +637,11 @@ impl<'a> Compiler<'a> {
         let mut saved_variables = 0;
 
         // do a reverse pass to pop variables from the stack and put them into registers
-        for var_name in arguments
+        for (var_name, parameter_kind) in arguments
             .iter()
             .rev()
             .take(VariableScope::PERSIST_REGISTER_COUNT as usize)
+            .zip(parameter_kinds.iter().rev())
         {
             let loc = block_scope.add_variable(
                 var_name.node.clone(),
@@ -631,18 +673,48 @@ impl<'a> Compiler<'a> {
                     ));
                 }
             }
+            match parameter_kind {
+                ParameterKind::DevicePin => {
+                    block_scope.define_device_reference(var_name.node.clone(), DeviceType::Pin(0));
+                }
+                ParameterKind::DeviceReference => {
+                    block_scope
+                        .define_device_reference(var_name.node.clone(), DeviceType::Reference(0));
+                }
+                ParameterKind::DeviceHousing => {
+                    block_scope.define_device_reference(var_name.node.clone(), DeviceType::Housing);
+                }
+                ParameterKind::Unknown | ParameterKind::Value => {}
+            }
             saved_variables += 1;
         }
 
         // now do a forward pass in case we have spilled into the stack. We don't need to push
         // anything as they already exist on the stack, but we DO need to let our block_scope be
         // aware that the variables exist on the stack (left to right)
-        for var_name in arguments.iter().take(arguments.len() - saved_variables) {
+        for (var_name, parameter_kind) in arguments
+            .iter()
+            .take(arguments.len() - saved_variables)
+            .zip(parameter_kinds.iter())
+        {
             block_scope.add_variable(
                 var_name.node.clone(),
                 LocationRequest::Stack,
                 Some(var_name.span),
             )?;
+            match parameter_kind {
+                ParameterKind::DevicePin => {
+                    block_scope.define_device_reference(var_name.node.clone(), DeviceType::Pin(0));
+                }
+                ParameterKind::DeviceReference => {
+                    block_scope
+                        .define_device_reference(var_name.node.clone(), DeviceType::Reference(0));
+                }
+                ParameterKind::DeviceHousing => {
+                    block_scope.define_device_reference(var_name.node.clone(), DeviceType::Housing);
+                }
+                ParameterKind::Unknown | ParameterKind::Value => {}
+            }
         }
 
         // Save the caller's stack pointer FIRST (before any pushes modify it)
@@ -672,10 +744,10 @@ impl<'a> Compiler<'a> {
 
         self.write_instruction(Instruction::Push(Operand::ReturnAddress), Some(span))?;
 
-        for expr in body.0 {
-            match expr.node {
+        for expr in &body.node.0 {
+            match &expr.node {
                 Expression::Return(ret_expr) => {
-                    self.expression_return(ret_expr, &mut block_scope)?;
+                    self.expression_return(ret_expr.as_deref(), &mut block_scope)?;
                 }
                 _ => {
                     // Swallow internal errors
@@ -747,7 +819,7 @@ impl<'a> Compiler<'a> {
             self.write_instruction(
                 Instruction::Get(
                     Operand::ReturnAddress,
-                    Operand::Device(Cow::from("db")),
+                    Operand::Device(DeviceType::Housing),
                     Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                 ),
                 Some(span),
@@ -772,7 +844,7 @@ impl<'a> Compiler<'a> {
                 self.write_instruction(
                     Instruction::Get(
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
-                        Operand::Device(Cow::from("db")),
+                        Operand::Device(DeviceType::Housing),
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                     ),
                     Some(span),

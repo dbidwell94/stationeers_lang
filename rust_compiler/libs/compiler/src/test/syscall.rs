@@ -193,6 +193,69 @@ fn test_load_from_device() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_load_from_dereferenced_device_expression() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device remote = "d0";
+        let pin = remote[0];
+        let setting = l(*pin, "Setting");
+        "#
+    };
+
+    assert!(compiled.errors.is_empty(), "{:?}", compiled.errors);
+    assert!(
+        compiled.output.contains("l r15 dr8 Setting"),
+        "Expected indirect pin load, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_set_to_dereferenced_device_expression() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device remote = "d0";
+        let pin = remote[0];
+        s(*pin, "Setting", 1);
+        "#
+    };
+
+    assert!(compiled.errors.is_empty(), "{:?}", compiled.errors);
+    assert!(
+        compiled.output.contains("s dr8 Setting 1"),
+        "Expected indirect pin store, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_clear_dereferenced_device_expression() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device remote = "d0";
+        let pin = remote[0];
+        clr(*pin);
+        "#
+    };
+
+    assert!(compiled.errors.is_empty(), "{:?}", compiled.errors);
+    assert!(
+        compiled.output.contains("clr dr8"),
+        "Expected indirect pin clear, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_load_from_slot() -> anyhow::Result<()> {
     let compiled = compile! {
         check
@@ -219,6 +282,27 @@ fn test_load_from_slot() -> anyhow::Result<()> {
             move r8 r15
             "
         }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_load_slot_from_dereferenced_device_expression() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device remote = "d0";
+        let pin = remote[0];
+        let setting = ls(*pin, 0, "Occupied");
+        "#
+    };
+
+    assert!(compiled.errors.is_empty(), "{:?}", compiled.errors);
+    assert!(
+        compiled.output.contains("ls r15 dr8 0 Occupied"),
+        "Expected indirect pin slot load, got:\n{}",
+        compiled.output
     );
 
     Ok(())
@@ -295,6 +379,27 @@ fn test_set_slot() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_set_slot_to_dereferenced_device_expression() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device remote = "d0";
+        let pin = remote[0];
+        ss(*pin, 0, "Occupied", true);
+        "#
+    };
+
+    assert!(compiled.errors.is_empty(), "{:?}", compiled.errors);
+    assert!(
+        compiled.output.contains("ss dr8 0 Occupied 1"),
+        "Expected indirect pin slot store, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_set_slot_from_syscall() -> anyhow::Result<()> {
     let compiled = compile! {
         check
@@ -361,6 +466,27 @@ fn test_load_reagent() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_load_reagent_from_dereferenced_device_expression() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device remote = "d0";
+        let pin = remote[0];
+        let amount = lr(*pin, "Contents", 1);
+        "#
+    };
+
+    assert!(compiled.errors.is_empty(), "{:?}", compiled.errors);
+    assert!(
+        compiled.output.contains("lr r15 dr8 Contents 1"),
+        "Expected indirect pin reagent load, got:\n{}",
+        compiled.output
+    );
+
+    Ok(())
+}
 #[test]
 fn test_clr() -> anyhow::Result<()> {
     let compiled = compile! {
@@ -422,6 +548,27 @@ fn test_rmap() -> anyhow::Result<()> {
             move r9 r15
             "
         }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_rmap_from_dereferenced_device_expression() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device remote = "d0";
+        let pin = remote[0];
+        let item_hash = rmap(*pin, 1);
+        "#
+    };
+
+    assert!(compiled.errors.is_empty(), "{:?}", compiled.errors);
+    assert!(
+        compiled.output.contains("rmap r15 dr8 1"),
+        "Expected indirect pin reagent map, got:\n{}",
+        compiled.output
     );
 
     Ok(())

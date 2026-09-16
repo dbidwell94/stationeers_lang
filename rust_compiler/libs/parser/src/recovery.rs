@@ -72,13 +72,13 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Parser, parser};
+    use crate::{ParseOutput, Parser, parser};
     use indoc::indoc;
     use tokenizer::Tokenizer;
 
     #[test]
     fn test_block_with_comment_works_as_intended() -> anyhow::Result<()> {
-        let mut parser = parser!(indoc! {
+        let parser = parser!(indoc! {
             r#"
                 loop {
                     let i = 0;
@@ -89,7 +89,7 @@ mod tests {
             "#
         });
 
-        let ast = parser.parse_all()?.unwrap();
+        let ParseOutput { root: ast, .. } = parser.parse_all()?.unwrap();
 
         assert_eq!("{ (loop { (let i = 0); }); }", ast.to_string());
 

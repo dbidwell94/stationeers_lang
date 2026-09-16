@@ -1,4 +1,5 @@
 use helpers::Span;
+use parser::tree_node::DeviceType;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -87,8 +88,12 @@ impl<'a> InstructionNode<'a> {
 pub enum Operand<'a> {
     /// A hardware register (r0-r15)
     Register(u8),
-    /// A device alias or direct connection (d0-d5, db)
-    Device(Cow<'a, str>),
+    /// A device alias or direct connection (d0-d5, db, $ref)
+    Device(DeviceType),
+    /// A device reference (e.g., $ref). This is used when we need to strip
+    /// the device letter. Example: d0 would be 0. We can then store 0
+    /// in a register and use it like: `dr0` for device (register 0)
+    DeviceReference(DeviceReference),
     /// A numeric literal (integer or float)
     Number(Decimal),
     /// A label used for jumping
@@ -101,11 +106,51 @@ pub enum Operand<'a> {
     ReturnAddress,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum LiteralOrReference {
+    /// This represents a device reference that is not in a register,
+    /// this is a constant and should be treated as such until attempting
+    /// to use it in an instruction.
+    Literal(Decimal),
+    /// This represents a device reference that is stored in a register.
+    Reference(u8),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeviceReference {
+    Housing(LiteralOrReference),
+    /// Represents a device pin (e.g., d0, d1) that is stored in a register.
+    /// This would resolve to `dr<number>` where <number> is the register
+    /// the pin number itself is stored.
+    Pin(LiteralOrReference),
+    /// Represents a device reference (e.g., $ref) that is stored in a register.
+    /// This would resolve to `r<number>` where number is the register the refId
+    /// is stored.
+    Reference(LiteralOrReference),
+}
+
+impl fmt::Display for DeviceReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use LiteralOrReference::*;
+        match self {
+            DeviceReference::Housing(lor) | DeviceReference::Pin(lor) => match lor {
+                Literal(val) => write!(f, "d{val}"),
+                Reference(reg) => write!(f, "dr{reg}"),
+            },
+            DeviceReference::Reference(lor) => match lor {
+                Literal(val) => write!(f, "${val}"),
+                Reference(reg) => write!(f, "r{reg}"),
+            },
+        }
+    }
+}
+
 impl<'a> fmt::Display for Operand<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Operand::Register(r) => write!(f, "r{}", r),
             Operand::Device(d) => write!(f, "{}", d),
+            Operand::DeviceReference(d) => write!(f, "{}", d),
             Operand::Number(n) => write!(f, "{}", n),
             Operand::Label(l) => write!(f, "{}", l),
             Operand::LogicType(t) => write!(f, "{}", t),
@@ -332,6 +377,7 @@ impl<'a> fmt::Display for Instruction<'a> {
 
             Instruction::Load(reg, dev, typ) => write!(f, "l {} {} {}", reg, dev, typ),
             Instruction::Store(dev, typ, val) => write!(f, "s {} {} {}", dev, typ, val),
+
             Instruction::LoadSlot(reg, dev, slot, typ) => {
                 write!(f, "ls {} {} {} {}", reg, dev, slot, typ)
             }

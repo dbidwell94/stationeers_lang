@@ -25,6 +25,26 @@ pub enum Error<'a> {
     UnexpectedEOF(Option<Span>),
 }
 
+impl<'a> Error<'a> {
+    pub fn into_owned(self) -> Error<'static> {
+        match self {
+            Error::Tokenizer(err) => Error::Tokenizer(err),
+            Error::UnexpectedToken(span, token) => {
+                Error::UnexpectedToken(span, Token::new(TokenType::EOF, token.line, token.span))
+            }
+            Error::DuplicateIdentifier(span, token) => {
+                Error::DuplicateIdentifier(span, Token::new(TokenType::EOF, token.line, token.span))
+            }
+            Error::InvalidSyntax(span, message) => Error::InvalidSyntax(span, message),
+            Error::UnsupportedKeyword(span, token) => {
+                Error::UnsupportedKeyword(span, Token::new(TokenType::EOF, token.line, token.span))
+            }
+            Error::MissingSemicolon(span) => Error::MissingSemicolon(span),
+            Error::UnexpectedEOF(span) => Error::UnexpectedEOF(span),
+        }
+    }
+}
+
 impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
     fn from(value: Error) -> Self {
         use Error::*;
@@ -51,5 +71,23 @@ impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
                 }
             }
         }
+    }
+}
+
+#[derive(Error, Debug)]
+pub struct Errors<'a>(pub Vec<Error<'a>>);
+
+impl std::fmt::Display for Errors<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for error in &self.0 {
+            writeln!(f, "{}", error)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> Errors<'a> {
+    pub fn into_owned(self) -> Errors<'static> {
+        Errors(self.0.into_iter().map(|e| e.into_owned()).collect())
     }
 }

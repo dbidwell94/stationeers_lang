@@ -2,6 +2,7 @@ pub mod sys_call;
 #[cfg(test)]
 mod test;
 pub mod tree_node;
+pub mod visitor;
 
 use crate::sys_call::{Math, System};
 use helpers::Span;
@@ -15,6 +16,15 @@ use tree_node::*;
 
 pub trait Documentation {
     fn docs(&self) -> String;
+}
+
+#[macro_export]
+macro_rules! parse {
+    ($input:expr) => {
+        Parser::new(Tokenizer::from($input))
+            .parse_all()?
+            .map(|output| output.root)
+    };
 }
 
 #[macro_export]
@@ -65,7 +75,7 @@ mod error;
 mod expressions;
 mod recovery;
 
-pub use error::Error;
+pub use error::{Error, Errors};
 
 pub struct Parser<'a> {
     tokenizer: TokenizerBuffer<'a>,
@@ -75,6 +85,11 @@ pub struct Parser<'a> {
     /// Caches the most recent doc comment for attaching to the next declaration
     cached_doc_comment: Option<String>,
     /// Maps variable/declaration names to their doc comments
+    pub declaration_docs: std::collections::HashMap<String, String>,
+}
+
+pub struct ParseOutput<'a> {
+    pub root: Spanned<Expression<'a>>,
     pub declaration_docs: std::collections::HashMap<String, String>,
 }
 
@@ -179,7 +194,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_all(&mut self) -> Result<Option<tree_node::Expression<'a>>, Error<'a>> {
+    pub fn parse_all(mut self) -> Result<Option<ParseOutput<'a>>, Errors<'a>> {
         let first_token = self.tokenizer.peek().unwrap_or(None);
         let (start_line, start_col) = first_token
             .as_ref()
@@ -224,10 +239,22 @@ impl<'a> Parser<'a> {
             end_col,
         };
 
-        Ok(Some(Expression::Block(Spanned {
-            node: BlockExpression(expressions),
+        let root_node = Spanned {
+            node: Expression::Block(Spanned {
+                node: BlockExpression(expressions),
+                span,
+            }),
             span,
-        })))
+        };
+
+        if self.errors.is_empty() {
+            Ok(Some(ParseOutput {
+                root: root_node,
+                declaration_docs: self.declaration_docs,
+            }))
+        } else {
+            Err(Errors(self.errors))
+        }
     }
 
     pub fn parse(&mut self) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {

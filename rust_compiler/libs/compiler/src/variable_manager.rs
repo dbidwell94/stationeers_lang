@@ -5,7 +5,7 @@
 
 use helpers::Span;
 use lsp_types::{Diagnostic, DiagnosticSeverity};
-use parser::tree_node::Literal;
+use parser::tree_node::{DeviceType, Literal};
 use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
@@ -25,6 +25,20 @@ pub enum Error<'a> {
 
     #[error("{0}")]
     Unknown(Cow<'a, str>, Option<Span>),
+}
+
+impl<'a> Error<'a> {
+    pub fn into_owned(self) -> Error<'static> {
+        match self {
+            Error::DuplicateVariable(name, span) => {
+                Error::DuplicateVariable(Cow::Owned(name.into_owned()), span)
+            }
+            Error::UnknownVariable(name, span) => {
+                Error::UnknownVariable(Cow::Owned(name.into_owned()), span)
+            }
+            Error::Unknown(message, span) => Error::Unknown(Cow::Owned(message.into_owned()), span),
+        }
+    }
 }
 
 impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
@@ -64,13 +78,14 @@ pub enum VariableLocation<'a> {
     /// Represents a constant value and should be directly substituted as such.
     Constant(Literal<'a>),
     /// Represents a device pin. This will contain the exact `d0-d5` string
-    Device(Cow<'a, str>),
+    Device(DeviceType),
 }
 
 pub struct VariableScope<'a, 'b> {
     temporary_vars: VecDeque<u8>,
     persistant_vars: VecDeque<u8>,
     var_lookup_table: HashMap<Cow<'a, str>, VariableLocation<'a>>,
+    device_reference_lookup_table: HashMap<Cow<'a, str>, DeviceType>,
     stack_offset: u16,
     parent: Option<&'b VariableScope<'a, 'b>>,
 }
@@ -83,6 +98,7 @@ impl<'a, 'b> Default for VariableScope<'a, 'b> {
             persistant_vars: PERSIST.to_vec().into(),
             temporary_vars: TEMP.to_vec().into(),
             var_lookup_table: HashMap::new(),
+            device_reference_lookup_table: HashMap::new(),
         }
     }
 }
@@ -176,6 +192,9 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         Ok(var_location)
     }
 
+    /// Adds and tracks a new constant variable. This is used to track literal values that are
+    /// used in the code. These are not stored in registers, but are instead substituted directly
+    /// into the code.
     pub fn define_const(
         &mut self,
         var_name: Cow<'a, str>,
@@ -190,6 +209,38 @@ impl<'a, 'b> VariableScope<'a, 'b> {
 
         self.var_lookup_table.insert(var_name, new_value.clone());
         Ok(new_value)
+    }
+
+    /// Defines a device variable. This is used to track device pins, references, etc.
+    /// Device _channels_ are not implemented yet, but those will also be tracked here.
+    pub fn define_device(
+        &mut self,
+        var_name: Cow<'a, str>,
+        device: DeviceType,
+        span: Option<Span>,
+    ) -> Result<VariableLocation<'a>, Error<'a>> {
+        if self.var_lookup_table.contains_key(&var_name) {
+            return Err(Error::DuplicateVariable(var_name, span));
+        }
+
+        let new_value = VariableLocation::Device(device);
+
+        self.var_lookup_table.insert(var_name, new_value.clone());
+        Ok(new_value)
+    }
+
+    pub fn define_device_reference(&mut self, var_name: Cow<'a, str>, device: DeviceType) {
+        self.device_reference_lookup_table.insert(var_name, device);
+    }
+
+    pub fn get_device_reference(&self, var_name: &Cow<'a, str>) -> Option<DeviceType> {
+        self.device_reference_lookup_table
+            .get(var_name)
+            .cloned()
+            .or_else(|| {
+                self.parent
+                    .and_then(|parent| parent.get_device_reference(var_name))
+            })
     }
 
     pub fn get_location_of(

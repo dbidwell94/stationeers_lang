@@ -1,9 +1,12 @@
 use super::LiteralOrVariable;
-use crate::tree_node::{Expression, Literal, Spanned};
+use crate::{
+    tree_node::{Expression, Literal, Spanned},
+    visitor::AstVisitor,
+};
 use helpers::prelude::*;
 
 documented! {
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
     pub enum Math<'a> {
         /// Returns the angle in radians whose cosine is the specified number.
         /// ## IC10
@@ -171,10 +174,32 @@ impl<'a> Math<'a> {
             Math::Trunc(_) => 1,
         }
     }
+
+    pub fn walk<V: AstVisitor<'a>>(&'a self, visitor: &mut V) {
+        match self {
+            Self::Acos(e)
+            | Self::Asin(e)
+            | Self::Atan(e)
+            | Self::Abs(e)
+            | Self::Ceil(e)
+            | Self::Cos(e)
+            | Self::Floor(e)
+            | Self::Log(e)
+            | Self::Sin(e)
+            | Self::Tan(e)
+            | Self::Sqrt(e)
+            | Self::Trunc(e) => visitor.visit_expression(e),
+            Self::Atan2(l, r) | Self::Max(l, r) | Self::Min(l, r) => {
+                visitor.visit_expression(l);
+                visitor.visit_expression(r);
+            }
+            Self::Rand => {}
+        }
+    }
 }
 
 documented! {
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
     pub enum System<'a> {
         /// Pauses execution for exactly 1 tick and then resumes.
         /// ## IC10
@@ -182,7 +207,7 @@ documented! {
         /// ## Slang
         /// `yield();`
         Yield,
-        /// Represents a function that can be called to sleep for a certain amount of time.
+        /// Represents a function that can be called to sleep for a certain amount of seconds.
         /// ## IC10
         /// `sleep a(r?|num)`
         /// ## Slang
@@ -215,7 +240,7 @@ documented! {
         /// `let item = load(deviceHash, "LogicType");`
         /// `let item = l(deviceHash, "LogicType");`
         /// `let item = deviceAlias.LogicType;`
-        LoadFromDevice(Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>),
+        LoadFromDevice(Box<Spanned<Expression<'a>>>, Spanned<LiteralOrVariable<'a>>),
         /// Function which gets a LogicType from all connected network devices that match
         /// the provided device hash and name, aggregating them via a batchMode
         /// ## IC10
@@ -271,7 +296,7 @@ documented! {
         /// `set(deviceHash, "LogicType", (number|var));`
         /// `s(deviceHash, "LogicType", (number|var));`
         /// `deviceAlias.LogicType = (number|var);`
-        SetOnDevice(Spanned<LiteralOrVariable<'a>>, Spanned<LiteralOrVariable<'a>>, Box<Spanned<Expression<'a>>>),
+        SetOnDevice(Box<Spanned<Expression<'a>>>, Spanned<LiteralOrVariable<'a>>, Box<Spanned<Expression<'a>>>),
         /// Represents a function which stores a setting to all devices that match
         /// the given deviceHash
         /// ## IC10
@@ -301,7 +326,7 @@ documented! {
         /// `let isOccupied = loadSlot(deviceHash, 2, "Occupied");`
         /// `let isOccupied = ls(deviceHash, 2, "Occupied");`
         LoadSlot(
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Box<Spanned<Expression<'a>>>,
             Spanned<LiteralOrVariable<'a>>,
         ),
@@ -312,7 +337,7 @@ documented! {
         /// `setSlot(deviceHash, 0, "Open", true);`
         /// `ss(deviceHash, 0, "Open", true);`
         SetSlot(
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Box<Spanned<Expression<'a>>>,
             Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>
@@ -325,7 +350,7 @@ documented! {
         /// `let result = loadReagent(deviceHash, "ReagentMode", reagentHash);`
         /// `let result = lr(deviceHash, "ReagentMode", reagentHash);`
         LoadReagent(
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>
         ),
@@ -337,7 +362,7 @@ documented! {
         /// `let itemHash = rmap(device, reagentHash);`
         /// `let itemHash = rmap(device, reagentHashValue);`
         Rmap(
-            Spanned<LiteralOrVariable<'a>>,
+            Box<Spanned<Expression<'a>>>,
             Box<Spanned<Expression<'a>>>
         )
     }
@@ -420,10 +445,86 @@ impl<'a> System<'a> {
             System::Rmap(_, _) => 2,
         }
     }
+
+    pub fn walk<V: AstVisitor<'a>>(&'a self, visitor: &mut V) {
+        match self {
+            Self::Yield => {}
+            Self::Sleep(e) | Self::Clr(e) => {
+                visitor.visit_expression(e);
+            }
+            Self::Hash(e) => {
+                visitor.visit_literal(e);
+            }
+            Self::LoadFromDevice(l, r) => {
+                visitor.visit_expression(l);
+                r.walk(visitor);
+            }
+            Self::Rmap(l, r) => {
+                visitor.visit_expression(l);
+                visitor.visit_expression(r);
+            }
+            Self::LoadBatchNamed(a, b, c, d) => {
+                visitor.visit_expression(a);
+                visitor.visit_expression(b);
+                c.walk(visitor);
+                d.walk(visitor);
+            }
+            Self::LoadBatch(a, b, c) => {
+                visitor.visit_expression(a);
+                b.walk(visitor);
+                c.walk(visitor);
+            }
+            Self::LoadBatchSlot(a, b, c, d) => {
+                visitor.visit_expression(a);
+                visitor.visit_expression(b);
+                c.walk(visitor);
+                d.walk(visitor);
+            }
+            Self::LoadBatchNamedSlot(a, b, c, d, e) => {
+                visitor.visit_expression(a);
+                visitor.visit_expression(b);
+                visitor.visit_expression(c);
+                d.walk(visitor);
+                e.walk(visitor);
+            }
+            Self::SetOnDevice(a, b, c) => {
+                visitor.visit_expression(a);
+                b.walk(visitor);
+                visitor.visit_expression(c);
+            }
+            Self::SetOnDeviceBatched(a, b, c) => {
+                a.walk(visitor);
+                b.walk(visitor);
+                visitor.visit_expression(c);
+            }
+            Self::SetOnDeviceBatchedNamed(a, b, c, d) => {
+                a.walk(visitor);
+                visitor.visit_expression(b);
+                c.walk(visitor);
+                visitor.visit_expression(d);
+            }
+            Self::LoadSlot(a, b, c) => {
+                visitor.visit_expression(a);
+                visitor.visit_expression(b);
+                c.walk(visitor);
+            }
+            Self::SetSlot(a, b, c, d) => {
+                visitor.visit_expression(a);
+                visitor.visit_expression(b);
+                c.walk(visitor);
+                visitor.visit_expression(d);
+            }
+            Self::LoadReagent(a, b, c) => {
+                visitor.visit_expression(a);
+                b.walk(visitor);
+                visitor.visit_expression(c);
+            }
+        }
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// This represents built in functions that cannot be overwritten, but can be invoked by the user as functions.
 pub enum SysCall<'a> {
     System(System<'a>),
@@ -459,5 +560,12 @@ impl<'a> std::fmt::Display for SysCall<'a> {
 impl<'a> SysCall<'a> {
     pub fn is_syscall(identifier: &str) -> bool {
         tokenizer::token::is_syscall(identifier)
+    }
+
+    pub fn walk<V: AstVisitor<'a>>(&'a self, visitor: &mut V) {
+        match self {
+            Self::System(s) => s.walk(visitor),
+            Self::Math(m) => m.walk(visitor),
+        }
     }
 }

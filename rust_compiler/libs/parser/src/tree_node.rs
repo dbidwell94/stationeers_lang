@@ -1,17 +1,19 @@
 use super::sys_call::SysCall;
-use crate::sys_call;
+use crate::{sys_call, visitor::AstVisitor};
 use helpers::Span;
 use safer_ffi::prelude::*;
 use std::{borrow::Cow, ops::Deref};
-use tokenizer::token::Number;
+use tokenizer::token::{Number, Token, TokenType, Unit};
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+/// Represents a literal value in the abstract syntax tree (AST).
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Literal<'a> {
     Number(Number),
     String(Cow<'a, str>),
     Boolean(bool),
 }
 
+/// Represents either a literal value or an alternative type `T`.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum LiteralOr<'a, T> {
     Literal(Spanned<Literal<'a>>),
@@ -37,7 +39,8 @@ impl<'a> std::fmt::Display for Literal<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents a binary expression, which includes operations like addition, subtraction, multiplication, division, and more.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinaryExpression<'a> {
     Add(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
     Multiply(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
@@ -72,7 +75,8 @@ impl<'a> std::fmt::Display for BinaryExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents a logical expression, which includes logical operations like AND, OR, NOT, and comparison operations.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LogicalExpression<'a> {
     And(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
     Or(Box<Spanned<Expression<'a>>>, Box<Spanned<Expression<'a>>>),
@@ -101,7 +105,8 @@ impl<'a> std::fmt::Display for LogicalExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents an assignment expression, where a value is assigned to a variable or a property.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AssignmentExpression<'a> {
     pub assignee: Box<Spanned<Expression<'a>>>,
     pub expression: Box<Spanned<Expression<'a>>>,
@@ -113,11 +118,12 @@ impl<'a> std::fmt::Display for AssignmentExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents a function expression, which includes the function's name, its arguments, and its body.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FunctionExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
     pub arguments: Vec<Spanned<Cow<'a, str>>>,
-    pub body: BlockExpression<'a>,
+    pub body: Spanned<BlockExpression<'a>>,
 }
 
 impl<'a> std::fmt::Display for FunctionExpression<'a> {
@@ -136,8 +142,33 @@ impl<'a> std::fmt::Display for FunctionExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents a block of expressions, which can be executed in sequence.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BlockExpression<'a>(pub Vec<Spanned<Expression<'a>>>);
+
+impl<'a> BlockExpression<'a> {
+    /// Returns an iterator over the expressions in the block, sorted by their "hoisted" order.
+    ///
+    /// # Example
+    /// ```no_run
+    ///
+    /// for expr in block_expr.hoisted() {
+    ///     // Process the expression in hoisted order
+    /// }
+    /// ```
+    pub fn hoisted(&self) -> impl Iterator<Item = &Spanned<Expression<'a>>> {
+        let mut indices = (0..self.0.len()).collect::<Vec<usize>>();
+
+        indices.sort_by_key(|&index| match self.0[index].node {
+            Expression::DeviceDeclaration(_) => 0,
+            Expression::ConstDeclaration(_) => 1,
+            Expression::Function(_) => 2,
+            _ => 3,
+        });
+
+        indices.into_iter().map(move |index| &self.0[index])
+    }
+}
 
 impl<'a> std::fmt::Display for BlockExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -153,7 +184,8 @@ impl<'a> std::fmt::Display for BlockExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents an invocation expression, which includes the function's name and its arguments.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InvocationExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
     pub arguments: Vec<Spanned<Expression<'a>>>,
@@ -174,7 +206,8 @@ impl<'a> std::fmt::Display for InvocationExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents a member access expression, which includes the object and the member being accessed.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MemberAccessExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
     pub member: Spanned<Cow<'a, str>>,
@@ -186,7 +219,8 @@ impl<'a> std::fmt::Display for MemberAccessExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents a method call expression, which includes the object, the method being called, and its arguments.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MethodCallExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
     pub method: Spanned<Cow<'a, str>>,
@@ -209,7 +243,8 @@ impl<'a> std::fmt::Display for MethodCallExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents an index access expression, which includes the object and the index being accessed.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IndexAccessExpression<'a> {
     pub object: Box<Spanned<Expression<'a>>>,
     pub index: Box<Spanned<Expression<'a>>>,
@@ -221,10 +256,23 @@ impl<'a> std::fmt::Display for IndexAccessExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents either a literal value or a variable name in the abstract syntax tree (AST).
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LiteralOrVariable<'a> {
-    Literal(Literal<'a>),
+    Literal(Spanned<Literal<'a>>),
     Variable(Spanned<Cow<'a, str>>),
+}
+
+impl<'a> Spanned<LiteralOrVariable<'a>> {
+    /// Walks the AST node and applies the provided visitor to each node.
+    pub fn walk<V: AstVisitor<'a>>(&'a self, visitor: &mut V) {
+        match &self.node {
+            LiteralOrVariable::Literal(l) => visitor.visit_literal(l),
+            LiteralOrVariable::Variable(var) => {
+                visitor.visit_variable(var);
+            }
+        }
+    }
 }
 
 impl<'a> std::fmt::Display for LiteralOrVariable<'a> {
@@ -236,7 +284,8 @@ impl<'a> std::fmt::Display for LiteralOrVariable<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents a constant declaration expression, which includes the constant's name and its value.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConstDeclarationExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
     pub value: LiteralOr<'a, SysCall<'a>>,
@@ -255,12 +304,79 @@ impl<'a> std::fmt::Display for ConstDeclarationExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Represents a device type in the abstract syntax tree (AST), which can be a pin, housing, or reference.
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub enum DeviceType {
+    /// Represents a device pin (ex. d0, d1, d2, d3, d4, d5)
+    Pin(u8),
+    /// Represents the device itself (db)
+    Housing,
+    /// Represents a device reference (ex. 0x12345678)
+    Reference(i128),
+}
+
+impl<'a> TryFrom<&Token<'a>> for DeviceType {
+    type Error = crate::Error<'a>;
+
+    fn try_from(value: &Token<'a>) -> Result<Self, Self::Error> {
+        match &value.token_type {
+            TokenType::String(s) => {
+                match s.strip_prefix('d') {
+                    Some("b") => return Ok(DeviceType::Housing),
+                    Some(stripped) => {
+                        if let Ok(pin) = stripped.parse::<u8>()
+                            && pin <= 5
+                        {
+                            return Ok(DeviceType::Pin(pin));
+                        }
+                    }
+                    None => {}
+                };
+
+                // fall through to supporting legacy reference formats. Because current code
+                // allows `device test = 0x123` without quotes, some legacy code DOES use
+                // quotes. We need to maintain this standard until we can phase it out.
+                if let Ok(Number::Integer(reference, Unit::None)) =
+                    tokenizer::token::parse_number_literal(s)
+                {
+                    return Ok(DeviceType::Reference(reference));
+                }
+
+                let Some(reference) = s.strip_prefix('$') else {
+                    return Err(crate::Error::UnexpectedToken(value.into(), value.clone()));
+                };
+                let reference = format!("0x{reference}");
+                match tokenizer::token::parse_number_literal(&reference) {
+                    Ok(Number::Integer(reference, Unit::None)) => {
+                        Ok(DeviceType::Reference(reference))
+                    }
+                    _ => Err(crate::Error::UnexpectedToken(value.into(), value.clone())),
+                }
+            }
+            TokenType::Number(Number::Integer(ref_id, Unit::None)) => {
+                Ok(DeviceType::Reference(*ref_id))
+            }
+            _ => Err(crate::Error::UnexpectedToken(value.into(), value.clone())),
+        }
+    }
+}
+
+impl std::fmt::Display for DeviceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeviceType::Pin(pin) => write!(f, "d{}", pin),
+            DeviceType::Housing => write!(f, "db"),
+            DeviceType::Reference(reference) => write!(f, "${:x}", reference),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DeviceDeclarationExpression<'a> {
     /// any variable-like name
     pub name: Spanned<Cow<'a, str>>,
     /// The device port, ex. (db, d0, d1, d2, d3, d4, d5)
-    pub device: Cow<'a, str>,
+    pub device: Spanned<DeviceType>,
 }
 
 impl<'a> std::fmt::Display for DeviceDeclarationExpression<'a> {
@@ -269,7 +385,7 @@ impl<'a> std::fmt::Display for DeviceDeclarationExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TupleDeclarationExpression<'a> {
     pub names: Vec<Spanned<Cow<'a, str>>>,
     pub value: Box<Spanned<Expression<'a>>>,
@@ -287,7 +403,7 @@ impl<'a> std::fmt::Display for TupleDeclarationExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TupleAssignmentExpression<'a> {
     pub names: Vec<Spanned<Cow<'a, str>>>,
     pub value: Box<Spanned<Expression<'a>>>,
@@ -305,7 +421,7 @@ impl<'a> std::fmt::Display for TupleAssignmentExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IfExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
     pub body: Spanned<BlockExpression<'a>>,
@@ -322,7 +438,7 @@ impl<'a> std::fmt::Display for IfExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LoopExpression<'a> {
     pub body: Spanned<BlockExpression<'a>>,
 }
@@ -333,13 +449,13 @@ impl<'a> std::fmt::Display for LoopExpression<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct WhileExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
-    pub body: BlockExpression<'a>,
+    pub body: Spanned<BlockExpression<'a>>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TernaryExpression<'a> {
     pub condition: Box<Spanned<Expression<'a>>>,
     pub true_value: Box<Spanned<Expression<'a>>>,
@@ -385,7 +501,7 @@ impl<T> Deref for Spanned<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expression<'a> {
     Assignment(Spanned<AssignmentExpression<'a>>),
     Binary(Spanned<BinaryExpression<'a>>),
@@ -395,6 +511,7 @@ pub enum Expression<'a> {
     ConstDeclaration(Spanned<ConstDeclarationExpression<'a>>),
     Continue(Span),
     Declaration(Spanned<Cow<'a, str>>, Box<Spanned<Expression<'a>>>),
+    Dereference(Box<Spanned<Expression<'a>>>),
     DeviceDeclaration(Spanned<DeviceDeclarationExpression<'a>>),
     Function(Spanned<FunctionExpression<'a>>),
     If(Spanned<IfExpression<'a>>),
@@ -428,6 +545,7 @@ impl<'a> std::fmt::Display for Expression<'a> {
             Expression::ConstDeclaration(e) => write!(f, "{}", e),
             Expression::Continue(_) => write!(f, "continue"),
             Expression::Declaration(id, e) => write!(f, "(let {} = {})", id, e),
+            Expression::Dereference(expr) => write!(f, "(*{})", expr),
             Expression::DeviceDeclaration(e) => write!(f, "{}", e),
             Expression::Function(e) => write!(f, "{}", e),
             Expression::If(e) => write!(f, "{}", e),

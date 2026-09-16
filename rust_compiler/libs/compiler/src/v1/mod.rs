@@ -3,17 +3,17 @@ use crate::variable_manager::{LocationRequest, VariableLocation, VariableScope};
 use helpers::{Span, prelude::*};
 use il::{Instruction, InstructionNode, Instructions, Operand};
 use parser::{
-    Parser as ASTParser,
     sys_call::{Math, SysCall, System},
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
-        DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
+        DeviceDeclarationExpression, DeviceType, Expression, FunctionExpression, IfExpression,
         IndexAccessExpression, InvocationExpression, Literal, LiteralOr, LiteralOrVariable,
         LogicalExpression, LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
         TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
     },
 };
 use rust_decimal::Decimal;
+use static_analysis::{AnalyzeResult, ParameterKind};
 use std::{borrow::Cow, collections::HashMap};
 use tokenizer::token::{Number, Unit};
 
@@ -80,9 +80,9 @@ struct FunctionMetadata<'a> {
 }
 
 pub struct Compiler<'a> {
-    pub parser: ASTParser<'a>,
+    #[allow(dead_code)]
+    analyze_result: AnalyzeResult<'a>,
     function_meta: FunctionMetadata<'a>,
-    devices: HashMap<Cow<'a, str>, Cow<'a, str>>,
 
     // This holds the IL code which will be used in the
     // optimizer
@@ -100,6 +100,7 @@ pub struct Compiler<'a> {
     pub errors: Vec<Error<'a>>,
     /// Metadata about symbols encountered during compilation
     pub metadata: crate::CompilationMetadata<'a>,
+    pub declaration_docs: std::collections::HashMap<String, String>,
 }
 
 /// Chains multiple operand compilations together, injecting a "prevent_return_register_clobbering"
@@ -137,11 +138,14 @@ mod syscalls;
 mod tuples;
 
 impl<'a> Compiler<'a> {
-    pub fn new(parser: ASTParser<'a>, config: Option<CompilerConfig>) -> Self {
+    pub fn new(
+        analyze_result: AnalyzeResult<'a>,
+        declaration_docs: std::collections::HashMap<String, String>,
+        config: Option<CompilerConfig>,
+    ) -> Self {
         Self {
-            parser,
+            analyze_result,
             function_meta: FunctionMetadata::default(),
-            devices: HashMap::new(),
             instructions: Instructions::default(),
             current_line: 1,
             declared_main: false,
@@ -152,54 +156,16 @@ impl<'a> Compiler<'a> {
             source_map: HashMap::new(),
             errors: Vec::new(),
             metadata: crate::CompilationMetadata::new(),
+            declaration_docs,
         }
     }
 
-    pub fn compile(mut self) -> CompilationResult<'a> {
-        let expr = self.parser.parse_all();
+    pub fn compile(mut self, ast: &Spanned<Expression<'a>>) -> CompilationResult<'a> {
+        let expr = ast;
 
-        // Copy errors from parser
-        for e in std::mem::take(&mut self.parser.errors) {
-            self.errors.push(Error::Parse(e));
-        }
-
-        // We treat parse_all result as potentially partial
-        let expr = match expr {
-            Ok(Some(expr)) => expr,
-            Ok(None) => {
-                return CompilationResult {
-                    errors: self.errors,
-                    instructions: self.instructions,
-                    metadata: self.metadata,
-                };
-            }
-            Err(e) => {
-                // Should be covered by parser.errors, but just in case
-                self.errors.push(Error::Parse(e));
-                return CompilationResult {
-                    errors: self.errors,
-                    instructions: self.instructions,
-                    metadata: self.metadata,
-                };
-            }
-        };
-
-        // Wrap the root expression in a dummy span for consistency
-        let span = if let Expression::Block(ref block) = expr {
-            block.span
-        } else {
-            Span {
-                start_line: 0,
-                end_line: 0,
-                start_col: 0,
-                end_col: 0,
-            }
-        };
-
-        let spanned_root = Spanned { node: expr, span };
         if let Err(e) = self.write_instruction(
             Instruction::Jump(Operand::Label(Cow::from("main"))),
-            Some(span),
+            Some(expr.span),
         ) {
             self.errors.push(e);
             return CompilationResult {
@@ -212,7 +178,7 @@ impl<'a> Compiler<'a> {
         let mut scope = VariableScope::default();
 
         // We ignore the result of the root expression (usually a block)
-        if let Err(e) = self.expression(spanned_root, &mut scope) {
+        if let Err(e) = self.expression(expr, &mut scope) {
             self.errors.push(e);
         }
 
@@ -268,63 +234,63 @@ impl<'a> Compiler<'a> {
 
     fn expression(
         &mut self,
-        expr: Spanned<Expression<'a>>,
+        expr: &Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<Option<CompileLocation<'a>>, Error<'a>> {
-        match expr.node {
+        match &expr.node {
             Expression::Function(expr_func) => {
                 self.expression_function(expr_func, scope)?;
                 Ok(None)
             }
             Expression::Block(expr_block) => {
-                self.expression_block(expr_block.node, scope)?;
+                self.expression_block(expr_block, scope)?;
                 Ok(None)
             }
             Expression::If(expr_if) => {
-                self.expression_if(expr_if.node, scope)?;
+                self.expression_if(&expr_if.node, scope)?;
                 Ok(None)
             }
             Expression::Loop(expr_loop) => {
-                self.expression_loop(expr_loop.node, scope)?;
+                self.expression_loop(&expr_loop.node, scope)?;
                 Ok(None)
             }
             Expression::Syscall(Spanned {
                 node: SysCall::System(system),
                 span,
-            }) => self.expression_syscall_system(system, span, scope),
+            }) => self.expression_syscall_system(system, *span, scope),
             Expression::Syscall(Spanned {
                 node: SysCall::Math(math),
                 span,
-            }) => self.expression_syscall_math(math, span, scope),
+            }) => self.expression_syscall_math(math, *span, scope),
             Expression::While(expr_while) => {
-                self.expression_while(expr_while.node, scope)?;
+                self.expression_while(&expr_while.node, scope)?;
                 Ok(None)
             }
             Expression::Break(span) => {
-                self.expression_break(span, scope)?;
+                self.expression_break(*span, scope)?;
                 Ok(None)
             }
             Expression::Continue(span) => {
-                self.expression_continue(span, scope)?;
+                self.expression_continue(*span, scope)?;
                 Ok(None)
             }
             Expression::DeviceDeclaration(expr_dev) => {
-                self.expression_device(expr_dev.node)?;
+                self.expression_device(&expr_dev.node, scope)?;
                 Ok(None)
             }
             Expression::Declaration(var_name, decl_expr) => {
                 // decl_expr is Box<Spanned<Expression>>
-                self.expression_declaration(var_name, *decl_expr, scope)
+                self.expression_declaration(var_name.clone(), decl_expr, scope)
             }
             Expression::ConstDeclaration(const_decl_expr) => {
-                self.expression_const_declaration(const_decl_expr.node, scope)?;
+                self.expression_const_declaration(&const_decl_expr.node, scope)?;
                 Ok(None)
             }
             Expression::Assignment(assign_expr) => {
-                self.expression_assignment(assign_expr.node, scope)?;
+                self.expression_assignment(&assign_expr.node, scope)?;
                 Ok(None)
             }
-            Expression::Ternary(tern) => Ok(Some(self.expression_ternary(tern.node, scope)?)),
+            Expression::Ternary(tern) => Ok(Some(self.expression_ternary(&tern.node, scope)?)),
             Expression::Invocation(expr_invoke) => {
                 // Special case: hash() with string literal can be evaluated at compile time
                 if expr_invoke.node.name.node == "hash"
@@ -395,9 +361,9 @@ impl<'a> Compiler<'a> {
                     Ok(loc) => {
                         // Track this variable reference in metadata (for tooltips on all usages, not just declaration)
                         let doc_comment: Option<Cow<'a, str>> = self
-                            .parser
-                            .get_declaration_doc(name.node.as_ref())
-                            .map(|s| Cow::Owned(s) as Cow<'a, str>);
+                            .declaration_docs
+                            .get(name.node.as_ref())
+                            .map(|s| Cow::Owned(s.to_owned()) as Cow<'a, str>);
                         self.metadata.add_variable_with_doc(
                             name.node.clone(),
                             Some(name.span),
@@ -410,29 +376,21 @@ impl<'a> Compiler<'a> {
                         }))
                     }
                     Err(_) => {
-                        // fallback, check devices
-                        if let Some(device) = self.devices.get(&name.node) {
-                            Ok(Some(CompileLocation {
-                                location: VariableLocation::Device(device.clone()),
-                                temp_name: None,
-                            }))
-                        } else {
-                            self.errors
-                                .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-                            Ok(Some(CompileLocation {
-                                location: VariableLocation::Temporary(0),
-                                temp_name: None,
-                            }))
-                        }
+                        self.errors
+                            .push(Error::UnknownIdentifier(name.node.clone(), name.span));
+                        Ok(Some(CompileLocation {
+                            location: VariableLocation::Temporary(0),
+                            temp_name: None,
+                        }))
                     }
                 }
             }
             Expression::MemberAccess(access) => {
                 // "load" behavior (e.g. `let x = d0.On`)
-                let MemberAccessExpression { object, member } = access.node;
+                let MemberAccessExpression { object, member } = &access.node;
 
                 // 1. Resolve the object to a device string (e.g., "d0" or "rX")
-                let (device, cleanup) = self.resolve_device(*object, scope)?;
+                let (device, cleanup) = self.compile_device_operand(object, scope)?;
 
                 // 2. Allocate a temp register for the result
                 let result_name = self.next_temp_name();
@@ -444,7 +402,7 @@ impl<'a> Compiler<'a> {
                     Instruction::Load(
                         Operand::Register(reg),
                         device,
-                        Operand::LogicType(member.node),
+                        Operand::LogicType(member.node.clone()),
                     ),
                     Some(expr.span),
                 )?;
@@ -461,15 +419,13 @@ impl<'a> Compiler<'a> {
             }
             Expression::IndexAccess(access) => {
                 // "get" behavior (e.g. `let x = d0[255]`)
-                let IndexAccessExpression { object, index } = access.node;
+                let IndexAccessExpression { object, index } = &access.node;
 
                 // 1. Resolve the object to a device string
-                let (device, dev_cleanup) = self.resolve_device(*object, scope)?;
+                let (device, dev_cleanup) = self.compile_operand(object, scope)?;
 
                 // Check if device is "db" (not allowed)
-                if let Operand::Device(ref dev_str) = device
-                    && dev_str.as_ref() == "db"
-                {
+                if let Operand::Device(DeviceType::Housing) = device {
                     return Err(Error::OperationNotSupported(
                         "Direct stack access on 'db' is not yet supported".to_string(),
                         expr.span,
@@ -477,7 +433,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 // 2. Compile the index expression to get the address
-                let (addr, addr_cleanup) = self.compile_operand(*index, scope)?;
+                let (addr, addr_cleanup) = self.compile_operand(index, scope)?;
 
                 // 3. Allocate a temp register for the result
                 let result_name = self.next_temp_name();
@@ -514,10 +470,10 @@ impl<'a> Compiler<'a> {
                     Some(call.span),
                 ))
             }
-            Expression::Priority(inner_expr) => self.expression(*inner_expr, scope),
+            Expression::Priority(inner_expr) => self.expression(inner_expr, scope),
             Expression::Negation(inner_expr) => {
                 // Compile negation as 0 - inner
-                let (inner_str, cleanup) = self.compile_operand(*inner_expr, scope)?;
+                let (inner_str, cleanup) = self.compile_operand(inner_expr, scope)?;
                 let result_name = self.next_temp_name();
                 let result_loc =
                     scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
@@ -543,7 +499,7 @@ impl<'a> Compiler<'a> {
             }
             Expression::BitwiseNot(inner_expr) => {
                 // Compile bitwise NOT using the NOT instruction
-                let (inner_str, cleanup) = self.compile_operand(*inner_expr, scope)?;
+                let (inner_str, cleanup) = self.compile_operand(inner_expr, scope)?;
                 let result_name = self.next_temp_name();
                 let result_loc =
                     scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
@@ -564,11 +520,11 @@ impl<'a> Compiler<'a> {
                 }))
             }
             Expression::TupleDeclaration(tuple_decl) => {
-                self.expression_tuple_declaration(tuple_decl.node, scope)?;
+                self.expression_tuple_declaration(&tuple_decl.node, scope)?;
                 Ok(None)
             }
             Expression::TupleAssignment(tuple_assign) => {
-                self.expression_tuple_assignment(tuple_assign.node, scope)?;
+                self.expression_tuple_assignment(&tuple_assign.node, scope)?;
                 Ok(None)
             }
             _ => Err(Error::Unknown(
@@ -583,7 +539,7 @@ impl<'a> Compiler<'a> {
 
     fn expression_const_declaration(
         &mut self,
-        expr: ConstDeclarationExpression<'a>,
+        expr: &ConstDeclarationExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompileLocation<'a>, Error<'a>> {
         let ConstDeclarationExpression {
@@ -593,9 +549,9 @@ impl<'a> Compiler<'a> {
 
         // Track the const variable in metadata
         let doc_comment = self
-            .parser
-            .get_declaration_doc(const_name.node.as_ref())
-            .map(Cow::Owned);
+            .declaration_docs
+            .get(const_name.node.as_ref())
+            .map(|s| Cow::Owned(s.to_owned()));
         self.metadata.add_variable_with_doc(
             const_name.node.clone(),
             Some(const_name.span),
@@ -611,18 +567,18 @@ impl<'a> Compiler<'a> {
                         ..
                     })),
                 ..
-            }) => Literal::Number(Number::Integer(crc_hash_signed(&str_to_hash), Unit::None)),
+            }) => Literal::Number(Number::Integer(crc_hash_signed(str_to_hash), Unit::None)),
             LiteralOr::Or(Spanned { span, .. }) => {
                 return Err(Error::Unknown(
                     "hash only supports string literals in this context.".into(),
-                    Some(span),
+                    Some(*span),
                 ));
             }
-            LiteralOr::Literal(Spanned { node, .. }) => node,
+            LiteralOr::Literal(Spanned { node, .. }) => node.clone(),
         };
 
         Ok(CompileLocation {
-            location: scope.define_const(const_name.node, value, Some(const_name.span))?,
+            location: scope.define_const(const_name.node.clone(), value, Some(const_name.span))?,
             temp_name: None,
         })
     }

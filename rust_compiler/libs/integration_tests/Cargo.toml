@@ -9,6 +9,7 @@ compiler = { path = "../compiler" }
 parser = { path = "../parser" }
 tokenizer = { path = "../tokenizer" }
 optimizer = { path = "../optimizer" }
+static_analysis = { path = "../static_analysis" }
 il = { path = "../il" }
 anyhow = { workspace = true }
 indoc = "2"

@@ -8,9 +8,11 @@ thiserror = { workspace = true }
 parser = { path = "../parser" }
 tokenizer = { path = "../tokenizer" }
 helpers = { path = "../helpers" }
+static_analysis = { path = "../static_analysis" }
 il = { path = "../il" }
 lsp-types = { workspace = true }
 rust_decimal = { workspace = true }
+anyhow = { workspace = true }
 
 [dev-dependencies]
 anyhow = { version = "1.0" }
