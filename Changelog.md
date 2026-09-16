@@ -1,5 +1,25 @@
 # Changelog
 
+[0.8.0]
+
+- Added support for explicit device pin dereferences using `*expr`, making it
+  easier to work with runtime device references and indirect device access in
+  native syscall calls.
+- Native syscall device arguments now accept general expressions instead of
+  only literals and variables, so calls such as `load(*expr, "Setting")`,
+  `set(*expr, "Setting", 1)`, and related direct-device syscalls behave
+  consistently with the rest of Slang.
+- Improved lowering for device RefIDs, pin references, and spilled function
+  arguments so device values compile correctly across function boundaries
+  and indirect access patterns.
+- Fixed analyzer and compiler diagnostics so errors are reported with the correct
+  source spans in the in-game editor, making debugging compile-time issues much
+  more reliable.
+- Cleaned up duplicate declaration and other diagnostic messages for clearer,
+  more actionable feedback when scripts fail validation.
+- Added broader regression coverage for device pin and syscall behavior to help
+  prevent indirect device access issues from slipping back in.
+
 [0.7.4]
 
 - Minor code refactor using `cargo clippy` to ensure code consistancy
