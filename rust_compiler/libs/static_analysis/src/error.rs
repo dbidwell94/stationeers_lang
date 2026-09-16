@@ -22,35 +22,58 @@ impl std::fmt::Display for AnalyzeErrors {
     }
 }
 
-#[derive(Error, Debug)]
+impl From<Error> for lsp_types::Diagnostic {
+    fn from(value: Error) -> Self {
+        let span = match &value {
+            Error::DuplicateDeclaration { current, .. }
+            | Error::InvalidReturnType { span: current }
+            | Error::InvalidArgType { span: current, .. }
+            | Error::MissingAsignee { span: current }
+            | Error::InvalidVariable { span: current, .. }
+            | Error::MissingSymbol { span: current, .. }
+            | Error::ConflictingFunctionParameterType { span: current, .. } => *current,
+        };
+
+        lsp_types::Diagnostic {
+            range: span.into(),
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            message: value.to_string(),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum Error {
-    #[error(
-        "Error: Duplicate variable '{name}' at {current:?}. '{name}' was originally declared at {original:?}"
-    )]
     DuplicateDeclaration {
         name: String,
         original: Span,
         current: Span,
     },
 
-    #[error("Invalid return type")]
-    InvalidReturnType { span: Span },
+    InvalidReturnType {
+        span: Span,
+    },
 
-    #[error("{error}")]
-    InvalidArgType { error: String, span: Span },
+    InvalidArgType {
+        error: String,
+        span: Span,
+    },
 
-    #[error("Attempted to assign a value to an unknown variable")]
-    MissingAsignee { span: Span },
+    MissingAsignee {
+        span: Span,
+    },
 
-    #[error("Attempted to access a variable that has not yet been defined")]
-    InvalidVariable { name: String, span: Span },
+    InvalidVariable {
+        name: String,
+        span: Span,
+    },
 
-    #[error("Error: Invalid symbol '{name}' at {span:?}. Symbol is not declared.")]
-    MissingSymbol { name: String, span: Span },
+    MissingSymbol {
+        name: String,
+        span: Span,
+    },
 
-    #[error(
-        "Function '{function}' parameter {parameter_index} was inferred as '{expected}' but was later called with '{actual}'"
-    )]
     ConflictingFunctionParameterType {
         function: String,
         parameter_index: usize,
@@ -59,3 +82,45 @@ pub enum Error {
         span: Span,
     },
 }
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DuplicateDeclaration {
+                name,
+                original,
+                current,
+            } => write!(
+                f,
+                "Error: Duplicate variable '{name}' at line {}. '{name}' was originally declared at line {}",
+                current.start_line, original.start_line
+            ),
+            Self::InvalidReturnType { .. } => write!(f, "Invalid return type"),
+            Self::InvalidArgType { error, .. } => write!(f, "{error}"),
+            Self::MissingAsignee { .. } => {
+                write!(f, "Attempted to assign a value to an unknown variable")
+            }
+            Self::InvalidVariable { .. } => {
+                write!(
+                    f,
+                    "Attempted to access a variable that has not yet been defined"
+                )
+            }
+            Self::MissingSymbol { name, .. } => {
+                write!(f, "Error: Invalid symbol '{name}'. Symbol is not declared.")
+            }
+            Self::ConflictingFunctionParameterType {
+                function,
+                parameter_index,
+                expected,
+                actual,
+                ..
+            } => write!(
+                f,
+                "Function '{function}' parameter {parameter_index} was inferred as '{expected}' but was later called with '{actual}'"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Error {}

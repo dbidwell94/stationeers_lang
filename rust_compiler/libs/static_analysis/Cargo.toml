@@ -10,6 +10,7 @@ helpers = { path = "../helpers" }
 tokenizer = { path = "../tokenizer" }
 rust_decimal = { workspace = true }
 thiserror = { workspace = true }
+lsp-types = { workspace = true }
 anyhow = { workspace = true }
 
 [dev-dependencies]

@@ -3,5 +3,5 @@ mod error;
 mod symbol;
 
 pub use analyzer::{AnalyzeResult, Analyzer, FunctionMetadata, ParameterKind};
-pub use error::Error;
+pub use error::{AnalyzeErrors, Error};
 pub use symbol::*;

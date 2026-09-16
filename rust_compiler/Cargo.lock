@@ -1069,6 +1069,7 @@ dependencies = [
  "helpers",
  "il",
  "indoc",
+ "lsp-types",
  "parser",
  "rust_decimal",
  "thiserror",

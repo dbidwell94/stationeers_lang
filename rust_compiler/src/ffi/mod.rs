@@ -95,6 +95,14 @@ impl From<lsp_types::Diagnostic> for FfiDiagnostic {
     }
 }
 
+fn static_analysis_diagnostics(errors: static_analysis::AnalyzeErrors) -> Vec<FfiDiagnostic> {
+    errors
+        .0
+        .into_iter()
+        .map(|error| lsp_types::Diagnostic::from(error).into())
+        .collect()
+}
+
 #[derive_ReprC]
 #[repr(C)]
 pub struct FfiSymbolKindData {
@@ -164,9 +172,10 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilat
             Ok(Some(o)) => o,
             Ok(None) | Err(_) => return (safer_ffi::String::EMPTY, Default::default()),
         };
-        let analyze_result = Analyzer::default()
-            .analyze(&output.root)
-            .expect("Failed to analyze source code");
+        let analyze_result = match Analyzer::default().analyze(&output.root) {
+            Ok(result) => result,
+            Err(_) => return (safer_ffi::String::EMPTY, Default::default()),
+        };
         let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
 
         let res = compiler.compile(&output.root);
@@ -219,7 +228,6 @@ pub fn tokenize_line(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<Ff
         let input = String::from_utf16_lossy(input.as_slice());
         let tokenizer = Tokenizer::from(input.as_str());
 
-        // Build a lookup table for syscall documentation
         let syscall_docs: std::collections::HashMap<&'static str, String> =
             SysCall::get_all_documentation().into_iter().collect();
 
@@ -306,9 +314,12 @@ pub fn diagnose_source(input: safer_ffi::slice::Ref<'_, u16>) -> safer_ffi::Vec<
                     .into();
             }
         };
-        let analyze_result = Analyzer::default()
-            .analyze(&output.root)
-            .expect("Failed to analyze source code");
+        let analyze_result = match Analyzer::default().analyze(&output.root) {
+            Ok(result) => result,
+            Err(errors) => {
+                return static_analysis_diagnostics(errors).into();
+            }
+        };
         let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
 
         let CompilationResult {
@@ -338,7 +349,12 @@ pub fn diagnose_source_with_symbols(
         let parser = Parser::new(tokenizer);
         let output = match parser.parse_all() {
             Ok(Some(o)) => o,
-            Ok(None) => return FfiDiagnosticsAndSymbols { diagnostics: vec![].into(), symbols: vec![].into() },
+            Ok(None) => {
+                return FfiDiagnosticsAndSymbols {
+                    diagnostics: vec![].into(),
+                    symbols: vec![].into(),
+                }
+            }
             Err(parse_errs) => {
                 let diagnostics = parse_errs
                     .0
@@ -346,12 +362,21 @@ pub fn diagnose_source_with_symbols(
                     .map(|e| lsp_types::Diagnostic::from(compiler::Error::Parse(e)).into())
                     .collect::<Vec<_>>()
                     .into();
-                return FfiDiagnosticsAndSymbols { diagnostics, symbols: vec![].into() };
+                return FfiDiagnosticsAndSymbols {
+                    diagnostics,
+                    symbols: vec![].into(),
+                };
             }
         };
-        let analyze_result = Analyzer::default()
-            .analyze(&output.root)
-            .expect("Failed to analyze source code");
+        let analyze_result = match Analyzer::default().analyze(&output.root) {
+            Ok(result) => result,
+            Err(errors) => {
+                return FfiDiagnosticsAndSymbols {
+                    diagnostics: static_analysis_diagnostics(errors).into(),
+                    symbols: vec![].into(),
+                };
+            }
+        };
         let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
 
         let CompilationResult {
