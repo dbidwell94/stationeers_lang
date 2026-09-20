@@ -288,6 +288,76 @@ fn test_load_from_slot() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_check_device_is_set() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device airCon = "d0";
+
+        let isSetLong = deviceSet(airCon);
+        let isSetShort = sdse(airCon);
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            sdse r15 d0
+            move r8 r15
+            sdse r15 d0
+            move r9 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_check_device_is_not_set() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check
+        r#"
+        device airCon = "d0";
+
+        let isNotSetLong = deviceNotSet(airCon);
+        let isNotSetShort = sdns(airCon);
+        "#
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            sdns r15 d0
+            move r8 r15
+            sdns r15 d0
+            move r9 r15
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_load_slot_from_dereferenced_device_expression() -> anyhow::Result<()> {
     let compiled = compile! {
         check
