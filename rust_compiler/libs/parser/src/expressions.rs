@@ -1,6 +1,21 @@
 use super::*;
 
 impl<'a> Parser<'a> {
+    /// Whether a symbol should trigger infix parsing. When
+    /// `suppress_bitwise_or_pipe` is active (parsing the `size` of an array
+    /// repeat literal), a `|` is treated as the closing delimiter instead of
+    /// the bitwise-or operator.
+    fn is_infix_trigger(&self, s: Symbol) -> bool {
+        if self.suppress_bitwise_or_pipe > 0 && matches!(s, Symbol::BitwiseOr) {
+            return false;
+        }
+        s.is_operator()
+            || s.is_comparison()
+            || s.is_logical()
+            || s.is_bitwise()
+            || matches!(s, Symbol::Assign | Symbol::Question)
+    }
+
     pub(super) fn expression(
         &mut self,
     ) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {
@@ -14,12 +29,12 @@ impl<'a> Parser<'a> {
 
         if self_matches_peek!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question)
+            TokenType::Symbol(s) if self.is_infix_trigger(s)
         ) {
             return Ok(Some(self.infix(lhs)?));
         } else if self_matches_current!(
             self,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question)
+            TokenType::Symbol(s) if self.is_infix_trigger(s)
         ) {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
             return Ok(Some(self.infix(lhs)?));
@@ -27,6 +42,7 @@ impl<'a> Parser<'a> {
 
         Ok(Some(lhs))
     }
+
 
     pub(super) fn parse_postfix(
         &mut self,
@@ -300,6 +316,7 @@ impl<'a> Parser<'a> {
                 })
             }
             TokenType::Symbol(Symbol::LParen) => self.parenthesized_or_tuple()?,
+            TokenType::Symbol(Symbol::LBracket) => self.array_literal()?,
             TokenType::Symbol(Symbol::Minus) => {
                 let start_span = self.current_span();
                 self.assign_next()?;
@@ -527,7 +544,7 @@ impl<'a> Parser<'a> {
 
         while token_matches!(
             temp_token,
-            TokenType::Symbol(s) if s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question | Symbol::Colon)
+            TokenType::Symbol(s) if (s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question | Symbol::Colon)) && !(self.suppress_bitwise_or_pipe > 0 && matches!(s, Symbol::BitwiseOr))
         ) {
             let operator = match temp_token.token_type {
                 TokenType::Symbol(s) => s,
@@ -877,7 +894,10 @@ impl<'a> Parser<'a> {
             TokenType::Symbol(Symbol::Semicolon)
                 | TokenType::Symbol(Symbol::RParen)
                 | TokenType::Symbol(Symbol::Comma)
-        ) {
+                | TokenType::Symbol(Symbol::RBracket)
+        ) || (self.suppress_bitwise_or_pipe > 0
+            && token_matches!(temp_token, TokenType::Symbol(Symbol::BitwiseOr)))
+        {
             self.tokenizer.seek(SeekFrom::Current(-1))?;
         }
 
@@ -955,6 +975,114 @@ impl<'a> Parser<'a> {
                 node: Expression::Priority(boxed!(first_expression)),
             }))
         }
+    }
+
+    /// Parses an array literal: `[1, 2, 3]`, `[|5| 0]` (size 5, zero-filled), or `[|5|]`
+    /// (size 5, uninitialized).
+    pub(super) fn array_literal(
+        &mut self,
+    ) -> Result<Option<Spanned<tree_node::Expression<'a>>>, Error<'a>> {
+        let start_span = self.current_span();
+
+        if self_matches_peek!(self, TokenType::Symbol(Symbol::BitwiseOr)) {
+            self.assign_next()?; // current = '|'
+            self.assign_next()?; // current = first token of size expression
+            self.suppress_bitwise_or_pipe += 1;
+            let size = self.expression()?.ok_or_else(|| self.unexpected_eof());
+            self.suppress_bitwise_or_pipe -= 1;
+            let size = size?;
+
+            let closing_pipe = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
+            if !token_matches!(closing_pipe, TokenType::Symbol(Symbol::BitwiseOr)) {
+                return Err(Error::UnexpectedToken(
+                    Self::token_to_span(&closing_pipe),
+                    closing_pipe,
+                ));
+            }
+
+            let (fill, closing_bracket) = if self_matches_peek!(
+                self,
+                TokenType::Symbol(Symbol::RBracket)
+            ) {
+                (None, self.get_next()?.ok_or_else(|| self.unexpected_eof())?)
+            } else {
+                self.assign_next()?; // current = first token of fill expression
+                let fill_expr = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
+                let rbracket = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
+                (Some(fill_expr), rbracket)
+            };
+
+            if !token_matches!(closing_bracket, TokenType::Symbol(Symbol::RBracket)) {
+                return Err(Error::UnexpectedToken(
+                    Self::token_to_span(&closing_bracket),
+                    closing_bracket,
+                ));
+            }
+
+            let end_span = Self::token_to_span(&closing_bracket);
+            let span = Span {
+                start_line: start_span.start_line,
+                start_col: start_span.start_col,
+                end_line: end_span.end_line,
+                end_col: end_span.end_col,
+            };
+
+            return Ok(Some(Spanned {
+                span,
+                node: Expression::ArrayRepeat(Spanned {
+                    span,
+                    node: ArrayRepeatExpression {
+                        size: boxed!(size),
+                        fill: fill.map(|f| boxed!(f)),
+                    },
+                }),
+            }));
+        }
+
+        let mut items = Vec::<Spanned<Expression<'a>>>::new();
+
+        while !token_matches!(
+            self.get_next()?.ok_or_else(|| self.unexpected_eof())?,
+            TokenType::Symbol(Symbol::RBracket)
+        ) {
+            let expression = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
+
+            if let Expression::Block(_) = expression.node {
+                return Err(Error::InvalidSyntax(
+                    self.current_span(),
+                    String::from("Block expressions are not allowed in array literals"),
+                ));
+            }
+
+            items.push(expression);
+
+            if !self_matches_peek!(self, TokenType::Symbol(Symbol::Comma))
+                && !self_matches_peek!(self, TokenType::Symbol(Symbol::RBracket))
+            {
+                let next_token = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
+                return Err(Error::UnexpectedToken(
+                    Self::token_to_span(&next_token),
+                    next_token,
+                ));
+            }
+
+            if !self_matches_peek!(self, TokenType::Symbol(Symbol::RBracket)) {
+                self.assign_next()?;
+            }
+        }
+
+        let end_span = self.current_span();
+        let span = Span {
+            start_line: start_span.start_line,
+            start_col: start_span.start_col,
+            end_line: end_span.end_line,
+            end_col: end_span.end_col,
+        };
+
+        Ok(Some(Spanned {
+            span,
+            node: Expression::ArrayLiteral(Spanned { span, node: items }),
+        }))
     }
 
     pub(super) fn literal(&mut self) -> Result<Literal<'a>, Error<'a>> {

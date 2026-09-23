@@ -3,9 +3,9 @@ use crate::{
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
-        IndexAccessExpression, InvocationExpression, Literal, LogicalExpression, LoopExpression,
-        MemberAccessExpression, MethodCallExpression, Spanned, TernaryExpression,
-        TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
+        ArrayRepeatExpression, IndexAccessExpression, InvocationExpression, Literal,
+        LogicalExpression, LoopExpression, MemberAccessExpression, MethodCallExpression, Spanned,
+        TernaryExpression, TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
     },
 };
 use helpers::Span;
@@ -158,6 +158,19 @@ pub trait AstVisitor<'a>: Sized {
         self.visit_expression(&spanned.object);
         self.visit_expression(&spanned.index);
     }
+
+    fn visit_array_literal_expression(&mut self, spanned: &'a Spanned<Vec<Spanned<Expression<'a>>>>) {
+        for expr in &spanned.node {
+            self.visit_expression(expr);
+        }
+    }
+
+    fn visit_array_repeat_expression(&mut self, spanned: &'a Spanned<ArrayRepeatExpression<'a>>) {
+        self.visit_expression(&spanned.node.size);
+        if let Some(fill) = &spanned.node.fill {
+            self.visit_expression(fill);
+        }
+    }
 }
 
 /// Walks through a binary expression, calling the appropriate visitor functions for l and r nodes
@@ -251,5 +264,7 @@ pub fn walk_expression<'a, V: AstVisitor<'a>>(
         Expression::Variable(spanned) => visitor.visit_variable(spanned),
         Expression::While(exp) => visitor.visit_while_expression(exp),
         Expression::IndexAccess(exp) => visitor.visit_index_access_expression(exp),
+        Expression::ArrayLiteral(exp) => visitor.visit_array_literal_expression(exp),
+        Expression::ArrayRepeat(exp) => visitor.visit_array_repeat_expression(exp),
     }
 }

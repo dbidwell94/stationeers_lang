@@ -2,6 +2,149 @@ use il::{DeviceReference, LiteralOrReference};
 
 use super::*;
 
+/// Attempts to fold a binary expression into a single compile-time constant.
+/// Shared by `expression_binary` and by array-size/fill folding.
+pub(super) fn fold_binary_expression<'a>(
+    expr: &BinaryExpression<'a>,
+    scope: &VariableScope<'a, '_>,
+) -> Option<Number> {
+    fn number_to_i64(n: Number) -> Option<i64> {
+        match n {
+            Number::Integer(i, _) => i64::try_from(i).ok(),
+            Number::Decimal(d, _) => {
+                // Convert decimal to i64 by truncating
+                let int_part = d.trunc();
+                i64::try_from(int_part.mantissa() / 10_i128.pow(int_part.scale())).ok()
+            }
+        }
+    }
+
+    fn i64_to_number(i: i64) -> Number {
+        Number::Integer(i as i128, Unit::None)
+    }
+
+    let (lhs, rhs) = match &expr {
+        BinaryExpression::Add(l, r)
+        | BinaryExpression::Subtract(l, r)
+        | BinaryExpression::Multiply(l, r)
+        | BinaryExpression::Divide(l, r)
+        | BinaryExpression::Exponent(l, r)
+        | BinaryExpression::Modulo(l, r)
+        | BinaryExpression::BitwiseAnd(l, r)
+        | BinaryExpression::BitwiseOr(l, r)
+        | BinaryExpression::BitwiseXor(l, r)
+        | BinaryExpression::LeftShift(l, r)
+        | BinaryExpression::RightShiftArithmetic(l, r)
+        | BinaryExpression::RightShiftLogical(l, r) => {
+            (fold_expression(l, scope)?, fold_expression(r, scope)?)
+        }
+    };
+
+    match expr {
+        BinaryExpression::Add(..) => Some(lhs + rhs),
+        BinaryExpression::Subtract(..) => Some(lhs - rhs),
+        BinaryExpression::Multiply(..) => Some(lhs * rhs),
+        BinaryExpression::Divide(..) => Some(lhs / rhs), // Watch out for div by zero panics!
+        BinaryExpression::Modulo(..) => Some(lhs % rhs),
+        BinaryExpression::BitwiseAnd(..) => {
+            let lhs_int = number_to_i64(lhs)?;
+            let rhs_int = number_to_i64(rhs)?;
+            Some(i64_to_number(lhs_int & rhs_int))
+        }
+        BinaryExpression::BitwiseOr(..) => {
+            let lhs_int = number_to_i64(lhs)?;
+            let rhs_int = number_to_i64(rhs)?;
+            Some(i64_to_number(lhs_int | rhs_int))
+        }
+        BinaryExpression::BitwiseXor(..) => {
+            let lhs_int = number_to_i64(lhs)?;
+            let rhs_int = number_to_i64(rhs)?;
+            Some(i64_to_number(lhs_int ^ rhs_int))
+        }
+        BinaryExpression::LeftShift(..) => {
+            let lhs_int = number_to_i64(lhs)?;
+            let rhs_int = number_to_i64(rhs)?;
+            Some(i64_to_number(lhs_int << rhs_int))
+        }
+        BinaryExpression::RightShiftArithmetic(..) => {
+            let lhs_int = number_to_i64(lhs)?;
+            let rhs_int = number_to_i64(rhs)?;
+            Some(i64_to_number(lhs_int >> rhs_int))
+        }
+        BinaryExpression::RightShiftLogical(..) => {
+            let lhs_int = number_to_i64(lhs)?;
+            let rhs_int = number_to_i64(rhs)?;
+            Some(i64_to_number(lhs_int >> rhs_int))
+        }
+        _ => None, // Exponent not handled in compile-time folding
+    }
+}
+
+/// Attempts to fold an arbitrary expression into a single compile-time constant.
+/// Shared by `expression_binary` and by array-size/fill folding.
+pub(super) fn fold_expression<'a>(
+    expr: &Expression<'a>,
+    scope: &VariableScope<'a, '_>,
+) -> Option<Number> {
+    match expr {
+        // 1. Base Case: It's already a number
+        Expression::Literal(lit) => match lit.node {
+            Literal::Number(n) => Some(n),
+            _ => None,
+        },
+
+        // 2. Handle Parentheses: Just recurse deeper
+        Expression::Priority(inner) => fold_expression(&inner.node, scope),
+
+        // 3. Handle Negation: Recurse, then negate
+        Expression::Negation(inner) => {
+            let val = fold_expression(&inner.node, scope)?;
+            Some(-val) // Requires impl Neg for Number
+        }
+
+        // 4. Handle Binary Ops: Recurse BOTH sides, then combine
+        Expression::Binary(bin) => fold_binary_expression(&bin.node, scope),
+
+        // 5. Handle Variable Reference: Check if it's a const
+        Expression::Variable(var_id) => {
+            if let Ok(var_loc) = scope.get_location_of(var_id, None)
+                && let VariableLocation::Constant(Literal::Number(num)) = var_loc
+            {
+                return Some(num);
+            }
+            None
+        }
+
+        // 6. Handle hash() syscall - evaluates to a constant at compile time
+        Expression::Syscall(Spanned {
+            node:
+                SysCall::System(System::Hash(Spanned {
+                    node: Literal::String(str_to_hash),
+                    ..
+                })),
+            ..
+        }) => Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None)),
+
+        // 7. Handle hash() macro as invocation - evaluates to a constant at compile time
+        Expression::Invocation(inv) => {
+            if inv.node.name.node == "hash"
+                && inv.node.arguments.len() == 1
+                && let Expression::Literal(Spanned {
+                    node: Literal::String(str_to_hash),
+                    ..
+                }) = &inv.node.arguments[0].node
+            {
+                // hash() takes a string literal and returns a signed integer
+                return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
+            }
+            None
+        }
+
+        // 8. Anything else cannot be compile-time folded
+        _ => None,
+    }
+}
+
 impl<'a> Compiler<'a> {
     pub(super) fn emit_variable_assignment(
         &mut self,
@@ -29,6 +172,14 @@ impl<'a> Compiler<'a> {
             VariableLocation::Device(_) => {
                 return Err(Error::Unknown(
                     r#"Attempted to emit a variable assignent for device.
+                    This is a Compiler bug and should be reported to the developer."#
+                        .into(),
+                    None,
+                ));
+            }
+            VariableLocation::Array { .. } => {
+                return Err(Error::Unknown(
+                    r#"Attempted to emit a variable assignent for an array.
                     This is a Compiler bug and should be reported to the developer."#
                         .into(),
                     None,
@@ -251,6 +402,12 @@ impl<'a> Compiler<'a> {
                             Operand::Number(reference_num.into())
                         }
                     },
+                    VariableLocation::Array { .. } => {
+                        return Err(Error::OperationNotSupported(
+                            "Arrays cannot be aliased or copied via assignment; pass them into a function instead.".to_string(),
+                            expr.span,
+                        ));
+                    }
                 };
                 self.emit_variable_assignment(&var_loc, src)?;
                 if let Some(device) = device_reference {
@@ -291,12 +448,21 @@ impl<'a> Compiler<'a> {
                     LocationRequest::Persist,
                     Some(name_span),
                 )?;
-                let result_reg = self.resolve_register(&comp_res.location)?;
 
-                self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+                if let CompileLocation {
+                    location: VariableLocation::Constant(Literal::Number(num)),
+                    ..
+                } = comp_res
+                {
+                    // e.g. `arr.length`, constant-folded, no register involved.
+                    self.emit_variable_assignment(&var_loc, Operand::Number(num.into()))?;
+                } else {
+                    let result_reg = self.resolve_register(&comp_res.location)?;
+                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
 
-                if let Some(temp) = comp_res.temp_name {
-                    scope.free_temp(temp, None)?;
+                    if let Some(temp) = comp_res.temp_name {
+                        scope.free_temp(temp, None)?;
+                    }
                 }
 
                 (var_loc, None)
@@ -409,6 +575,16 @@ impl<'a> Compiler<'a> {
                 }
                 (var_loc, None)
             }
+            Expression::ArrayLiteral(items) => {
+                let loc =
+                    self.expression_array_literal(items, name_str.clone(), name_span, scope)?;
+                (loc, None)
+            }
+            Expression::ArrayRepeat(repeat) => {
+                let loc =
+                    self.expression_array_repeat(repeat, name_str.clone(), name_span, scope)?;
+                (loc, None)
+            }
             _ => {
                 return Err(Error::Unknown(
                     format!("`{name_str}` declaration of this type is not supported/implemented."),
@@ -491,6 +667,12 @@ impl<'a> Compiler<'a> {
                             identifier.span,
                         ));
                     }
+                    VariableLocation::Array { .. } => {
+                        return Err(Error::OperationNotSupported(
+                            "Arrays cannot be reassigned; only individual elements (`arr[i] = value`) can be mutated.".to_string(),
+                            identifier.span,
+                        ));
+                    }
                 }
 
                 if let Some(name) = cleanup {
@@ -519,6 +701,26 @@ impl<'a> Compiler<'a> {
             Expression::IndexAccess(access) => {
                 // Put instruction: put device address value
                 let IndexAccessExpression { object, index } = &access.node;
+
+                if let Some(base) = Self::array_base_of(object, scope) {
+                    let (addr, addr_cleanup) =
+                        self.compile_array_index_address(base, index, scope)?;
+                    let (val, val_cleanup) = self.compile_operand(expression, scope)?;
+
+                    self.write_instruction(
+                        Instruction::Put(Operand::Device(DeviceType::Housing), addr, val),
+                        Some(assignee.span),
+                    )?;
+
+                    if let Some(c) = addr_cleanup {
+                        scope.free_temp(c, None)?;
+                    }
+                    if let Some(c) = val_cleanup {
+                        scope.free_temp(c, None)?;
+                    }
+
+                    return Ok(());
+                }
 
                 let (device, dev_cleanup) = self.compile_operand(object, scope)?;
 
@@ -596,6 +798,10 @@ impl<'a> Compiler<'a> {
             )),
             VariableLocation::Stack(_) => Err(Error::Unknown(
                 "Cannot resolve Stack location directly to register string without context".into(),
+                None,
+            )),
+            VariableLocation::Array { .. } => Err(Error::Unknown(
+                "Cannot resolve an array to a register".into(),
                 None,
             )),
         }
@@ -681,6 +887,10 @@ impl<'a> Compiler<'a> {
                 Ok((Operand::Register(temp_reg), Some(temp_name)))
             }
             VariableLocation::Device(d) => Ok((Operand::Device(d), None)),
+            VariableLocation::Array { .. } => Err(Error::OperationNotSupported(
+                "Arrays cannot be used directly as a value; index into them with `arr[i]` or pass the array to a function.".to_string(),
+                expr.span,
+            )),
         }
     }
 
@@ -842,145 +1052,6 @@ impl<'a> Compiler<'a> {
         expr: &Spanned<BinaryExpression<'a>>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<CompileLocation<'a>, Error<'a>> {
-        fn fold_binary_expression<'a>(
-            expr: &BinaryExpression<'a>,
-            scope: &VariableScope<'a, '_>,
-        ) -> Option<Number> {
-            fn number_to_i64(n: Number) -> Option<i64> {
-                match n {
-                    Number::Integer(i, _) => i64::try_from(i).ok(),
-                    Number::Decimal(d, _) => {
-                        // Convert decimal to i64 by truncating
-                        let int_part = d.trunc();
-                        i64::try_from(int_part.mantissa() / 10_i128.pow(int_part.scale())).ok()
-                    }
-                }
-            }
-
-            fn i64_to_number(i: i64) -> Number {
-                Number::Integer(i as i128, Unit::None)
-            }
-
-            let (lhs, rhs) = match &expr {
-                BinaryExpression::Add(l, r)
-                | BinaryExpression::Subtract(l, r)
-                | BinaryExpression::Multiply(l, r)
-                | BinaryExpression::Divide(l, r)
-                | BinaryExpression::Exponent(l, r)
-                | BinaryExpression::Modulo(l, r)
-                | BinaryExpression::BitwiseAnd(l, r)
-                | BinaryExpression::BitwiseOr(l, r)
-                | BinaryExpression::BitwiseXor(l, r)
-                | BinaryExpression::LeftShift(l, r)
-                | BinaryExpression::RightShiftArithmetic(l, r)
-                | BinaryExpression::RightShiftLogical(l, r) => {
-                    (fold_expression(l, scope)?, fold_expression(r, scope)?)
-                }
-            };
-
-            match expr {
-                BinaryExpression::Add(..) => Some(lhs + rhs),
-                BinaryExpression::Subtract(..) => Some(lhs - rhs),
-                BinaryExpression::Multiply(..) => Some(lhs * rhs),
-                BinaryExpression::Divide(..) => Some(lhs / rhs), // Watch out for div by zero panics!
-                BinaryExpression::Modulo(..) => Some(lhs % rhs),
-                BinaryExpression::BitwiseAnd(..) => {
-                    let lhs_int = number_to_i64(lhs)?;
-                    let rhs_int = number_to_i64(rhs)?;
-                    Some(i64_to_number(lhs_int & rhs_int))
-                }
-                BinaryExpression::BitwiseOr(..) => {
-                    let lhs_int = number_to_i64(lhs)?;
-                    let rhs_int = number_to_i64(rhs)?;
-                    Some(i64_to_number(lhs_int | rhs_int))
-                }
-                BinaryExpression::BitwiseXor(..) => {
-                    let lhs_int = number_to_i64(lhs)?;
-                    let rhs_int = number_to_i64(rhs)?;
-                    Some(i64_to_number(lhs_int ^ rhs_int))
-                }
-                BinaryExpression::LeftShift(..) => {
-                    let lhs_int = number_to_i64(lhs)?;
-                    let rhs_int = number_to_i64(rhs)?;
-                    Some(i64_to_number(lhs_int << rhs_int))
-                }
-                BinaryExpression::RightShiftArithmetic(..) => {
-                    let lhs_int = number_to_i64(lhs)?;
-                    let rhs_int = number_to_i64(rhs)?;
-                    Some(i64_to_number(lhs_int >> rhs_int))
-                }
-                BinaryExpression::RightShiftLogical(..) => {
-                    let lhs_int = number_to_i64(lhs)?;
-                    let rhs_int = number_to_i64(rhs)?;
-                    Some(i64_to_number(lhs_int >> rhs_int))
-                }
-                _ => None, // Exponent not handled in compile-time folding
-            }
-        }
-
-        fn fold_expression<'a>(
-            expr: &Expression<'a>,
-            scope: &VariableScope<'a, '_>,
-        ) -> Option<Number> {
-            match expr {
-                // 1. Base Case: It's already a number
-                Expression::Literal(lit) => match lit.node {
-                    Literal::Number(n) => Some(n),
-                    _ => None,
-                },
-
-                // 2. Handle Parentheses: Just recurse deeper
-                Expression::Priority(inner) => fold_expression(&inner.node, scope),
-
-                // 3. Handle Negation: Recurse, then negate
-                Expression::Negation(inner) => {
-                    let val = fold_expression(&inner.node, scope)?;
-                    Some(-val) // Requires impl Neg for Number
-                }
-
-                // 4. Handle Binary Ops: Recurse BOTH sides, then combine
-                Expression::Binary(bin) => fold_binary_expression(&bin.node, scope),
-
-                // 5. Handle Variable Reference: Check if it's a const
-                Expression::Variable(var_id) => {
-                    if let Ok(var_loc) = scope.get_location_of(var_id, None)
-                        && let VariableLocation::Constant(Literal::Number(num)) = var_loc
-                    {
-                        return Some(num);
-                    }
-                    None
-                }
-
-                // 6. Handle hash() syscall - evaluates to a constant at compile time
-                Expression::Syscall(Spanned {
-                    node:
-                        SysCall::System(System::Hash(Spanned {
-                            node: Literal::String(str_to_hash),
-                            ..
-                        })),
-                    ..
-                }) => Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None)),
-
-                // 7. Handle hash() macro as invocation - evaluates to a constant at compile time
-                Expression::Invocation(inv) => {
-                    if inv.node.name.node == "hash"
-                        && inv.node.arguments.len() == 1
-                        && let Expression::Literal(Spanned {
-                            node: Literal::String(str_to_hash),
-                            ..
-                        }) = &inv.node.arguments[0].node
-                    {
-                        // hash() takes a string literal and returns a signed integer
-                        return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
-                    }
-                    None
-                }
-
-                // 8. Anything else cannot be compile-time folded
-                _ => None,
-            }
-        }
-
         if let Some(const_lit) = fold_binary_expression(&expr.node, scope) {
             return Ok(CompileLocation {
                 location: VariableLocation::Constant(Literal::Number(const_lit)),

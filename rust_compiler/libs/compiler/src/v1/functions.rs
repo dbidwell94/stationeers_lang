@@ -127,6 +127,13 @@ impl<'a> Compiler<'a> {
                                 stack.free_temp(name, None)?;
                             }
                         }
+                        VariableLocation::Array { .. } => {
+                            return Err(Error::OperationNotSupported(
+                                "Passing arrays as function arguments is not yet supported."
+                                    .to_string(),
+                                var_name.span,
+                            ));
+                        }
                     }
                 }
                 _ => {
@@ -400,6 +407,13 @@ impl<'a> Compiler<'a> {
                                 return Err(Error::Unknown(
                                     "You can not return a device from a function.".into(),
                                     Some(var_name.span),
+                                ));
+                            }
+                            VariableLocation::Array { .. } => {
+                                return Err(Error::OperationNotSupported(
+                                    "Returning arrays from functions is not yet supported."
+                                        .to_string(),
+                                    var_name.span,
                                 ));
                             }
                         },

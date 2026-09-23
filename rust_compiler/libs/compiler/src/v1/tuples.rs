@@ -62,6 +62,12 @@ impl<'a> Compiler<'a> {
                     VariableLocation::Device(_) => {
                         return Err(Error::DeviceAssignment(Cow::from("tuple element"), span));
                     }
+                    VariableLocation::Array { .. } => {
+                        return Err(Error::OperationNotSupported(
+                            "Arrays cannot be a tuple destructuring target.".to_string(),
+                            span,
+                        ));
+                    }
                 }
             } else {
                 // Underscore: pop into temp register to discard
@@ -312,6 +318,12 @@ impl<'a> Compiler<'a> {
                         VariableLocation::Device(_) => {
                             return Err(Error::DeviceAssignment(
                                 name_spanned.node.clone(),
+                                name_spanned.span,
+                            ));
+                        }
+                        VariableLocation::Array { .. } => {
+                            return Err(Error::OperationNotSupported(
+                                "Arrays cannot be a tuple assignment target.".to_string(),
                                 name_spanned.span,
                             ));
                         }

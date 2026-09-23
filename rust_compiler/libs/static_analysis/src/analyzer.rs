@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use helpers::Span;
 use parser::sys_call::{SysCall, System};
 use parser::tree_node::DeviceType;
-use parser::tree_node::{Expression, Literal, LiteralOr, Spanned};
+use parser::tree_node::{ArrayRepeatExpression, Expression, Literal, LiteralOr, Spanned};
 use tokenizer::token::{Number, Unit};
 
 use crate::error::{AnalyzeErrors, Error};
@@ -46,6 +46,9 @@ pub struct AnalyzeResult<'a> {
     pub symbol_table: SymbolTable<'a>,
     pub functions: HashMap<SymbolId, FunctionMetadata<'a>>,
     pub documentation: HashMap<SymbolId, String>,
+    /// Whether the program declares any arrays. Used by the compiler to decide
+    /// whether to reserve the array region of the `db` stack at all.
+    pub uses_arrays: bool,
 }
 
 #[derive(Default)]
@@ -56,6 +59,7 @@ pub struct Analyzer<'a> {
 
     is_lhs: bool,
     lhs_vars: Vec<Cow<'a, str>>,
+    uses_arrays: bool,
 }
 
 impl<'a> Analyzer<'a> {
@@ -73,6 +77,7 @@ impl<'a> Analyzer<'a> {
                 symbol_table: self.symbol_table,
                 functions: self.functions,
                 documentation: HashMap::new(),
+                uses_arrays: self.uses_arrays,
             })
         } else {
             Err(AnalyzeErrors(self.errors))
@@ -187,6 +192,21 @@ impl<'a> Analyzer<'a> {
 }
 
 impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
+    fn visit_array_literal_expression(&mut self, spanned: &'a Spanned<Vec<Spanned<Expression<'a>>>>) {
+        self.uses_arrays = true;
+        for expr in &spanned.node {
+            self.visit_expression(expr);
+        }
+    }
+
+    fn visit_array_repeat_expression(&mut self, spanned: &'a Spanned<ArrayRepeatExpression<'a>>) {
+        self.uses_arrays = true;
+        self.visit_expression(&spanned.node.size);
+        if let Some(fill) = &spanned.node.fill {
+            self.visit_expression(fill);
+        }
+    }
+
     fn visit_device_declaration_expression(
         &mut self,
         spanned: &'a Spanned<parser::tree_node::DeviceDeclarationExpression<'a>>,

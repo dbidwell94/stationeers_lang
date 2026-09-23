@@ -256,6 +256,22 @@ impl<'a> std::fmt::Display for IndexAccessExpression<'a> {
     }
 }
 
+/// Represents a `[|size| fill]` / `[|size|]` array repeat literal.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ArrayRepeatExpression<'a> {
+    pub size: Box<Spanned<Expression<'a>>>,
+    pub fill: Option<Box<Spanned<Expression<'a>>>>,
+}
+
+impl<'a> std::fmt::Display for ArrayRepeatExpression<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.fill {
+            Some(fill) => write!(f, "[|{}| {}]", self.size, fill),
+            None => write!(f, "[|{}|]", self.size),
+        }
+    }
+}
+
 /// Represents either a literal value or a variable name in the abstract syntax tree (AST).
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LiteralOrVariable<'a> {
@@ -532,6 +548,8 @@ pub enum Expression<'a> {
     Variable(Spanned<Cow<'a, str>>),
     While(Spanned<WhileExpression<'a>>),
     IndexAccess(Spanned<IndexAccessExpression<'a>>),
+    ArrayLiteral(Spanned<Vec<Spanned<Expression<'a>>>>),
+    ArrayRepeat(Spanned<ArrayRepeatExpression<'a>>),
 }
 
 impl<'a> std::fmt::Display for Expression<'a> {
@@ -582,6 +600,16 @@ impl<'a> std::fmt::Display for Expression<'a> {
             Expression::Variable(id) => write!(f, "{}", id),
             Expression::While(e) => write!(f, "{}", e),
             Expression::IndexAccess(e) => write!(f, "{}", e),
+            Expression::ArrayLiteral(e) => {
+                let items = e
+                    .node
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "[{}]", items)
+            }
+            Expression::ArrayRepeat(e) => write!(f, "{}", e),
         }
     }
 }

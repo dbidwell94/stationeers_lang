@@ -6,6 +6,7 @@ macro_rules! parser {
 }
 
 mod blocks;
+mod arrays;
 use crate::ParseOutput;
 
 use super::Parser;

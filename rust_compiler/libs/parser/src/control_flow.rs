@@ -180,6 +180,18 @@ impl<'a> Parser<'a> {
             }
             Expression::Return(Some(value)) => self.condition_contains_assignment(value),
             Expression::Dereference(expr) => self.condition_contains_assignment(expr),
+            Expression::ArrayLiteral(items) => items
+                .node
+                .iter()
+                .any(|item| self.condition_contains_assignment(item)),
+            Expression::ArrayRepeat(repeat) => {
+                self.condition_contains_assignment(&repeat.node.size)
+                    || repeat
+                        .node
+                        .fill
+                        .as_ref()
+                        .is_some_and(|fill| self.condition_contains_assignment(fill))
+            }
             Expression::If(_)
             | Expression::While(_)
             | Expression::Loop(_)
