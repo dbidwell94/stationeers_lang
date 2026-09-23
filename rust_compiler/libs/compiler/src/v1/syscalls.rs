@@ -497,6 +497,40 @@ impl<'a> Compiler<'a> {
                     temp_name: None,
                 }))
             }
+            System::DeviceNotSet(dev_name) => {
+                let (dev_hash, hash_cleanup) = self.compile_device_operand(dev_name, scope)?;
+
+                self.write_instruction(
+                    Instruction::DeviceNotSet(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        dev_hash,
+                    ),
+                    Some(span),
+                )?;
+                cleanup!(hash_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
+            System::DeviceSet(dev_name) => {
+                let (dev_hash, hash_cleanup) = self.compile_device_operand(dev_name, scope)?;
+
+                self.write_instruction(
+                    Instruction::DeviceSet(
+                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        dev_hash,
+                    ),
+                    Some(span),
+                )?;
+                cleanup!(hash_cleanup);
+
+                Ok(Some(CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                }))
+            }
             System::Rmap(device, reagent_hash) => {
                 let (device, device_cleanup) = self.compile_device_operand(device, scope)?;
 
