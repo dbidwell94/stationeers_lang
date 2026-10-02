@@ -18,6 +18,7 @@ pub enum ParameterKind {
     DevicePin,
     DeviceReference,
     DeviceHousing,
+    Array,
 }
 
 impl ParameterKind {
@@ -28,6 +29,7 @@ impl ParameterKind {
             ParameterKind::DevicePin => "device pin",
             ParameterKind::DeviceReference => "device reference",
             ParameterKind::DeviceHousing => "device housing",
+            ParameterKind::Array => "array",
         }
     }
 }
@@ -36,6 +38,7 @@ impl ParameterKind {
 pub struct FunctionMetadata<'a> {
     pub symbol: Symbol<'a>,
     pub parameter_kinds: Vec<ParameterKind>,
+    pub parameter_symbols: Vec<SymbolId>,
     pub call_sites: Vec<Span>,
 }
 
@@ -60,6 +63,8 @@ pub struct Analyzer<'a> {
     is_lhs: bool,
     lhs_vars: Vec<Cow<'a, str>>,
     uses_arrays: bool,
+    parameter_symbol_owner: HashMap<SymbolId, (SymbolId, usize)>,
+    parameter_forwarding: Vec<(SymbolId, usize, SymbolId, usize, Span)>,
 }
 
 impl<'a> Analyzer<'a> {
@@ -71,6 +76,7 @@ impl<'a> Analyzer<'a> {
     ) -> Result<AnalyzeResult<'a>, AnalyzeErrors> {
         use parser::visitor::AstVisitor;
         self.visit_expression(tree);
+        self.propagate_array_parameter_kinds();
 
         if self.errors.is_empty() {
             Ok(AnalyzeResult {
@@ -101,12 +107,14 @@ impl<'a> Analyzer<'a> {
             .or_insert_with(|| FunctionMetadata {
                 symbol,
                 parameter_kinds: vec![ParameterKind::Unknown; param_count],
+                parameter_symbols: Vec::new(),
                 call_sites: Vec::new(),
             });
     }
 
     fn symbol_kind_for_declaration(&mut self, expr: &'a Spanned<Expression<'a>>) -> SymbolKind<'a> {
         match &expr.node {
+            Expression::ArrayLiteral(_) | Expression::ArrayRepeat(_) => SymbolKind::Array,
             Expression::Variable(name) => self
                 .symbol_table
                 .lookup(&name.node)
@@ -124,12 +132,25 @@ impl<'a> Analyzer<'a> {
     fn infer_argument_kind(&mut self, expr: &'a Spanned<Expression<'a>>) -> ParameterKind {
         match &expr.node {
             Expression::Literal(_) => ParameterKind::Value,
-            Expression::Variable(name) => self
-                .symbol_table
-                .lookup(&name.node)
-                .and_then(|id| self.symbol_table.get(&id))
-                .map(|symbol| Self::parameter_kind_from_symbol_kind(&symbol.kind))
-                .unwrap_or(ParameterKind::Unknown),
+            Expression::Variable(name) => {
+                let Some(symbol_id) = self.symbol_table.lookup(&name.node) else {
+                    return ParameterKind::Unknown;
+                };
+                if let Some((function_id, parameter_index)) =
+                    self.parameter_symbol_owner.get(&symbol_id)
+                {
+                    return self
+                        .functions
+                        .get(function_id)
+                        .and_then(|metadata| metadata.parameter_kinds.get(*parameter_index))
+                        .copied()
+                        .unwrap_or(ParameterKind::Unknown);
+                }
+                self.symbol_table
+                    .get(&symbol_id)
+                    .map(|symbol| Self::parameter_kind_from_symbol_kind(&symbol.kind))
+                    .unwrap_or(ParameterKind::Unknown)
+            }
             Expression::Binary(_)
             | Expression::BitwiseNot(_)
             | Expression::IndexAccess(_)
@@ -139,6 +160,7 @@ impl<'a> Analyzer<'a> {
             | Expression::Syscall(_)
             | Expression::Ternary(_)
             | Expression::Tuple(_) => ParameterKind::Value,
+            Expression::ArrayLiteral(_) | Expression::ArrayRepeat(_) => ParameterKind::Array,
             Expression::Priority(inner) => self.infer_argument_kind(inner),
             _ => ParameterKind::Unknown,
         }
@@ -149,6 +171,7 @@ impl<'a> Analyzer<'a> {
             SymbolKind::Device(DeviceType::Pin(_)) => ParameterKind::DevicePin,
             SymbolKind::Device(DeviceType::Reference(_)) => ParameterKind::DeviceReference,
             SymbolKind::Device(DeviceType::Housing) => ParameterKind::DeviceHousing,
+            SymbolKind::Array => ParameterKind::Array,
             SymbolKind::Function { .. } => ParameterKind::Unknown,
             _ => ParameterKind::Value,
         }
@@ -176,6 +199,13 @@ impl<'a> Analyzer<'a> {
 
         if *existing_kind == ParameterKind::Unknown {
             *existing_kind = inferred_kind;
+            if inferred_kind == ParameterKind::Array
+                && let Some(parameter_symbol_id) = metadata.parameter_symbols.get(parameter_index)
+                && let Some(parameter_symbol) =
+                    self.symbol_table.symbols.get_mut(parameter_symbol_id.0)
+            {
+                parameter_symbol.kind = SymbolKind::Array;
+            }
             return;
         }
 
@@ -187,12 +217,84 @@ impl<'a> Analyzer<'a> {
                 actual: inferred_kind.as_str().to_string(),
                 span,
             });
+        } else if inferred_kind == ParameterKind::Array
+            && let Some(parameter_symbol_id) = metadata.parameter_symbols.get(parameter_index)
+            && let Some(parameter_symbol) = self.symbol_table.symbols.get_mut(parameter_symbol_id.0)
+        {
+            parameter_symbol.kind = SymbolKind::Array;
+        }
+    }
+
+    fn propagate_array_parameter_kinds(&mut self) {
+        let mut reported_conflicts = std::collections::HashSet::new();
+        loop {
+            let mut changed = false;
+            for (target_id, target_index, source_id, source_index, _span) in
+                self.parameter_forwarding.iter().copied()
+            {
+                let source_is_array = self
+                    .functions
+                    .get(&source_id)
+                    .and_then(|metadata| metadata.parameter_kinds.get(source_index))
+                    == Some(&ParameterKind::Array);
+                if !source_is_array {
+                    continue;
+                }
+
+                let target_kind = self
+                    .functions
+                    .get(&target_id)
+                    .and_then(|metadata| metadata.parameter_kinds.get(target_index))
+                    .copied();
+                if let Some(kind) = target_kind
+                    && kind != ParameterKind::Unknown
+                    && kind != ParameterKind::Array
+                    && reported_conflicts.insert((target_id, target_index, source_id, source_index))
+                {
+                    let target_name = self
+                        .functions
+                        .get(&target_id)
+                        .map(|metadata| metadata.symbol.name.to_string())
+                        .unwrap_or_default();
+                    self.errors.push(Error::ConflictingFunctionParameterType {
+                        function: target_name,
+                        parameter_index: target_index,
+                        expected: kind.as_str().to_string(),
+                        actual: ParameterKind::Array.as_str().to_string(),
+                        span: _span,
+                    });
+                }
+
+                let parameter_symbol_id = if let Some(target) = self.functions.get_mut(&target_id)
+                    && let Some(target_kind) = target.parameter_kinds.get_mut(target_index)
+                    && *target_kind == ParameterKind::Unknown
+                {
+                    *target_kind = ParameterKind::Array;
+                    target.parameter_symbols.get(target_index).copied()
+                } else {
+                    None
+                };
+                if let Some(parameter_symbol_id) = parameter_symbol_id {
+                    if let Some(parameter_symbol) =
+                        self.symbol_table.symbols.get_mut(parameter_symbol_id.0)
+                    {
+                        parameter_symbol.kind = SymbolKind::Array;
+                    }
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
         }
     }
 }
 
 impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
-    fn visit_array_literal_expression(&mut self, spanned: &'a Spanned<Vec<Spanned<Expression<'a>>>>) {
+    fn visit_array_literal_expression(
+        &mut self,
+        spanned: &'a Spanned<Vec<Spanned<Expression<'a>>>>,
+    ) {
         self.uses_arrays = true;
         for expr in &spanned.node {
             self.visit_expression(expr);
@@ -237,8 +339,27 @@ impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
         }
 
         self.symbol_table.enter_scope();
+        let mut parameter_symbols = Vec::with_capacity(spanned.arguments.len());
         for arg in &spanned.arguments {
             self.declare(&arg.node, SymbolKind::Variable, arg.span);
+            if let Some(symbol_id) = self.symbol_table.lookup(&arg.node) {
+                parameter_symbols.push(symbol_id);
+            }
+        }
+        if let Some(function_symbol_id) = self.symbol_table.lookup(&spanned.name.node)
+            && let Some(metadata) = self.functions.get_mut(&function_symbol_id)
+        {
+            metadata.parameter_symbols = parameter_symbols;
+        }
+        if let Some(function_symbol_id) = self.symbol_table.lookup(&spanned.name.node)
+            && let Some(metadata) = self.functions.get(&function_symbol_id)
+        {
+            for (parameter_index, parameter_symbol_id) in
+                metadata.parameter_symbols.iter().copied().enumerate()
+            {
+                self.parameter_symbol_owner
+                    .insert(parameter_symbol_id, (function_symbol_id, parameter_index));
+            }
         }
         self.visit_block_expression(&spanned.body);
         self.symbol_table.exit_scope();
@@ -270,6 +391,19 @@ impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
         }
 
         for (index, argument) in spanned.arguments.iter().enumerate() {
+            if let Expression::Variable(name) = &argument.node
+                && let Some(source_symbol_id) = self.symbol_table.lookup(&name.node)
+                && let Some((source_function_id, source_parameter_index)) =
+                    self.parameter_symbol_owner.get(&source_symbol_id).copied()
+            {
+                self.parameter_forwarding.push((
+                    function_symbol.id,
+                    index,
+                    source_function_id,
+                    source_parameter_index,
+                    argument.span,
+                ));
+            }
             let inferred_kind = self.infer_argument_kind(argument);
             self.merge_parameter_kind(function_symbol.clone(), index, inferred_kind, argument.span);
             self.visit_expression(argument);

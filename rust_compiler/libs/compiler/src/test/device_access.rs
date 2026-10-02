@@ -478,6 +478,42 @@ fn device_index_read() -> anyhow::Result<()> {
 }
 
 #[test]
+fn device_index_read_and_write_with_expression() -> anyhow::Result<()> {
+    let compiled = compile! {
+        check "
+            device other = \"d1\";
+            let item = 1;
+            let stackItem = other[item + 2];
+            other[item + 2] = stackItem;
+        "
+    };
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 1
+            add r1 r8 2
+            get r2 d1 r1
+            move r9 r2
+            add r3 r8 2
+            put d1 r3 r9
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn device_index_write() -> anyhow::Result<()> {
     let compiled = compile! {
         check "

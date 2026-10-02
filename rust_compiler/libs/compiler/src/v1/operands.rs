@@ -185,6 +185,14 @@ impl<'a> Compiler<'a> {
                     None,
                 ));
             }
+            VariableLocation::ArrayParameter { .. } => {
+                return Err(Error::Unknown(
+                    r#"Attempted to emit a variable assignent for an array parameter.
+                    This is a Compiler bug and should be reported to the developer."#
+                        .into(),
+                    None,
+                ));
+            }
         }
 
         Ok(())
@@ -403,6 +411,12 @@ impl<'a> Compiler<'a> {
                         }
                     },
                     VariableLocation::Array { .. } => {
+                        return Err(Error::OperationNotSupported(
+                            "Arrays cannot be aliased or copied via assignment; pass them into a function instead.".to_string(),
+                            expr.span,
+                        ));
+                    }
+                    VariableLocation::ArrayParameter { .. } => {
                         return Err(Error::OperationNotSupported(
                             "Arrays cannot be aliased or copied via assignment; pass them into a function instead.".to_string(),
                             expr.span,
@@ -673,6 +687,12 @@ impl<'a> Compiler<'a> {
                             identifier.span,
                         ));
                     }
+                    VariableLocation::ArrayParameter { .. } => {
+                        return Err(Error::OperationNotSupported(
+                            "Arrays cannot be reassigned; only individual elements (`arr[i] = value`) can be mutated.".to_string(),
+                            identifier.span,
+                        ));
+                    }
                 }
 
                 if let Some(name) = cleanup {
@@ -702,9 +722,9 @@ impl<'a> Compiler<'a> {
                 // Put instruction: put device address value
                 let IndexAccessExpression { object, index } = &access.node;
 
-                if let Some(base) = Self::array_base_of(object, scope) {
+                if let Some(array) = Self::array_location_of(object, scope) {
                     let (addr, addr_cleanup) =
-                        self.compile_array_index_address(base, index, scope)?;
+                        self.compile_array_index_address(&array, index, scope)?;
                     let (val, val_cleanup) = self.compile_operand(expression, scope)?;
 
                     self.write_instruction(
@@ -804,6 +824,10 @@ impl<'a> Compiler<'a> {
                 "Cannot resolve an array to a register".into(),
                 None,
             )),
+            VariableLocation::ArrayParameter { .. } => Err(Error::Unknown(
+                "Cannot resolve an array parameter to a register".into(),
+                None,
+            )),
         }
     }
 
@@ -888,6 +912,10 @@ impl<'a> Compiler<'a> {
             }
             VariableLocation::Device(d) => Ok((Operand::Device(d), None)),
             VariableLocation::Array { .. } => Err(Error::OperationNotSupported(
+                "Arrays cannot be used directly as a value; index into them with `arr[i]` or pass the array to a function.".to_string(),
+                expr.span,
+            )),
+            VariableLocation::ArrayParameter { .. } => Err(Error::OperationNotSupported(
                 "Arrays cannot be used directly as a value; index into them with `arr[i]` or pass the array to a function.".to_string(),
                 expr.span,
             )),

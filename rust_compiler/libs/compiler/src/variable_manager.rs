@@ -93,6 +93,15 @@ pub enum VariableLocation<'a> {
     /// Represents a fixed, absolute `db` stack address range reserved for a
     /// user array: `base` is the starting address, `len` the element count.
     Array { base: u16, len: u16 },
+    /// Represents an array parameter whose packed base/length descriptor is
+    /// stored in a register or a compiler stack slot.
+    ArrayParameter { descriptor: ArrayDescriptorLocation },
+}
+
+#[derive(Clone, Debug)]
+pub enum ArrayDescriptorLocation {
+    Register(u8),
+    Stack(u16),
 }
 
 pub struct VariableScope<'a, 'b> {
@@ -180,6 +189,10 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         total
     }
 
+    pub fn reserve_array_slots(&mut self, high_water: u16) {
+        self.array_offset = self.array_offset.max(high_water);
+    }
+
     /// Allocates a fixed-size array at the next available absolute `db` stack
     /// address. Arrays are freed implicitly when their declaring scope is
     /// dropped, since sibling scopes start with a fresh `array_offset` of 0
@@ -197,8 +210,9 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         let parent_depth = self.parent.map(|p| p.total_array_depth()).unwrap_or(0);
         let base = parent_depth + self.array_offset;
 
-        if base + len > ARRAY_REGION_SIZE {
-            return Err(Error::ArrayCapacityExceeded(base + len, ARRAY_REGION_SIZE, span));
+        let end = base.checked_add(len).unwrap_or(u16::MAX);
+        if end > ARRAY_REGION_SIZE {
+            return Err(Error::ArrayCapacityExceeded(end, ARRAY_REGION_SIZE, span));
         }
 
         self.array_offset += len;
@@ -206,6 +220,18 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         let new_value = VariableLocation::Array { base, len };
         self.var_lookup_table.insert(var_name, new_value.clone());
         Ok(new_value)
+    }
+
+    pub fn mark_array_parameter(
+        &mut self,
+        var_name: &Cow<'a, str>,
+        descriptor: ArrayDescriptorLocation,
+    ) -> Result<(), Error<'a>> {
+        let Some(location) = self.var_lookup_table.get_mut(var_name) else {
+            return Err(Error::UnknownVariable(var_name.clone(), None));
+        };
+        *location = VariableLocation::ArrayParameter { descriptor };
+        Ok(())
     }
 
     /// Adds and tracks a new scoped variable. If the location you request is full, will fall back
@@ -312,6 +338,15 @@ impl<'a, 'b> VariableScope<'a, 'b> {
                 return Ok(VariableLocation::Stack(
                     self.stack_offset - inserted_at_offset,
                 ));
+            } else if let VariableLocation::ArrayParameter {
+                descriptor: ArrayDescriptorLocation::Stack(inserted_at_offset),
+            } = var
+            {
+                return Ok(VariableLocation::ArrayParameter {
+                    descriptor: ArrayDescriptorLocation::Stack(
+                        self.stack_offset - inserted_at_offset,
+                    ),
+                });
             } else {
                 return Ok(var.clone());
             }
@@ -323,6 +358,14 @@ impl<'a, 'b> VariableScope<'a, 'b> {
 
             if let VariableLocation::Stack(parent_offset) = loc {
                 return Ok(VariableLocation::Stack(parent_offset + self.stack_offset));
+            }
+            if let VariableLocation::ArrayParameter {
+                descriptor: ArrayDescriptorLocation::Stack(parent_offset),
+            } = loc
+            {
+                return Ok(VariableLocation::ArrayParameter {
+                    descriptor: ArrayDescriptorLocation::Stack(parent_offset + self.stack_offset),
+                });
             }
             return Ok(loc);
         }

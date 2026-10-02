@@ -1,8 +1,18 @@
+use crate::variable_manager::ArrayDescriptorLocation;
 use il::DeviceReference;
 
 use super::*;
 
 impl<'a> Compiler<'a> {
+    fn function_parameter_kinds(&self, function_name: &Cow<'a, str>) -> Vec<ParameterKind> {
+        self.analyze_result
+            .functions
+            .values()
+            .find(|metadata| metadata.symbol.name == function_name.as_ref())
+            .map(|metadata| metadata.parameter_kinds.clone())
+            .unwrap_or_default()
+    }
+
     pub(super) fn expression_function_invocation_with_invocation(
         &mut self,
         invoke_expr: &InvocationExpression<'a>,
@@ -49,7 +59,18 @@ impl<'a> Compiler<'a> {
                 )?;
             }
         }
-        for arg in arguments {
+        let parameter_kinds = self.function_parameter_kinds(&name.node);
+        for (index, arg) in arguments.iter().enumerate() {
+            if parameter_kinds.get(index) == Some(&ParameterKind::Array) {
+                let (descriptor, cleanup) =
+                    self.compile_array_argument_descriptor(arg, &mut stack)?;
+                self.write_instruction(Instruction::Push(descriptor), Some(arg.span))?;
+                if let Some(temp_name) = cleanup {
+                    stack.free_temp(temp_name, None)?;
+                }
+                continue;
+            }
+
             match &arg.node {
                 Expression::Literal(spanned_lit) => match &spanned_lit.node {
                     Literal::Number(num) => {
@@ -130,6 +151,13 @@ impl<'a> Compiler<'a> {
                         VariableLocation::Array { .. } => {
                             return Err(Error::OperationNotSupported(
                                 "Passing arrays as function arguments is not yet supported."
+                                    .to_string(),
+                                var_name.span,
+                            ));
+                        }
+                        VariableLocation::ArrayParameter { .. } => {
+                            return Err(Error::OperationNotSupported(
+                                "An array parameter can only be passed to an array parameter."
                                     .to_string(),
                                 var_name.span,
                             ));
@@ -227,8 +255,19 @@ impl<'a> Compiler<'a> {
                 Some(name.span),
             )?;
         }
-        for arg in arguments {
+        let parameter_kinds = self.function_parameter_kinds(&name.node);
+        for (index, arg) in arguments.iter().enumerate() {
             let arg_span = arg.span;
+            if parameter_kinds.get(index) == Some(&ParameterKind::Array) {
+                let (descriptor, temp_cleanup) =
+                    self.compile_array_argument_descriptor(arg, &mut stack)?;
+                self.write_instruction(Instruction::Push(descriptor), Some(arg_span))?;
+                if let Some(temp_name) = temp_cleanup {
+                    stack.free_temp(temp_name, None)?;
+                }
+                continue;
+            }
+
             // Use compile_operand to handle all expression types uniformly
             // This handles literals, variables, binaries, logicals, and importantly INVOCATIONS
             let (operand, temp_cleanup) = self.compile_operand(arg, &mut stack)?;
@@ -410,6 +449,13 @@ impl<'a> Compiler<'a> {
                                 ));
                             }
                             VariableLocation::Array { .. } => {
+                                return Err(Error::OperationNotSupported(
+                                    "Returning arrays from functions is not yet supported."
+                                        .to_string(),
+                                    var_name.span,
+                                ));
+                            }
+                            VariableLocation::ArrayParameter { .. } => {
                                 return Err(Error::OperationNotSupported(
                                     "Returning arrays from functions is not yet supported."
                                         .to_string(),
@@ -665,12 +711,13 @@ impl<'a> Compiler<'a> {
             // we don't need to imcrement the stack offset as it's already on the stack from the
             // previous scope
 
-            match loc {
+            let descriptor_register = match loc {
                 VariableLocation::Persistant(loc) => {
                     self.write_instruction(
                         Instruction::Pop(Operand::Register(loc)),
                         Some(var_name.span),
                     )?;
+                    loc
                 }
                 VariableLocation::Stack(_) => {
                     return Err(Error::Unknown(
@@ -686,7 +733,7 @@ impl<'a> Compiler<'a> {
                         Some(var_name.span),
                     ));
                 }
-            }
+            };
             match parameter_kind {
                 ParameterKind::DevicePin => {
                     block_scope.define_device_reference(var_name.node.clone(), DeviceType::Pin(0));
@@ -697,6 +744,12 @@ impl<'a> Compiler<'a> {
                 }
                 ParameterKind::DeviceHousing => {
                     block_scope.define_device_reference(var_name.node.clone(), DeviceType::Housing);
+                }
+                ParameterKind::Array => {
+                    block_scope.mark_array_parameter(
+                        &var_name.node,
+                        ArrayDescriptorLocation::Register(descriptor_register),
+                    )?;
                 }
                 ParameterKind::Unknown | ParameterKind::Value => {}
             }
@@ -711,11 +764,17 @@ impl<'a> Compiler<'a> {
             .take(arguments.len() - saved_variables)
             .zip(parameter_kinds.iter())
         {
-            block_scope.add_variable(
+            let parameter_location = block_scope.add_variable(
                 var_name.node.clone(),
                 LocationRequest::Stack,
                 Some(var_name.span),
             )?;
+            if matches!(parameter_kind, ParameterKind::Array)
+                && let VariableLocation::Stack(offset) = parameter_location
+            {
+                block_scope
+                    .mark_array_parameter(&var_name.node, ArrayDescriptorLocation::Stack(offset))?;
+            }
             match parameter_kind {
                 ParameterKind::DevicePin => {
                     block_scope.define_device_reference(var_name.node.clone(), DeviceType::Pin(0));
@@ -727,7 +786,7 @@ impl<'a> Compiler<'a> {
                 ParameterKind::DeviceHousing => {
                     block_scope.define_device_reference(var_name.node.clone(), DeviceType::Housing);
                 }
-                ParameterKind::Unknown | ParameterKind::Value => {}
+                ParameterKind::Array | ParameterKind::Unknown | ParameterKind::Value => {}
             }
         }
 
@@ -796,6 +855,9 @@ impl<'a> Compiler<'a> {
                 ));
             }
         };
+
+        drop(block_scope);
+        scope.reserve_array_slots(self.array_high_water);
 
         self.function_meta.return_label = prev_return_label;
 

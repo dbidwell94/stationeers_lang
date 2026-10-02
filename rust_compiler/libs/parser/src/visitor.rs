@@ -1,11 +1,11 @@
 use crate::{
     sys_call::SysCall,
     tree_node::{
-        AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
-        DeviceDeclarationExpression, Expression, FunctionExpression, IfExpression,
-        ArrayRepeatExpression, IndexAccessExpression, InvocationExpression, Literal,
-        LogicalExpression, LoopExpression, MemberAccessExpression, MethodCallExpression, Spanned,
-        TernaryExpression, TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
+        ArrayRepeatExpression, AssignmentExpression, BinaryExpression, BlockExpression,
+        ConstDeclarationExpression, DeviceDeclarationExpression, Expression, FunctionExpression,
+        IfExpression, IndexAccessExpression, InvocationExpression, Literal, LogicalExpression,
+        LoopExpression, MemberAccessExpression, MethodCallExpression, Spanned, TernaryExpression,
+        TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
     },
 };
 use helpers::Span;
@@ -159,7 +159,10 @@ pub trait AstVisitor<'a>: Sized {
         self.visit_expression(&spanned.index);
     }
 
-    fn visit_array_literal_expression(&mut self, spanned: &'a Spanned<Vec<Spanned<Expression<'a>>>>) {
+    fn visit_array_literal_expression(
+        &mut self,
+        spanned: &'a Spanned<Vec<Spanned<Expression<'a>>>>,
+    ) {
         for expr in &spanned.node {
             self.visit_expression(expr);
         }

@@ -43,7 +43,6 @@ impl<'a> Parser<'a> {
         Ok(Some(lhs))
     }
 
-
     pub(super) fn parse_postfix(
         &mut self,
         mut lhs: Spanned<Expression<'a>>,
@@ -1000,17 +999,15 @@ impl<'a> Parser<'a> {
                 ));
             }
 
-            let (fill, closing_bracket) = if self_matches_peek!(
-                self,
-                TokenType::Symbol(Symbol::RBracket)
-            ) {
-                (None, self.get_next()?.ok_or_else(|| self.unexpected_eof())?)
-            } else {
-                self.assign_next()?; // current = first token of fill expression
-                let fill_expr = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
-                let rbracket = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
-                (Some(fill_expr), rbracket)
-            };
+            let (fill, closing_bracket) =
+                if self_matches_peek!(self, TokenType::Symbol(Symbol::RBracket)) {
+                    (None, self.get_next()?.ok_or_else(|| self.unexpected_eof())?)
+                } else {
+                    self.assign_next()?; // current = first token of fill expression
+                    let fill_expr = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
+                    let rbracket = self.get_next()?.ok_or_else(|| self.unexpected_eof())?;
+                    (Some(fill_expr), rbracket)
+                };
 
             if !token_matches!(closing_bracket, TokenType::Symbol(Symbol::RBracket)) {
                 return Err(Error::UnexpectedToken(
@@ -1118,4 +1115,3 @@ impl<'a> Parser<'a> {
         Ok(literal)
     }
 }
-

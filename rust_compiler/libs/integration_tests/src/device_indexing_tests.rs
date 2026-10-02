@@ -45,6 +45,39 @@ fn test_device_indexing_with_computed_index() {
 }
 
 #[test]
+fn array_boundary_does_not_overlap_compiler_stack_spills() {
+    let source = indoc! {"
+        device other = \"d0\";
+        let data = [|256|];
+        let a = 1;
+        let b = 2;
+        let c = 3;
+        let d = 4;
+        let e = 5;
+        let f = 6;
+        let g = 7;
+        let h = 8;
+        let i = 9;
+        let sum = h + i;
+        data[255] = sum;
+        other.Setting = data[255];
+    "};
+    let output = compile_with_and_without_optimization(source);
+    let sections: Vec<_> = output.split("## Optimized Output\n\n").collect();
+    assert_eq!(sections.len(), 2);
+
+    for section in sections {
+        assert!(section.contains("move sp 256\n"));
+        assert!(section.contains("push 8\npush 9"));
+        assert!(section.contains("sub r0 sp 2\nget"));
+        assert!(section.contains("sub r0 sp 1\nget"));
+        assert!(section.contains("put db 255"));
+        assert!(section.contains("get r"));
+        assert!(section.contains("db 255"));
+    }
+}
+
+#[test]
 fn test_device_indexing_with_binary_literals() {
     let source = indoc! {"
             device mem = \"d0\";

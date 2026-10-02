@@ -1,5 +1,7 @@
 #![allow(clippy::result_large_err)]
-use crate::variable_manager::{LocationRequest, VariableLocation, VariableScope};
+use crate::variable_manager::{
+    ARRAY_REGION_SIZE, LocationRequest, VariableLocation, VariableScope,
+};
 use helpers::{Span, prelude::*};
 use il::{Instruction, InstructionNode, Instructions, Operand};
 use parser::{
@@ -93,6 +95,7 @@ pub struct Compiler<'a> {
     _config: CompilerConfig,
     temp_counter: usize,
     label_counter: usize,
+    array_high_water: u16,
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>, u16)>, // Stores (start_label, end_label, stack_depth_at_entry)
     /// stores (IC10 `line_num`, `Vec<Span>`)
     pub source_map: HashMap<usize, Vec<Span>>,
@@ -153,6 +156,7 @@ impl<'a> Compiler<'a> {
             _config: config.unwrap_or_default(),
             temp_counter: 0,
             label_counter: 0,
+            array_high_water: 0,
             loop_stack: Vec::new(),
             source_map: HashMap::new(),
             errors: Vec::new(),
@@ -170,7 +174,7 @@ impl<'a> Compiler<'a> {
             && let Err(e) = self.write_instruction(
                 Instruction::Move(
                     Operand::StackPointer,
-                    Operand::Number(variable_manager::ARRAY_REGION_SIZE.into()),
+                    Operand::Number(ARRAY_REGION_SIZE.into()),
                 ),
                 Some(expr.span),
             )
@@ -412,15 +416,9 @@ impl<'a> Compiler<'a> {
                 // `arr.length` is always known at compile time - constant-fold it,
                 // no instruction emitted.
                 if member.node == "length"
-                    && let Some(base_len) = Self::array_len_of(object, scope)
+                    && let Some(array) = Self::array_location_of(object, scope)
                 {
-                    return Ok(Some(CompileLocation {
-                        location: VariableLocation::Constant(Literal::Number(Number::Integer(
-                            base_len as i128,
-                            Unit::None,
-                        ))),
-                        temp_name: None,
-                    }));
+                    return Ok(Some(self.compile_array_length(&array, scope, expr.span)?));
                 }
 
                 // 1. Resolve the object to a device string (e.g., "d0" or "rX")
@@ -455,9 +453,9 @@ impl<'a> Compiler<'a> {
                 // "get" behavior (e.g. `let x = d0[255]`, or `let x = arr[2]`)
                 let IndexAccessExpression { object, index } = &access.node;
 
-                if let Some(base) = Self::array_base_of(object, scope) {
+                if let Some(array) = Self::array_location_of(object, scope) {
                     let (addr, addr_cleanup) =
-                        self.compile_array_index_address(base, index, scope)?;
+                        self.compile_array_index_address(&array, index, scope)?;
 
                     let result_name = self.next_temp_name();
                     let loc =

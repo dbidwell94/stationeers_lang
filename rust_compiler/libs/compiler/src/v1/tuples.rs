@@ -68,6 +68,12 @@ impl<'a> Compiler<'a> {
                             span,
                         ));
                     }
+                    VariableLocation::ArrayParameter { .. } => {
+                        return Err(Error::OperationNotSupported(
+                            "Arrays cannot be a tuple destructuring target.".to_string(),
+                            span,
+                        ));
+                    }
                 }
             } else {
                 // Underscore: pop into temp register to discard
@@ -322,6 +328,12 @@ impl<'a> Compiler<'a> {
                             ));
                         }
                         VariableLocation::Array { .. } => {
+                            return Err(Error::OperationNotSupported(
+                                "Arrays cannot be a tuple assignment target.".to_string(),
+                                name_spanned.span,
+                            ));
+                        }
+                        VariableLocation::ArrayParameter { .. } => {
                             return Err(Error::OperationNotSupported(
                                 "Arrays cannot be a tuple assignment target.".to_string(),
                                 name_spanned.span,

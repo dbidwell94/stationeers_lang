@@ -30,6 +30,7 @@ macro_rules! compile {
                             symbol_table: Default::default(),
                             functions: Default::default(),
                             documentation: Default::default(),
+                            uses_arrays: false,
                         },
                     };
 
@@ -64,6 +65,7 @@ macro_rules! compile {
                             symbol_table: Default::default(),
                             functions: Default::default(),
                             documentation: Default::default(),
+                            uses_arrays: false,
                         },
                     };
 
@@ -96,6 +98,7 @@ macro_rules! compile {
                             symbol_table: Default::default(),
                             functions: Default::default(),
                             documentation: Default::default(),
+                            uses_arrays: false,
                         },
                     };
 
@@ -132,6 +135,7 @@ macro_rules! compile {
                             symbol_table: Default::default(),
                             functions: Default::default(),
                             documentation: Default::default(),
+                            uses_arrays: false,
                         },
                     };
 
@@ -145,6 +149,7 @@ macro_rules! compile {
         }
     }};
 }
+mod arrays;
 mod binary_expression;
 mod branching;
 mod declaration_function_invocation;
