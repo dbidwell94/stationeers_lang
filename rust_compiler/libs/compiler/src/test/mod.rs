@@ -109,6 +109,97 @@ fn allocated_compilation_colors_expression_temporaries() {
 }
 
 #[test]
+fn allocated_system_and_math_operations_write_virtual_destinations() {
+    let source = r#"
+        device furnace = "d0";
+        let pressure = load(furnace, "Pressure");
+        let bounded = max(pressure, 0.001);
+        furnace.Setting = bounded;
+    "#;
+    let tokenizer = tokenizer::Tokenizer::from(source);
+    let parser = parser::Parser::new(tokenizer);
+    let output = parser.parse_all().unwrap().unwrap();
+    let analyze_result = static_analysis::Analyzer::default()
+        .analyze(&output.root)
+        .unwrap();
+    let raw_result = crate::Compiler::new_virtualized_for_tests(
+        analyze_result.clone(),
+        output.declaration_docs.clone(),
+    )
+    .compile(&output.root);
+
+    assert!(raw_result.errors.is_empty());
+    assert!(raw_result.instructions.iter().any(|node| {
+        matches!(
+            node.instruction,
+            il::Instruction::Load(il::Operand::VirtualRegister(_), _, _)
+        )
+    }));
+    assert!(raw_result.instructions.iter().any(|node| {
+        matches!(
+            node.instruction,
+            il::Instruction::Max(il::Operand::VirtualRegister(_), _, _)
+        )
+    }));
+
+    let result =
+        crate::Compiler::compile_allocated(analyze_result, output.declaration_docs, &output.root);
+    assert!(result.errors.is_empty());
+    assert!(result.register_allocated);
+    assert!(!result.instructions.iter().any(|node| {
+        matches!(
+            &node.instruction,
+            il::Instruction::Move(_, il::Operand::Register(15))
+        )
+    }));
+
+    let mut writer = std::io::BufWriter::new(Vec::new());
+    ic10::write(optimizer::optimize(result.instructions), &mut writer)
+        .expect("direct syscall destinations should emit valid IC10");
+}
+
+#[test]
+fn allocated_assignment_coalesces_expression_result_into_existing_variable() {
+    let source = r#"
+        device d = "d0";
+        let quantity = 10;
+        let increment = 2;
+        quantity = quantity + increment;
+        d.On = quantity;
+    "#;
+    let tokenizer = tokenizer::Tokenizer::from(source);
+    let parser = parser::Parser::new(tokenizer);
+    let output = parser.parse_all().unwrap().unwrap();
+    let analyze_result = static_analysis::Analyzer::default()
+        .analyze(&output.root)
+        .unwrap();
+    let result =
+        crate::Compiler::compile_allocated(analyze_result, output.declaration_docs, &output.root);
+
+    assert!(result.errors.is_empty());
+    assert!(result.register_allocated);
+    assert!(result.instructions.iter().any(|node| {
+        matches!(
+            &node.instruction,
+            il::Instruction::Add(
+                il::Operand::Register(destination),
+                il::Operand::Register(source),
+                _
+            ) if destination == source
+        )
+    }));
+    assert!(!result.instructions.iter().any(|node| {
+        matches!(
+            &node.instruction,
+            il::Instruction::Move(
+                il::Operand::Register(destination),
+                il::Operand::Register(source)
+            ) if destination == source
+        )
+    }));
+}
+
+#[test]
 fn allocated_compilation_retries_spilled_locals_without_leaking_virtuals() {
     let mut source = String::from("device d = \"d0\";");
     for index in 0..16 {

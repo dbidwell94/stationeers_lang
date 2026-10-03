@@ -8,11 +8,8 @@ j main
 main:
 move r2 8
 sll r1 r2 2
-move r1 r1
 sra r1 r2 1
-move r1 r1
 srl r1 r2 1
-move r1 r1
 
 ## Optimized Output
 

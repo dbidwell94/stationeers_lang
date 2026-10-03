@@ -8,8 +8,7 @@ j main
 main:
 move r1 0
 __internal_L1:
-min r15 500 400
-move r1 r15
+min r1 500 400
 j __internal_L1
 __internal_L2:
 

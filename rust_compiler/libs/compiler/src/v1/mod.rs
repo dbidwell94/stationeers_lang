@@ -71,7 +71,6 @@ pub enum AllocationFallbackReason {
     ControlFlowAnalysis(optimizer::register_allocation::AnalysisError),
     RegisterRewrite,
     NoRetryProgress,
-    RetryLimit,
 }
 
 /// Metadata for the currently compiling function
@@ -212,10 +211,8 @@ impl<'a> Compiler<'a> {
         ast: &Spanned<Expression<'a>>,
     ) -> CompilationResult<'a> {
         let mut spilled_virtual_registers = HashSet::new();
-        const MAX_SPILL_RETRIES: usize = 128;
-        let mut fallback_reason = AllocationFallbackReason::RetryLimit;
 
-        for _ in 0..MAX_SPILL_RETRIES {
+        let fallback_reason = loop {
             let result = Self::new_virtualized_with_spills(
                 analyze_result.clone(),
                 declaration_docs.clone(),
@@ -233,10 +230,7 @@ impl<'a> Compiler<'a> {
             let allocation =
                 match optimizer::register_allocation::allocate_registers(&result.instructions) {
                     Ok(allocation) => allocation,
-                    Err(error) => {
-                        fallback_reason = AllocationFallbackReason::ControlFlowAnalysis(error);
-                        break;
-                    }
+                    Err(error) => break AllocationFallbackReason::ControlFlowAnalysis(error),
                 };
 
             if allocation.spills.is_empty() {
@@ -252,17 +246,15 @@ impl<'a> Compiler<'a> {
                         allocation_fallback_reason: None,
                     };
                 }
-                fallback_reason = AllocationFallbackReason::RegisterRewrite;
-                break;
+                break AllocationFallbackReason::RegisterRewrite;
             }
 
             let previous_spill_count = spilled_virtual_registers.len();
             spilled_virtual_registers.extend(allocation.spills);
             if spilled_virtual_registers.len() == previous_spill_count {
-                fallback_reason = AllocationFallbackReason::NoRetryProgress;
-                break;
+                break AllocationFallbackReason::NoRetryProgress;
             }
-        }
+        };
 
         let mut legacy = Self::new(analyze_result, declaration_docs, None).compile(ast);
         legacy.allocation_fallback_reason = Some(fallback_reason);
@@ -345,6 +337,32 @@ impl<'a> Compiler<'a> {
 
         self.instructions.push(InstructionNode::new(instr, span));
         Ok(())
+    }
+
+    fn syscall_result_destination(
+        &mut self,
+        scope: &mut VariableScope<'a, '_>,
+    ) -> Result<(Operand<'a>, CompileLocation<'a>), Error<'a>> {
+        if self.virtualize_persistent_registers {
+            let temp_name = self.next_temp_name();
+            let location = scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
+            let destination = self.resolve_register(&location)?;
+            Ok((
+                destination,
+                CompileLocation {
+                    location,
+                    temp_name: Some(temp_name),
+                },
+            ))
+        } else {
+            Ok((
+                Operand::Register(VariableScope::RETURN_REGISTER),
+                CompileLocation {
+                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
+                    temp_name: None,
+                },
+            ))
+        }
     }
 
     fn next_temp_name(&mut self) -> Cow<'a, str> {

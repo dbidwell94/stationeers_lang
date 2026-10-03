@@ -288,7 +288,7 @@ impl<'a> Compiler<'a> {
                     }
                 };
 
-                if res.is_none() {
+                let Some(res) = res else {
                     return Err(Error::Unknown(
                         "SysCall did not return a value".into(),
                         Some(spanned_call.span),
@@ -300,10 +300,14 @@ impl<'a> Compiler<'a> {
                     LocationRequest::Persist,
                     Some(name_span),
                 )?;
-                self.emit_variable_assignment(
-                    &loc,
-                    Operand::Register(VariableScope::RETURN_REGISTER),
-                )?;
+                let result_operand = match res.location {
+                    VariableLocation::Constant(literal) => extract_literal(literal, false)?,
+                    location => self.resolve_register(&location)?,
+                };
+                self.emit_variable_assignment(&loc, result_operand)?;
+                if let Some(temp_name) = res.temp_name {
+                    scope.free_temp(temp_name, None)?;
+                }
 
                 (loc, None)
             }

@@ -200,11 +200,29 @@ pub fn allocate_registers(
 ) -> Result<RegisterAllocation, AnalysisError> {
     let (_, liveness) = analyze_liveness(instructions)?;
     let mut interference: HashMap<u32, BTreeSet<u32>> = HashMap::new();
+    let mut move_preferences: HashMap<u32, BTreeSet<u32>> = HashMap::new();
+    let mut move_sources = HashSet::new();
     let mut forbidden_registers: HashMap<u32, HashSet<u8>> = HashMap::new();
 
     for node in instructions {
         for register in virtual_registers(&node.instruction) {
             interference.entry(register).or_default();
+        }
+        if let Instruction::Move(
+            Operand::VirtualRegister(destination),
+            Operand::VirtualRegister(source),
+        ) = &node.instruction
+            && destination != source
+        {
+            move_sources.insert(*source);
+            move_preferences
+                .entry(*destination)
+                .or_default()
+                .insert(*source);
+            move_preferences
+                .entry(*source)
+                .or_default()
+                .insert(*destination);
         }
     }
 
@@ -247,6 +265,8 @@ pub fn allocate_registers(
         interference,
         &(1..=14).collect::<Vec<_>>(),
         forbidden_registers,
+        move_preferences,
+        move_sources,
     ))
 }
 
@@ -296,6 +316,10 @@ pub fn rewrite_registers<'a>(
         }
     }
 
+    instructions.retain(|node| {
+        !matches!(&node.instruction, Instruction::Move(destination, source) if destination == source)
+    });
+
     Ok(instructions)
 }
 
@@ -322,6 +346,8 @@ fn color_graph(
     graph: HashMap<u32, BTreeSet<u32>>,
     available_registers: &[u8],
     forbidden_registers: HashMap<u32, HashSet<u8>>,
+    move_preferences: HashMap<u32, BTreeSet<u32>>,
+    move_sources: HashSet<u32>,
 ) -> RegisterAllocation {
     let mut remaining = graph.clone();
     let mut stack = Vec::with_capacity(remaining.len());
@@ -337,7 +363,7 @@ fn color_graph(
                     < available_registers.len()
             })
             .map(|(register, _)| *register)
-            .min();
+            .min_by_key(|register| (!move_sources.contains(register), *register));
         let selected = low_degree.unwrap_or_else(|| {
             remaining
                 .iter()
@@ -364,12 +390,26 @@ fn color_graph(
             .iter()
             .filter_map(|neighbor| registers.get(neighbor).copied())
             .collect();
-        if let Some(color) = available_registers.iter().copied().find(|color| {
+        let color_is_available = |color: &u8| {
             !unavailable.contains(color)
                 && !forbidden_registers
                     .get(&register)
                     .is_some_and(|forbidden| forbidden.contains(color))
-        }) {
+        };
+        let preferred_color = move_preferences
+            .get(&register)
+            .into_iter()
+            .flatten()
+            .filter_map(|preferred| registers.get(preferred))
+            .find(|color| color_is_available(color));
+        let color = preferred_color.copied().or_else(|| {
+            available_registers
+                .iter()
+                .find(|color| color_is_available(color))
+                .copied()
+        });
+
+        if let Some(color) = color {
             registers.insert(register, color);
         } else {
             spills.push(register);
@@ -590,6 +630,59 @@ mod tests {
             rewritten[1].instruction,
             Instruction::Push(Operand::Register(7))
         );
+    }
+
+    #[test]
+    fn move_affinity_coalesces_noninterfering_values_and_removes_the_copy() {
+        let instructions = vec![
+            node(Instruction::Move(
+                Operand::VirtualRegister(2),
+                Operand::Number(5.into()),
+            )),
+            node(Instruction::Move(
+                Operand::VirtualRegister(1),
+                Operand::VirtualRegister(2),
+            )),
+            node(Instruction::Push(Operand::VirtualRegister(1))),
+        ];
+
+        let allocation = allocate_registers(&instructions).unwrap();
+        assert_eq!(allocation.registers[&1], allocation.registers[&2]);
+
+        let rewritten =
+            rewrite_registers(il::Instructions::new(instructions), &allocation).unwrap();
+
+        assert!(!rewritten.iter().any(|node| {
+            matches!(
+                &node.instruction,
+                Instruction::Move(Operand::Register(destination), Operand::Register(source))
+                    if destination == source
+            )
+        }));
+    }
+
+    #[test]
+    fn move_affinity_does_not_coalesce_interfering_values() {
+        let instructions = vec![
+            node(Instruction::Move(
+                Operand::VirtualRegister(1),
+                Operand::Number(5.into()),
+            )),
+            node(Instruction::Move(
+                Operand::VirtualRegister(2),
+                Operand::VirtualRegister(1),
+            )),
+            node(Instruction::Add(
+                Operand::VirtualRegister(3),
+                Operand::VirtualRegister(1),
+                Operand::VirtualRegister(2),
+            )),
+            node(Instruction::Push(Operand::VirtualRegister(3))),
+        ];
+
+        let allocation = allocate_registers(&instructions).unwrap();
+
+        assert_ne!(allocation.registers[&1], allocation.registers[&2]);
     }
 
     #[test]

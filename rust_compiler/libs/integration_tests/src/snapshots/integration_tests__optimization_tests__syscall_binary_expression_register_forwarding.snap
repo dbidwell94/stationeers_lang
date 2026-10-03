@@ -6,14 +6,12 @@ expression: output
 
 j main
 main:
-ls r15 d0 0 Quantity
-move r1 r15
-ls r15 d0 1 Quantity
-add r1 r1 r15
-move r1 r1
+ls r2 d0 0 Quantity
+ls r1 d0 1 Quantity
+add r1 r2 r1
 
 ## Optimized Output
 
-ls r1 d0 0 Quantity
-ls r15 d0 1 Quantity
-add r1 r1 r15
+ls r2 d0 0 Quantity
+ls r1 d0 1 Quantity
+add r1 r2 r1

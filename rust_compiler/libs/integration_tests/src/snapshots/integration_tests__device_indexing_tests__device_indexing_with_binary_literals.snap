@@ -9,10 +9,8 @@ main:
 move r2 165
 move r1 240
 and r1 r2 r1
-move r1 r1
 put d0 0 r1
 get r1 d0 0
-move r1 r1
 
 ## Optimized Output
 

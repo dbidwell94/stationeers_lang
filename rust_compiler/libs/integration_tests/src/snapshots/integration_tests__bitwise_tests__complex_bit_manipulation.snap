@@ -15,7 +15,6 @@ sll r2 r10 7
 sll r1 r9 4
 or r1 r2 r1
 or r1 r1 r8
-move r1 r1
 move r15 r1
 j __internal_L1
 __internal_L1:
@@ -27,13 +26,10 @@ pop r8
 push sp
 push ra
 sra r1 r8 7
-and r1 r1 1
-move r3 r1
+and r3 r1 1
 sra r1 r8 4
-and r1 r1 7
-move r2 r1
+and r2 r1 7
 and r1 r8 15
-move r1 r1
 push r3
 push r2
 push r1

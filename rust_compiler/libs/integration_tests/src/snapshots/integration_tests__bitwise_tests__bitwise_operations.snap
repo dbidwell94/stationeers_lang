@@ -9,13 +9,9 @@ main:
 move r3 5
 move r2 3
 and r1 r3 r2
-move r1 r1
 or r1 r3 r2
-move r1 r1
 xor r1 r3 r2
-move r1 r1
 not r1 r3
-move r1 r1
 
 ## Optimized Output
 

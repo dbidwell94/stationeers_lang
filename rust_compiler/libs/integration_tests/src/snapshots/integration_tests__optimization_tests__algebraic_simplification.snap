@@ -8,7 +8,6 @@ j main
 main:
 move r1 5
 mul r1 r1 1
-move r1 r1
 
 ## Optimized Output
 

@@ -12,8 +12,7 @@ move r4 0
 move r3 0
 __internal_L1:
 yield
-l r1 d0 Reagents
-move r5 r1
+l r5 d0 Reagents
 sge r2 r5 100
 sge r1 r3 2
 or r1 r2 r1
@@ -21,27 +20,24 @@ beqz r1 __internal_L3
 move r4 1
 __internal_L3:
 slt r2 r5 100
-ls r15 d0 0 Occupied
-seq r1 r15 0
+ls r1 d0 0 Occupied
+seq r1 r1 0
 and r2 r2 r1
 add r1 r3 1
-select r1 r2 r1 0
-move r3 r1
+select r3 r2 r1 0
 l r1 d0 Rpm
 slt r1 r1 1
 and r1 r4 r1
 beqz r1 __internal_L4
 s d0 Open 1
-seq r1 r5 0
-ls r15 d0 0 Occupied
-and r1 r1 r15
-seq r1 r1 0
-move r4 r1
+seq r2 r5 0
+ls r1 d0 0 Occupied
+and r1 r2 r1
+seq r4 r1 0
 __internal_L4:
 seq r1 r4 0
 s d0 On r1
-ls r15 d1 0 Quantity
-move r2 r15
+ls r2 d1 0 Quantity
 l r1 d3 Pressure
 sgt r1 r1 200
 beqz r1 __internal_L5
@@ -75,8 +71,8 @@ or r1 r2 r1
 beqz r1 11
 move r4 1
 slt r2 r5 100
-ls r15 d0 0 Occupied
-seq r1 r15 0
+ls r1 d0 0 Occupied
+seq r1 r1 0
 and r2 r2 r1
 add r1 r3 1
 select r3 r2 r1 0
@@ -85,9 +81,9 @@ slt r1 r1 1
 and r1 r4 r1
 beqz r1 26
 s d0 Open 1
-seq r1 r5 0
-ls r15 d0 0 Occupied
-and r1 r1 r15
+seq r2 r5 0
+ls r1 d0 0 Occupied
+and r1 r2 r1
 seq r4 r1 0
 seq r1 r4 0
 s d0 On r1

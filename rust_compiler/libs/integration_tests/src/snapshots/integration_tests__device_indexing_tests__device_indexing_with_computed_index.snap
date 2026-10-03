@@ -8,12 +8,10 @@ j main
 main:
 move r2 10
 move r1 5
-add r1 r2 r1
-move r2 r1
+add r2 r2 r1
 move r1 42
 put d1 r2 r1
 get r1 d1 r2
-move r1 r1
 
 ## Optimized Output
 

@@ -9,7 +9,6 @@ main:
 move r1 -62440604628430
 put d0 255 r1
 get r1 d0 255
-move r1 r1
 
 ## Optimized Output
 
