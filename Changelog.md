@@ -1,5 +1,15 @@
 # Changelog
 
+[0.10.0]
+
+- Improved register reuse by assigning registers according to when values are
+  needed, reducing unnecessary stack spills in many programs.
+- Programs that need more simultaneous values than available registers continue
+  to use stack storage automatically.
+- Reduced generated move instructions for arithmetic and device-read results by
+  writing them directly into their allocated registers.
+- Updated integration coverage to compile through the allocated register path.
+
 [0.9.0]
 
 - Added statically allocated arrays on the current device (`db`), with value
