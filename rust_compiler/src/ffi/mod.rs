@@ -189,7 +189,9 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilat
         // writing into a Vec<u8>. This should not fail.
         let optimized = optimizer::optimize(res.instructions);
         let map = optimized.source_map();
-        _ = optimized.write(&mut writer);
+        if ic10::write(optimized, &mut writer).is_err() {
+            return (safer_ffi::String::EMPTY, map);
+        }
 
         let Ok(compiled_vec) = writer.into_inner() else {
             return (safer_ffi::String::EMPTY, map);

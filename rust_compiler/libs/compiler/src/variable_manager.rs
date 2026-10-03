@@ -165,6 +165,7 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         }
     }
 
+
     pub fn stack_offset(&self) -> u16 {
         self.stack_offset
     }

@@ -281,6 +281,12 @@ impl<'a> Compiler<'a> {
                         Some(arg_span),
                     )?;
                 }
+                Operand::VirtualRegister(id) => {
+                    self.write_instruction(
+                        Instruction::Push(Operand::VirtualRegister(id)),
+                        Some(arg_span),
+                    )?;
+                }
                 Operand::DeviceReference(d_ref) => match d_ref {
                     DeviceReference::Pin(_) | DeviceReference::Reference(_) => {
                         self.write_instruction(

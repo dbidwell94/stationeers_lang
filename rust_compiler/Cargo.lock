@@ -197,6 +197,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "helpers",
+ "ic10",
  "il",
  "indoc",
  "lsp-types",
@@ -367,6 +368,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ic10"
+version = "0.1.0"
+dependencies = [
+ "il",
+ "thiserror",
+]
+
+[[package]]
 name = "il"
 version = "0.1.0"
 dependencies = [
@@ -412,6 +421,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "compiler",
+ "ic10",
  "il",
  "indoc",
  "insta",
@@ -550,6 +560,7 @@ dependencies = [
  "helpers",
  "il",
  "rust_decimal",
+ "thiserror",
 ]
 
 [[package]]
@@ -879,6 +890,7 @@ dependencies = [
  "clap",
  "compiler",
  "helpers",
+ "ic10",
  "lsp-types",
  "optimizer",
  "parser",

@@ -61,14 +61,14 @@ The IL crate helps by:
 
 ## How does it work?
 
-At a high level, IL is a data model plus formatting helpers.
+At a high level, IL is a non-emitting data model used by the compiler and optimizer.
 
 Typical flow:
 
 - Compiler builds `InstructionNode` values from parsed expressions
 - Nodes are collected into an `Instructions` list
 - Optimizer passes read and rewrite that list
-- Final code output uses `Display` or `Instructions::write(...)` to emit IC10 lines
+- IC10 text output is owned by the `ic10` backend crate, which rejects unallocated virtual registers
 - Optional span data is used to build source maps for error reporting
 
-In short: IL is the shared language that connects "code generation" to "code optimization" and final "text output."
+In short: IL connects code generation to optimization; the `ic10` crate owns final assembly emission.

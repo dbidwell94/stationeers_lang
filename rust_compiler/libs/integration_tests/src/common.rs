@@ -23,9 +23,7 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
 
     // Get unoptimized output
     let mut unoptimized_writer = std::io::BufWriter::new(Vec::new());
-    result
-        .instructions
-        .write(&mut unoptimized_writer)
+    ic10::write(result.instructions, &mut unoptimized_writer)
         .expect("Failed to write unoptimized output");
     let unoptimized_bytes = unoptimized_writer
         .into_inner()
@@ -54,8 +52,7 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
 
     // Get optimized output
     let mut optimized_writer = std::io::BufWriter::new(Vec::new());
-    optimized_instructions
-        .write(&mut optimized_writer)
+    ic10::write(optimized_instructions, &mut optimized_writer)
         .expect("Failed to write optimized output");
     let optimized_bytes = optimized_writer.into_inner().expect("Failed to get bytes");
     let optimized = String::from_utf8(optimized_bytes).expect("Invalid UTF-8");

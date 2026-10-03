@@ -12,6 +12,7 @@ mod function_call_optimization;
 mod label_resolution;
 mod leaf_function_optimization;
 mod peephole_optimization;
+pub mod register_allocation;
 mod register_forwarding;
 mod strength_reduction;
 

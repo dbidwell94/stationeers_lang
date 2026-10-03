@@ -2,58 +2,74 @@ use il::{DeviceReference, Instruction, LiteralOrReference, Operand};
 
 /// Returns the register number written to by an instruction, if any.
 pub fn get_destination_reg(instr: &Instruction) -> Option<u8> {
+    match get_destination_operand(instr)? {
+        Operand::Register(reg) => Some(*reg),
+        _ => None,
+    }
+}
+
+/// Returns the virtual register written to by an instruction, if any.
+#[allow(dead_code)]
+pub fn get_virtual_destination_reg(instr: &Instruction) -> Option<u32> {
+    match get_destination_operand(instr)? {
+        Operand::VirtualRegister(reg) => Some(*reg),
+        _ => None,
+    }
+}
+
+fn get_destination_operand<'a, 'b>(instr: &'a Instruction<'b>) -> Option<&'a Operand<'b>> {
     match instr {
-        Instruction::Move(Operand::Register(r), _)
-        | Instruction::Add(Operand::Register(r), _, _)
-        | Instruction::Sub(Operand::Register(r), _, _)
-        | Instruction::Mul(Operand::Register(r), _, _)
-        | Instruction::Div(Operand::Register(r), _, _)
-        | Instruction::Mod(Operand::Register(r), _, _)
-        | Instruction::Pow(Operand::Register(r), _, _)
-        | Instruction::Sll(Operand::Register(r), _, _)
-        | Instruction::Sra(Operand::Register(r), _, _)
-        | Instruction::Srl(Operand::Register(r), _, _)
-        | Instruction::Load(Operand::Register(r), _, _)
-        | Instruction::LoadSlot(Operand::Register(r), _, _, _)
-        | Instruction::LoadBatch(Operand::Register(r), _, _, _)
-        | Instruction::LoadBatchNamed(Operand::Register(r), _, _, _, _)
-        | Instruction::LoadBatchSlot(Operand::Register(r), _, _, _, _)
-        | Instruction::LoadBatchNamedSlot(Operand::Register(r), _, _, _, _, _)
-        | Instruction::LoadReagent(Operand::Register(r), _, _, _)
-        | Instruction::DeviceSet(Operand::Register(r), _)
-        | Instruction::DeviceNotSet(Operand::Register(r), _)
-        | Instruction::Rmap(Operand::Register(r), _, _)
-        | Instruction::SetEq(Operand::Register(r), _, _)
-        | Instruction::SetNe(Operand::Register(r), _, _)
-        | Instruction::SetGt(Operand::Register(r), _, _)
-        | Instruction::SetLt(Operand::Register(r), _, _)
-        | Instruction::SetGe(Operand::Register(r), _, _)
-        | Instruction::SetLe(Operand::Register(r), _, _)
-        | Instruction::And(Operand::Register(r), _, _)
-        | Instruction::Or(Operand::Register(r), _, _)
-        | Instruction::Xor(Operand::Register(r), _, _)
-        | Instruction::Nor(Operand::Register(r), _, _)
-        | Instruction::Not(Operand::Register(r), _)
-        | Instruction::Peek(Operand::Register(r))
-        | Instruction::Get(Operand::Register(r), _, _)
-        | Instruction::Select(Operand::Register(r), _, _, _)
-        | Instruction::Rand(Operand::Register(r))
-        | Instruction::Acos(Operand::Register(r), _)
-        | Instruction::Asin(Operand::Register(r), _)
-        | Instruction::Atan(Operand::Register(r), _)
-        | Instruction::Atan2(Operand::Register(r), _, _)
-        | Instruction::Abs(Operand::Register(r), _)
-        | Instruction::Ceil(Operand::Register(r), _)
-        | Instruction::Cos(Operand::Register(r), _)
-        | Instruction::Floor(Operand::Register(r), _)
-        | Instruction::Log(Operand::Register(r), _)
-        | Instruction::Max(Operand::Register(r), _, _)
-        | Instruction::Min(Operand::Register(r), _, _)
-        | Instruction::Sin(Operand::Register(r), _)
-        | Instruction::Sqrt(Operand::Register(r), _)
-        | Instruction::Tan(Operand::Register(r), _)
-        | Instruction::Trunc(Operand::Register(r), _)
-        | Instruction::Pop(Operand::Register(r)) => Some(*r),
+        Instruction::Move(dst, _)
+        | Instruction::Add(dst, _, _)
+        | Instruction::Sub(dst, _, _)
+        | Instruction::Mul(dst, _, _)
+        | Instruction::Div(dst, _, _)
+        | Instruction::Mod(dst, _, _)
+        | Instruction::Pow(dst, _, _)
+        | Instruction::Sll(dst, _, _)
+        | Instruction::Sra(dst, _, _)
+        | Instruction::Srl(dst, _, _)
+        | Instruction::Load(dst, _, _)
+        | Instruction::LoadSlot(dst, _, _, _)
+        | Instruction::LoadBatch(dst, _, _, _)
+        | Instruction::LoadBatchNamed(dst, _, _, _, _)
+        | Instruction::LoadBatchSlot(dst, _, _, _, _)
+        | Instruction::LoadBatchNamedSlot(dst, _, _, _, _, _)
+        | Instruction::LoadReagent(dst, _, _, _)
+        | Instruction::DeviceSet(dst, _)
+        | Instruction::DeviceNotSet(dst, _)
+        | Instruction::Rmap(dst, _, _)
+        | Instruction::SetEq(dst, _, _)
+        | Instruction::SetNe(dst, _, _)
+        | Instruction::SetGt(dst, _, _)
+        | Instruction::SetLt(dst, _, _)
+        | Instruction::SetGe(dst, _, _)
+        | Instruction::SetLe(dst, _, _)
+        | Instruction::And(dst, _, _)
+        | Instruction::Or(dst, _, _)
+        | Instruction::Xor(dst, _, _)
+        | Instruction::Nor(dst, _, _)
+        | Instruction::Not(dst, _)
+        | Instruction::Peek(dst)
+        | Instruction::Get(dst, _, _)
+        | Instruction::Select(dst, _, _, _)
+        | Instruction::Rand(dst)
+        | Instruction::Acos(dst, _)
+        | Instruction::Asin(dst, _)
+        | Instruction::Atan(dst, _)
+        | Instruction::Atan2(dst, _, _)
+        | Instruction::Abs(dst, _)
+        | Instruction::Ceil(dst, _)
+        | Instruction::Cos(dst, _)
+        | Instruction::Floor(dst, _)
+        | Instruction::Log(dst, _)
+        | Instruction::Max(dst, _, _)
+        | Instruction::Min(dst, _, _)
+        | Instruction::Sin(dst, _)
+        | Instruction::Sqrt(dst, _)
+        | Instruction::Tan(dst, _)
+        | Instruction::Trunc(dst, _)
+        | Instruction::Pop(dst) => Some(dst),
         _ => None,
     }
 }
@@ -146,7 +162,7 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
 
 /// Checks if a register is read by an instruction.
 pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
-    let check = |op: &Operand| match op {
+    instruction_reads(instr, |op| match op {
         Operand::Register(register) => *register == reg,
         Operand::DeviceReference(
             DeviceReference::Housing(LiteralOrReference::Reference(register))
@@ -154,8 +170,26 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
             | DeviceReference::Reference(LiteralOrReference::Reference(register)),
         ) => *register == reg,
         _ => false,
-    };
+    })
+}
 
+/// Checks if a virtual register is read by an instruction.
+#[allow(dead_code)]
+pub fn virtual_reg_is_read(instr: &Instruction, reg: u32) -> bool {
+    instruction_reads(instr, |op| {
+        matches!(op, Operand::VirtualRegister(register) if *register == reg)
+            || matches!(
+                op,
+                Operand::DeviceReference(
+                    DeviceReference::Housing(LiteralOrReference::VirtualReference(register))
+                    | DeviceReference::Pin(LiteralOrReference::VirtualReference(register))
+                    | DeviceReference::Reference(LiteralOrReference::VirtualReference(register))
+                ) if *register == reg
+            )
+    })
+}
+
+fn instruction_reads(instr: &Instruction, check: impl Fn(&Operand) -> bool) -> bool {
     match instr {
         Instruction::Move(_, a)
         | Instruction::Acos(_, a)
@@ -271,5 +305,18 @@ mod tests {
         );
 
         assert!(!reg_is_read(&instruction, 8));
+    }
+
+    #[test]
+    fn virtual_register_access_tracks_destination_and_sources() {
+        let instruction = Instruction::Add(
+            Operand::VirtualRegister(12),
+            Operand::VirtualRegister(5),
+            Operand::Register(2),
+        );
+
+        assert_eq!(get_virtual_destination_reg(&instruction), Some(12));
+        assert!(virtual_reg_is_read(&instruction, 5));
+        assert!(!virtual_reg_is_read(&instruction, 12));
     }
 }

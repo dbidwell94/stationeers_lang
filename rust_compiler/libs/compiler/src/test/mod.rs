@@ -37,7 +37,7 @@ macro_rules! compile {
                 let compiler =
                     crate::Compiler::new(analyze_result, output.declaration_docs.clone(), None);
                 let res = compiler.compile(&output.root);
-                res.instructions.write(&mut writer)?;
+                ic10::write(res.instructions, &mut writer)?;
             }
             Ok(None) => {}
             Err(parser_errs) => {
@@ -105,7 +105,7 @@ macro_rules! compile {
                 let compiler =
                     crate::Compiler::new(analyze_result, output.declaration_docs.clone(), None);
                 let res = compiler.compile(&output.root);
-                res.instructions.write(&mut writer)?;
+                ic10::write(res.instructions, &mut writer)?;
                 res.errors.into_iter().map(|err| err.into_owned()).collect()
             }
             Ok(None) => Vec::new(),

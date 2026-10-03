@@ -25,6 +25,9 @@ enum CliError {
 
     #[error(transparent)]
     IO(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Ic10(#[from] ic10::Error),
 }
 
 impl From<parser::Error<'_>> for CliError {
@@ -122,11 +125,12 @@ fn run_logic() -> Result<(), CliError> {
         }
     }
 
-    if args.optimize {
-        optimizer::optimize(instructions).write(&mut writer)?;
+    let instructions = if args.optimize {
+        optimizer::optimize(instructions)
     } else {
-        instructions.write(&mut writer)?;
-    }
+        instructions
+    };
+    ic10::write(instructions, &mut writer)?;
 
     writer.flush()?;
 

@@ -3,8 +3,6 @@ use parser::tree_node::DeviceType;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fmt;
-use std::io::{BufWriter, Write};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Default)]
@@ -31,15 +29,6 @@ impl<'a> Instructions<'a> {
     pub fn into_inner(self) -> Vec<InstructionNode<'a>> {
         self.0
     }
-    pub fn write<W: Write>(self, writer: &mut BufWriter<W>) -> Result<(), std::io::Error> {
-        for node in self.0 {
-            writer.write_all(node.to_string().as_bytes())?;
-            writer.write_all(b"\n")?;
-        }
-
-        writer.flush()?;
-        Ok(())
-    }
     pub fn source_map(&self) -> HashMap<usize, Span> {
         let mut map = HashMap::new();
 
@@ -53,25 +42,10 @@ impl<'a> Instructions<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for Instructions<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for node in &self.0 {
-            writeln!(f, "{node}")?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Clone)]
 pub struct InstructionNode<'a> {
     pub instruction: Instruction<'a>,
     pub span: Option<Span>,
-}
-
-impl<'a> std::fmt::Display for InstructionNode<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.instruction)
-    }
 }
 
 impl<'a> InstructionNode<'a> {
@@ -88,6 +62,9 @@ impl<'a> InstructionNode<'a> {
 pub enum Operand<'a> {
     /// A hardware register (r0-r15)
     Register(u8),
+    /// A compiler-managed register that must be assigned a hardware register
+    /// before the instructions are emitted as IC10.
+    VirtualRegister(u32),
     /// A device alias or direct connection (d0-d5, db, $ref)
     Device(DeviceType),
     /// A device reference (e.g., $ref). This is used when we need to strip
@@ -114,6 +91,8 @@ pub enum LiteralOrReference {
     Literal(Decimal),
     /// This represents a device reference that is stored in a register.
     Reference(u8),
+    /// This represents a device reference stored in a virtual register.
+    VirtualReference(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -127,37 +106,6 @@ pub enum DeviceReference {
     /// This would resolve to `r<number>` where number is the register the refId
     /// is stored.
     Reference(LiteralOrReference),
-}
-
-impl fmt::Display for DeviceReference {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use LiteralOrReference::*;
-        match self {
-            DeviceReference::Housing(lor) | DeviceReference::Pin(lor) => match lor {
-                Literal(val) => write!(f, "d{val}"),
-                Reference(reg) => write!(f, "dr{reg}"),
-            },
-            DeviceReference::Reference(lor) => match lor {
-                Literal(val) => write!(f, "${val}"),
-                Reference(reg) => write!(f, "r{reg}"),
-            },
-        }
-    }
-}
-
-impl<'a> fmt::Display for Operand<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Operand::Register(r) => write!(f, "r{}", r),
-            Operand::Device(d) => write!(f, "{}", d),
-            Operand::DeviceReference(d) => write!(f, "{}", d),
-            Operand::Number(n) => write!(f, "{}", n),
-            Operand::Label(l) => write!(f, "{}", l),
-            Operand::LogicType(t) => write!(f, "{}", t),
-            Operand::StackPointer => write!(f, "sp"),
-            Operand::ReturnAddress => write!(f, "ra"),
-        }
-    }
 }
 
 /// Represents a single IC10 MIPS instruction.
@@ -352,114 +300,178 @@ pub enum Instruction<'a> {
     Comment(Cow<'a, str>),
 }
 
-impl<'a> fmt::Display for Instruction<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<'a> Instruction<'a> {
+    /// Visits every operand in source order, including destinations and control-flow targets.
+    pub fn visit_operands(&self, mut visitor: impl FnMut(&Operand<'a>)) {
+        macro_rules! visit {
+            ($($operand:expr),+ $(,)?) => {{
+                $(visitor($operand);)+
+            }};
+        }
+
         match self {
-            Instruction::Move(dst, val) => write!(f, "move {} {}", dst, val),
-            Instruction::Add(dst, a, b) => write!(f, "add {} {} {}", dst, a, b),
-            Instruction::Sub(dst, a, b) => write!(f, "sub {} {} {}", dst, a, b),
-            Instruction::Mul(dst, a, b) => write!(f, "mul {} {} {}", dst, a, b),
-            Instruction::Div(dst, a, b) => write!(f, "div {} {} {}", dst, a, b),
-            Instruction::Mod(dst, a, b) => write!(f, "mod {} {} {}", dst, a, b),
-            Instruction::Pow(dst, a, b) => write!(f, "pow {} {} {}", dst, a, b),
-            Instruction::Acos(dst, a) => write!(f, "acos {} {}", dst, a),
-            Instruction::Asin(dst, a) => write!(f, "asin {} {}", dst, a),
-            Instruction::Atan(dst, a) => write!(f, "atan {} {}", dst, a),
-            Instruction::Atan2(dst, a, b) => write!(f, "atan2 {} {} {}", dst, a, b),
-            Instruction::Abs(dst, a) => write!(f, "abs {} {}", dst, a),
-            Instruction::Ceil(dst, a) => write!(f, "ceil {} {}", dst, a),
-            Instruction::Cos(dst, a) => write!(f, "cos {} {}", dst, a),
-            Instruction::Floor(dst, a) => write!(f, "floor {} {}", dst, a),
-            Instruction::Log(dst, a) => write!(f, "log {} {}", dst, a),
-            Instruction::Max(dst, a, b) => write!(f, "max {} {} {}", dst, a, b),
-            Instruction::Min(dst, a, b) => write!(f, "min {} {} {}", dst, a, b),
-            Instruction::Rand(dst) => write!(f, "rand {}", dst),
-            Instruction::Sin(dst, a) => write!(f, "sin {} {}", dst, a),
-            Instruction::Sqrt(dst, a) => write!(f, "sqrt {} {}", dst, a),
-            Instruction::Tan(dst, a) => write!(f, "tan {} {}", dst, a),
-            Instruction::Trunc(dst, a) => write!(f, "trunc {} {}", dst, a),
+            Instruction::Move(a, b)
+            | Instruction::Acos(a, b)
+            | Instruction::Asin(a, b)
+            | Instruction::Atan(a, b)
+            | Instruction::Abs(a, b)
+            | Instruction::Ceil(a, b)
+            | Instruction::Cos(a, b)
+            | Instruction::Floor(a, b)
+            | Instruction::Log(a, b)
+            | Instruction::Sin(a, b)
+            | Instruction::Sqrt(a, b)
+            | Instruction::Tan(a, b)
+            | Instruction::Trunc(a, b)
+            | Instruction::DeviceSet(a, b)
+            | Instruction::DeviceNotSet(a, b)
+            | Instruction::Not(a, b)
+            | Instruction::BranchEqZero(a, b)
+            | Instruction::BranchNeZero(a, b) => visit!(a, b),
+            Instruction::Add(a, b, c)
+            | Instruction::Sub(a, b, c)
+            | Instruction::Mul(a, b, c)
+            | Instruction::Div(a, b, c)
+            | Instruction::Mod(a, b, c)
+            | Instruction::Pow(a, b, c)
+            | Instruction::Atan2(a, b, c)
+            | Instruction::Max(a, b, c)
+            | Instruction::Min(a, b, c)
+            | Instruction::Load(a, b, c)
+            | Instruction::Store(a, b, c)
+            | Instruction::StoreBatch(a, b, c)
+            | Instruction::Rmap(a, b, c)
+            | Instruction::BranchEq(a, b, c)
+            | Instruction::BranchNe(a, b, c)
+            | Instruction::BranchGt(a, b, c)
+            | Instruction::BranchLt(a, b, c)
+            | Instruction::BranchGe(a, b, c)
+            | Instruction::BranchLe(a, b, c)
+            | Instruction::SetEq(a, b, c)
+            | Instruction::SetNe(a, b, c)
+            | Instruction::SetGt(a, b, c)
+            | Instruction::SetLt(a, b, c)
+            | Instruction::SetGe(a, b, c)
+            | Instruction::SetLe(a, b, c)
+            | Instruction::And(a, b, c)
+            | Instruction::Or(a, b, c)
+            | Instruction::Xor(a, b, c)
+            | Instruction::Nor(a, b, c)
+            | Instruction::Sll(a, b, c)
+            | Instruction::Sra(a, b, c)
+            | Instruction::Srl(a, b, c)
+            | Instruction::Get(a, b, c)
+            | Instruction::Put(a, b, c) => visit!(a, b, c),
+            Instruction::LoadSlot(a, b, c, d)
+            | Instruction::StoreSlot(a, b, c, d)
+            | Instruction::LoadBatch(a, b, c, d)
+            | Instruction::StoreBatchNamed(a, b, c, d)
+            | Instruction::LoadReagent(a, b, c, d)
+            | Instruction::Select(a, b, c, d) => visit!(a, b, c, d),
+            Instruction::LoadBatchNamed(a, b, c, d, e)
+            | Instruction::LoadBatchSlot(a, b, c, d, e) => visit!(a, b, c, d, e),
+            Instruction::LoadBatchNamedSlot(a, b, c, d, e, f) => visit!(a, b, c, d, e, f),
+            Instruction::Rand(a)
+            | Instruction::Jump(a)
+            | Instruction::JumpAndLink(a)
+            | Instruction::JumpRelative(a)
+            | Instruction::Push(a)
+            | Instruction::Pop(a)
+            | Instruction::Peek(a)
+            | Instruction::Sleep(a)
+            | Instruction::Clr(a) => visit!(a),
+            Instruction::Alias(_, target) => visit!(target),
+            Instruction::Yield
+            | Instruction::Define(_, _)
+            | Instruction::LabelDef(_)
+            | Instruction::Comment(_) => {}
+        }
+    }
 
-            Instruction::Load(reg, dev, typ) => write!(f, "l {} {} {}", reg, dev, typ),
-            Instruction::Store(dev, typ, val) => write!(f, "s {} {} {}", dev, typ, val),
+    /// Mutably visits every operand in source order, including destinations and control-flow targets.
+    pub fn visit_operands_mut(&mut self, mut visitor: impl FnMut(&mut Operand<'a>)) {
+        macro_rules! visit {
+            ($($operand:expr),+ $(,)?) => {{
+                $(visitor($operand);)+
+            }};
+        }
 
-            Instruction::LoadSlot(reg, dev, slot, typ) => {
-                write!(f, "ls {} {} {} {}", reg, dev, slot, typ)
-            }
-            Instruction::StoreSlot(dev, slot, typ, val) => {
-                write!(f, "ss {} {} {} {}", dev, slot, typ, val)
-            }
-            Instruction::LoadBatch(reg, hash, typ, mode) => {
-                write!(f, "lb {} {} {} {}", reg, hash, typ, mode)
-            }
-            Instruction::StoreBatch(hash, typ, val) => write!(f, "sb {} {} {}", hash, typ, val),
-            Instruction::LoadBatchNamed(reg, d_hash, n_hash, typ, mode) => {
-                write!(f, "lbn {} {} {} {} {}", reg, d_hash, n_hash, typ, mode)
-            }
-            Instruction::StoreBatchNamed(d_hash, n_hash, typ, val) => {
-                write!(f, "sbn {} {} {} {}", d_hash, n_hash, typ, val)
-            }
-            Instruction::LoadBatchSlot(reg, hash, slot, typ, mode) => {
-                write!(f, "lbs {} {} {} {} {}", reg, hash, slot, typ, mode)
-            }
-            Instruction::LoadBatchNamedSlot(reg, d_hash, n_hash, slot, typ, mode) => {
-                write!(
-                    f,
-                    "lbns {} {} {} {} {} {}",
-                    reg, d_hash, n_hash, slot, typ, mode
-                )
-            }
-            Instruction::LoadReagent(reg, device, reagent_mode, reagent_hash) => {
-                write!(f, "lr {} {} {} {}", reg, device, reagent_mode, reagent_hash)
-            }
-            Instruction::DeviceSet(reg, dev) => {
-                write!(f, "sdse {} {}", reg, dev)
-            }
-            Instruction::DeviceNotSet(reg, dev) => {
-                write!(f, "sdns {} {}", reg, dev)
-            }
-            Instruction::Rmap(reg, device, reagent_hash) => {
-                write!(f, "rmap {} {} {}", reg, device, reagent_hash)
-            }
-            Instruction::Jump(lbl) => write!(f, "j {}", lbl),
-            Instruction::JumpAndLink(lbl) => write!(f, "jal {}", lbl),
-            Instruction::JumpRelative(off) => write!(f, "jr {}", off),
-            Instruction::BranchEq(a, b, lbl) => write!(f, "beq {} {} {}", a, b, lbl),
-            Instruction::BranchNe(a, b, lbl) => write!(f, "bne {} {} {}", a, b, lbl),
-            Instruction::BranchGt(a, b, lbl) => write!(f, "bgt {} {} {}", a, b, lbl),
-            Instruction::BranchLt(a, b, lbl) => write!(f, "blt {} {} {}", a, b, lbl),
-            Instruction::BranchGe(a, b, lbl) => write!(f, "bge {} {} {}", a, b, lbl),
-            Instruction::BranchLe(a, b, lbl) => write!(f, "ble {} {} {}", a, b, lbl),
-            Instruction::BranchEqZero(a, lbl) => write!(f, "beqz {} {}", a, lbl),
-            Instruction::BranchNeZero(a, lbl) => write!(f, "bnez {} {}", a, lbl),
-            Instruction::SetEq(dst, a, b) => write!(f, "seq {} {} {}", dst, a, b),
-            Instruction::SetNe(dst, a, b) => write!(f, "sne {} {} {}", dst, a, b),
-            Instruction::SetGt(dst, a, b) => write!(f, "sgt {} {} {}", dst, a, b),
-            Instruction::SetLt(dst, a, b) => write!(f, "slt {} {} {}", dst, a, b),
-            Instruction::SetGe(dst, a, b) => write!(f, "sge {} {} {}", dst, a, b),
-            Instruction::SetLe(dst, a, b) => write!(f, "sle {} {} {}", dst, a, b),
-            Instruction::And(dst, a, b) => write!(f, "and {} {} {}", dst, a, b),
-            Instruction::Or(dst, a, b) => write!(f, "or {} {} {}", dst, a, b),
-            Instruction::Xor(dst, a, b) => write!(f, "xor {} {} {}", dst, a, b),
-            Instruction::Nor(dst, a, b) => write!(f, "nor {} {} {}", dst, a, b),
-            Instruction::Not(dst, a) => write!(f, "not {} {}", dst, a),
-            Instruction::Sll(dst, a, b) => write!(f, "sll {} {} {}", dst, a, b),
-            Instruction::Sra(dst, a, b) => write!(f, "sra {} {} {}", dst, a, b),
-            Instruction::Srl(dst, a, b) => write!(f, "srl {} {} {}", dst, a, b),
-            Instruction::Push(val) => write!(f, "push {}", val),
-            Instruction::Pop(dst) => write!(f, "pop {}", dst),
-            Instruction::Peek(dst) => write!(f, "peek {}", dst),
-            Instruction::Get(dst, dev, val) => write!(f, "get {} {} {}", dst, dev, val),
-            Instruction::Put(dev, addr, val) => write!(f, "put {} {} {}", dev, addr, val),
-            Instruction::Select(dst, cond, a, b) => {
-                write!(f, "select {} {} {} {}", dst, cond, a, b)
-            }
-            Instruction::Yield => write!(f, "yield"),
-            Instruction::Sleep(val) => write!(f, "sleep {}", val),
-            Instruction::Clr(val) => write!(f, "clr {}", val),
-            Instruction::Alias(name, target) => write!(f, "alias {} {}", name, target),
-            Instruction::Define(name, val) => write!(f, "define {} {}", name, val),
-            Instruction::LabelDef(lbl) => write!(f, "{}:", lbl),
-            Instruction::Comment(c) => write!(f, "# {}", c),
+        match self {
+            Instruction::Move(a, b)
+            | Instruction::Acos(a, b)
+            | Instruction::Asin(a, b)
+            | Instruction::Atan(a, b)
+            | Instruction::Abs(a, b)
+            | Instruction::Ceil(a, b)
+            | Instruction::Cos(a, b)
+            | Instruction::Floor(a, b)
+            | Instruction::Log(a, b)
+            | Instruction::Sin(a, b)
+            | Instruction::Sqrt(a, b)
+            | Instruction::Tan(a, b)
+            | Instruction::Trunc(a, b)
+            | Instruction::DeviceSet(a, b)
+            | Instruction::DeviceNotSet(a, b)
+            | Instruction::Not(a, b)
+            | Instruction::BranchEqZero(a, b)
+            | Instruction::BranchNeZero(a, b) => visit!(a, b),
+            Instruction::Add(a, b, c)
+            | Instruction::Sub(a, b, c)
+            | Instruction::Mul(a, b, c)
+            | Instruction::Div(a, b, c)
+            | Instruction::Mod(a, b, c)
+            | Instruction::Pow(a, b, c)
+            | Instruction::Atan2(a, b, c)
+            | Instruction::Max(a, b, c)
+            | Instruction::Min(a, b, c)
+            | Instruction::Load(a, b, c)
+            | Instruction::Store(a, b, c)
+            | Instruction::StoreBatch(a, b, c)
+            | Instruction::Rmap(a, b, c)
+            | Instruction::BranchEq(a, b, c)
+            | Instruction::BranchNe(a, b, c)
+            | Instruction::BranchGt(a, b, c)
+            | Instruction::BranchLt(a, b, c)
+            | Instruction::BranchGe(a, b, c)
+            | Instruction::BranchLe(a, b, c)
+            | Instruction::SetEq(a, b, c)
+            | Instruction::SetNe(a, b, c)
+            | Instruction::SetGt(a, b, c)
+            | Instruction::SetLt(a, b, c)
+            | Instruction::SetGe(a, b, c)
+            | Instruction::SetLe(a, b, c)
+            | Instruction::And(a, b, c)
+            | Instruction::Or(a, b, c)
+            | Instruction::Xor(a, b, c)
+            | Instruction::Nor(a, b, c)
+            | Instruction::Sll(a, b, c)
+            | Instruction::Sra(a, b, c)
+            | Instruction::Srl(a, b, c)
+            | Instruction::Get(a, b, c)
+            | Instruction::Put(a, b, c) => visit!(a, b, c),
+            Instruction::LoadSlot(a, b, c, d)
+            | Instruction::StoreSlot(a, b, c, d)
+            | Instruction::LoadBatch(a, b, c, d)
+            | Instruction::StoreBatchNamed(a, b, c, d)
+            | Instruction::LoadReagent(a, b, c, d)
+            | Instruction::Select(a, b, c, d) => visit!(a, b, c, d),
+            Instruction::LoadBatchNamed(a, b, c, d, e)
+            | Instruction::LoadBatchSlot(a, b, c, d, e) => visit!(a, b, c, d, e),
+            Instruction::LoadBatchNamedSlot(a, b, c, d, e, f) => visit!(a, b, c, d, e, f),
+            Instruction::Rand(a)
+            | Instruction::Jump(a)
+            | Instruction::JumpAndLink(a)
+            | Instruction::JumpRelative(a)
+            | Instruction::Push(a)
+            | Instruction::Pop(a)
+            | Instruction::Peek(a)
+            | Instruction::Sleep(a)
+            | Instruction::Clr(a) => visit!(a),
+            Instruction::Alias(_, target) => visit!(target),
+            Instruction::Yield
+            | Instruction::Define(_, _)
+            | Instruction::LabelDef(_)
+            | Instruction::Comment(_) => {}
         }
     }
 }
