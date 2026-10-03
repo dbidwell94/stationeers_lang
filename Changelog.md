@@ -1,5 +1,18 @@
 # Changelog
 
+[0.9.0]
+
+- Added statically allocated arrays on the current device (`db`), with value
+  literals (`[1, 2, 3]`), filled arrays (`[|3| 0]`), and uninitialized arrays
+  (`[|3|]`).
+- Added array indexing and mutation with `array[index]`. Constant indices are
+  checked at compile time; dynamic indices have no automatic bounds checking.
+- Arrays can be passed to functions by reference, allowing functions to mutate
+  the caller's array. Assigning an array to another variable and reading an
+  array's `.length` are not supported.
+- Arrays currently use up to 256 `db` stack slots. When a program declares an
+  array, these slots are reserved separately from Slang's own stack storage.
+
 [0.8.0]
 
 - Added support for explicit device pin dereferences using `*expr`, making it
