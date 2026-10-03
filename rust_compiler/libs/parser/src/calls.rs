@@ -295,6 +295,22 @@ impl<'a> Parser<'a> {
                     Box::new(reagent_hash),
                 )))
             }
+            "deviceSet" | "sdse" => {
+                let mut args = args!(1);
+                let dev_name = args.next().ok_or_else(|| self.unexpected_eof())?;
+
+                Ok(SysCall::System(System::DeviceSet(
+                    boxed!(dev_name),
+                )))
+            }
+            "deviceNotSet" | "sdns" => {
+                let mut args = args!(1);
+                let dev_name = args.next().ok_or_else(|| self.unexpected_eof())?;
+
+                Ok(SysCall::System(System::DeviceNotSet(
+                    boxed!(dev_name),
+                )))
+            }
             "rmap" => {
                 let mut args = args!(2);
                 let device = args.next().ok_or_else(|| self.unexpected_eof())?;

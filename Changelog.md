@@ -13,6 +13,11 @@
 - Arrays currently use up to 256 `db` stack slots. When a program declares an
   array, these slots are reserved separately from Slang's own stack storage.
 
+[0.8.1]
+
+- Added support for `sdse` (Thanks, blattlaus87)
+- Added support for `sdns` (Thanks, blattlaus87)
+
 [0.8.0]
 
 - Added support for explicit device pin dereferences using `*expr`, making it

@@ -254,6 +254,10 @@ pub enum Instruction<'a> {
         Operand<'a>,
         Operand<'a>,
     ),
+    /// `sdse register device ` - Device is set
+    DeviceSet(Operand<'a>, Operand<'a>),
+    /// `sdns register device ` - Device is not set
+    DeviceNotSet(Operand<'a>, Operand<'a>),
 
     /// `lr register device reagentMode int`
     LoadReagent(Operand<'a>, Operand<'a>, Operand<'a>, Operand<'a>),
@@ -406,6 +410,12 @@ impl<'a> fmt::Display for Instruction<'a> {
             }
             Instruction::LoadReagent(reg, device, reagent_mode, reagent_hash) => {
                 write!(f, "lr {} {} {} {}", reg, device, reagent_mode, reagent_hash)
+            }
+            Instruction::DeviceSet(reg, dev) => {
+                write!(f, "sdse {} {}", reg, dev)
+            }
+            Instruction::DeviceNotSet(reg, dev) => {
+                write!(f, "sdns {} {}", reg, dev)
             }
             Instruction::Rmap(reg, device, reagent_hash) => {
                 write!(f, "rmap {} {} {}", reg, device, reagent_hash)

@@ -354,6 +354,26 @@ documented! {
             Spanned<LiteralOrVariable<'a>>,
             Box<Spanned<Expression<'a>>>
         ),
+        /// Register = 1 if device is set, otherwise 0.
+        ///
+        /// ## IC10
+        /// `sdse d0`
+        /// ## Slang
+        /// `let isSet = deviceSet(deviceHash);`
+        /// `let isSet = sdse(deviceHash);`
+        DeviceSet(
+            Box<Spanned<Expression<'a>>>,
+        ),
+        /// Register = 1 if device is not set, otherwise 0
+        ///
+        /// ## IC10
+        /// `sdne d0`
+        /// ## Slang
+        /// `let isNotSet = deviceNotSet(deviceHash);`
+        /// `let isNotSet = sdns(deviceHash);`
+        DeviceNotSet(
+            Box<Spanned<Expression<'a>>>,
+        ),
         /// Maps a reagent hash to the item hash that fulfills it on a device
         ///
         /// ## IC10
@@ -396,6 +416,8 @@ impl<'a> std::fmt::Display for System<'a> {
             System::LoadSlot(a, b, c) => write!(f, "loadSlot({}, {}, {})", a, b, c),
             System::SetSlot(a, b, c, d) => write!(f, "setSlot({}, {}, {}, {})", a, b, c, d),
             System::LoadReagent(a, b, c) => write!(f, "loadReagent({}, {}, {})", a, b, c),
+            System::DeviceSet(a) => write!(f, "deviceSet({})", a),
+            System::DeviceNotSet(a) => write!(f, "deviceNotSet({})", a),
             System::Rmap(a, b) => write!(f, "rmap({}, {})", a, b),
         }
     }
@@ -420,6 +442,8 @@ impl<'a> System<'a> {
             System::LoadSlot(_, _, _) => "loadSlot",
             System::SetSlot(_, _, _, _) => "setSlot",
             System::LoadReagent(_, _, _) => "loadReagent",
+            System::DeviceSet(_) => "deviceSet",
+            System::DeviceNotSet(_) => "deviceNotSet",
             System::Rmap(_, _) => "rmap",
         }
     }
@@ -442,6 +466,8 @@ impl<'a> System<'a> {
             System::LoadSlot(_, _, _) => 3,
             System::SetSlot(_, _, _, _) => 4,
             System::LoadReagent(_, _, _) => 3,
+            System::DeviceSet(_) => 1,
+            System::DeviceNotSet(_) => 1,
             System::Rmap(_, _) => 2,
         }
     }
@@ -518,6 +544,12 @@ impl<'a> System<'a> {
                 visitor.visit_expression(a);
                 b.walk(visitor);
                 visitor.visit_expression(c);
+            }
+            Self::DeviceSet(a) => {
+                visitor.visit_expression(a);
+            }
+            Self::DeviceNotSet(a) => {
+                visitor.visit_expression(a);
             }
         }
     }

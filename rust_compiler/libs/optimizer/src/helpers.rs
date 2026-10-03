@@ -20,6 +20,8 @@ pub fn get_destination_reg(instr: &Instruction) -> Option<u8> {
         | Instruction::LoadBatchSlot(Operand::Register(r), _, _, _, _)
         | Instruction::LoadBatchNamedSlot(Operand::Register(r), _, _, _, _, _)
         | Instruction::LoadReagent(Operand::Register(r), _, _, _)
+        | Instruction::DeviceSet(Operand::Register(r), _)
+        | Instruction::DeviceNotSet(Operand::Register(r), _)
         | Instruction::Rmap(Operand::Register(r), _, _)
         | Instruction::SetEq(Operand::Register(r), _, _)
         | Instruction::SetNe(Operand::Register(r), _, _)
@@ -102,6 +104,8 @@ pub fn set_destination_reg<'a>(instr: &Instruction<'a>, new_reg: u8) -> Option<I
         Instruction::LoadReagent(_, b, c, d) => {
             Some(Instruction::LoadReagent(r, b.clone(), c.clone(), d.clone()))
         }
+        Instruction::DeviceSet(_, a) => Some(Instruction::DeviceSet(r, a.clone())),
+        Instruction::DeviceNotSet(_, a) => Some(Instruction::DeviceNotSet(r, a.clone())),
         Instruction::Rmap(_, a, b) => Some(Instruction::Rmap(r, a.clone(), b.clone())),
         Instruction::SetEq(_, a, b) => Some(Instruction::SetEq(r, a.clone(), b.clone())),
         Instruction::SetNe(_, a, b) => Some(Instruction::SetNe(r, a.clone(), b.clone())),
@@ -173,6 +177,8 @@ pub fn reg_is_read(instr: &Instruction, reg: u8) -> bool {
         | Instruction::JumpAndLink(a)
         | Instruction::JumpRelative(a)
         | Instruction::Clr(a)
+        | Instruction::DeviceSet(_, a)
+        | Instruction::DeviceNotSet(_, a)
         | Instruction::Alias(_, a) => check(a),
 
         Instruction::Add(_, a, b)
