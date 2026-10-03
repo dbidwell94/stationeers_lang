@@ -5,6 +5,7 @@ macro_rules! parser {
     };
 }
 
+mod arrays;
 mod blocks;
 use crate::ParseOutput;
 

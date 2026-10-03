@@ -1,5 +1,7 @@
 #![allow(clippy::result_large_err)]
-use crate::variable_manager::{LocationRequest, VariableLocation, VariableScope};
+use crate::variable_manager::{
+    ARRAY_REGION_SIZE, LocationRequest, VariableLocation, VariableScope,
+};
 use helpers::{Span, prelude::*};
 use il::{Instruction, InstructionNode, Instructions, Operand};
 use parser::{
@@ -93,6 +95,7 @@ pub struct Compiler<'a> {
     _config: CompilerConfig,
     temp_counter: usize,
     label_counter: usize,
+    array_high_water: u16,
     loop_stack: Vec<(Cow<'a, str>, Cow<'a, str>, u16)>, // Stores (start_label, end_label, stack_depth_at_entry)
     /// stores (IC10 `line_num`, `Vec<Span>`)
     pub source_map: HashMap<usize, Vec<Span>>,
@@ -131,6 +134,7 @@ macro_rules! compile_operands {
     ($self:expr, ($($toks:tt)+), $scope:expr) => { compile_operands! {@increment $self, $scope, []; $($toks)*} };
 }
 
+mod arrays;
 mod control_flow;
 mod functions;
 mod operands;
@@ -152,6 +156,7 @@ impl<'a> Compiler<'a> {
             _config: config.unwrap_or_default(),
             temp_counter: 0,
             label_counter: 0,
+            array_high_water: 0,
             loop_stack: Vec::new(),
             source_map: HashMap::new(),
             errors: Vec::new(),
@@ -162,6 +167,25 @@ impl<'a> Compiler<'a> {
 
     pub fn compile(mut self, ast: &Spanned<Expression<'a>>) -> CompilationResult<'a> {
         let expr = ast;
+
+        // Reserve the array region of the `db` stack only if the program actually
+        // declares arrays - no arrays means no reservation is needed.
+        if self.analyze_result.uses_arrays
+            && let Err(e) = self.write_instruction(
+                Instruction::Move(
+                    Operand::StackPointer,
+                    Operand::Number(ARRAY_REGION_SIZE.into()),
+                ),
+                Some(expr.span),
+            )
+        {
+            self.errors.push(e);
+            return CompilationResult {
+                errors: self.errors,
+                instructions: self.instructions,
+                metadata: self.metadata,
+            };
+        }
 
         if let Err(e) = self.write_instruction(
             Instruction::Jump(Operand::Label(Cow::from("main"))),
@@ -389,6 +413,13 @@ impl<'a> Compiler<'a> {
                 // "load" behavior (e.g. `let x = d0.On`)
                 let MemberAccessExpression { object, member } = &access.node;
 
+                if member.node == "length" && Self::array_location_of(object, scope).is_some() {
+                    return Err(Error::OperationNotSupported(
+                        "Array length is not supported.".to_string(),
+                        expr.span,
+                    ));
+                }
+
                 // 1. Resolve the object to a device string (e.g., "d0" or "rX")
                 let (device, cleanup) = self.compile_device_operand(object, scope)?;
 
@@ -418,8 +449,36 @@ impl<'a> Compiler<'a> {
                 }))
             }
             Expression::IndexAccess(access) => {
-                // "get" behavior (e.g. `let x = d0[255]`)
+                // "get" behavior (e.g. `let x = d0[255]`, or `let x = arr[2]`)
                 let IndexAccessExpression { object, index } = &access.node;
+
+                if let Some(array) = Self::array_location_of(object, scope) {
+                    let (addr, addr_cleanup) =
+                        self.compile_array_index_address(&array, index, scope)?;
+
+                    let result_name = self.next_temp_name();
+                    let loc =
+                        scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
+                    let reg = self.resolve_register(&loc)?;
+
+                    self.write_instruction(
+                        Instruction::Get(
+                            Operand::Register(reg),
+                            Operand::Device(DeviceType::Housing),
+                            addr,
+                        ),
+                        Some(expr.span),
+                    )?;
+
+                    if let Some(c) = addr_cleanup {
+                        scope.free_temp(c, None)?;
+                    }
+
+                    return Ok(Some(CompileLocation {
+                        location: loc,
+                        temp_name: Some(result_name),
+                    }));
+                }
 
                 // 1. Resolve the object to a device string
                 let (device, dev_cleanup) = self.compile_operand(object, scope)?;

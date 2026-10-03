@@ -4,9 +4,7 @@ use rust_decimal::Decimal;
 /// Pass: Strength Reduction
 /// Replaces expensive operations with cheaper equivalents.
 /// Example: x * 2 -> add x x x (addition is typically faster than multiplication)
-pub fn strength_reduction<'a>(
-    input: Vec<InstructionNode<'a>>,
-) -> (Vec<InstructionNode<'a>>, bool) {
+pub fn strength_reduction<'a>(input: Vec<InstructionNode<'a>>) -> (Vec<InstructionNode<'a>>, bool) {
     let mut output = Vec::with_capacity(input.len());
     let mut changed = false;
 
@@ -23,7 +21,6 @@ pub fn strength_reduction<'a>(
             // Future: Could add power-of-2 optimizations using bit shifts if IC10 supports them
             // x * 4 = (x + x) + (x + x) or x << 2
             // x / 2 = x >> 1
-
             _ => None,
         };
 
@@ -57,7 +54,11 @@ mod tests {
         assert!(changed);
         assert!(matches!(
             output[0].instruction,
-            Instruction::Add(Operand::Register(1), Operand::Register(2), Operand::Register(2))
+            Instruction::Add(
+                Operand::Register(1),
+                Operand::Register(2),
+                Operand::Register(2)
+            )
         ));
     }
 }

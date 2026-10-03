@@ -86,6 +86,10 @@ pub struct Parser<'a> {
     cached_doc_comment: Option<String>,
     /// Maps variable/declaration names to their doc comments
     pub declaration_docs: std::collections::HashMap<String, String>,
+    /// Nesting counter used while parsing the `size` portion of an array repeat
+    /// literal (`[|size| fill]`), so a trailing `|` is treated as the closing
+    /// delimiter rather than the bitwise-or infix operator.
+    suppress_bitwise_or_pipe: u32,
 }
 
 pub struct ParseOutput<'a> {
@@ -102,6 +106,7 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             cached_doc_comment: None,
             declaration_docs: std::collections::HashMap::new(),
+            suppress_bitwise_or_pipe: 0,
         }
     }
 

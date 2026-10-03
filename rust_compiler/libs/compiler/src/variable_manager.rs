@@ -15,6 +15,10 @@ use thiserror::Error;
 const TEMP: [u8; 7] = [1, 2, 3, 4, 5, 6, 7];
 const PERSIST: [u8; 7] = [8, 9, 10, 11, 12, 13, 14];
 
+/// Number of `db` stack slots (out of 512 total) reserved for user arrays.
+/// The remaining slots are reserved for the compiler's own variable spilling.
+pub const ARRAY_REGION_SIZE: u16 = 256;
+
 #[derive(Error, Debug)]
 pub enum Error<'a> {
     #[error("{0} already exists.")]
@@ -25,6 +29,9 @@ pub enum Error<'a> {
 
     #[error("{0}")]
     Unknown(Cow<'a, str>, Option<Span>),
+
+    #[error("Array storage exceeded: {0} slots requested, only {1} available.")]
+    ArrayCapacityExceeded(u16, u16, Option<Span>),
 }
 
 impl<'a> Error<'a> {
@@ -37,6 +44,9 @@ impl<'a> Error<'a> {
                 Error::UnknownVariable(Cow::Owned(name.into_owned()), span)
             }
             Error::Unknown(message, span) => Error::Unknown(Cow::Owned(message.into_owned()), span),
+            Error::ArrayCapacityExceeded(requested, available, span) => {
+                Error::ArrayCapacityExceeded(requested, available, span)
+            }
         }
     }
 }
@@ -46,7 +56,8 @@ impl<'a> From<Error<'a>> for lsp_types::Diagnostic {
         match value {
             Error::DuplicateVariable(_, span)
             | Error::UnknownVariable(_, span)
-            | Error::Unknown(_, span) => Diagnostic {
+            | Error::Unknown(_, span)
+            | Error::ArrayCapacityExceeded(_, _, span) => Diagnostic {
                 range: span.map(lsp_types::Range::from).unwrap_or_default(),
                 severity: Some(DiagnosticSeverity::ERROR),
                 message: value.to_string(),
@@ -79,6 +90,18 @@ pub enum VariableLocation<'a> {
     Constant(Literal<'a>),
     /// Represents a device pin. This will contain the exact `d0-d5` string
     Device(DeviceType),
+    /// Represents a fixed, absolute `db` stack address range reserved for a
+    /// user array: `base` is the starting address, `len` the element count.
+    Array { base: u16, len: u16 },
+    /// Represents an array parameter whose base address is stored in a register
+    /// or a compiler stack slot.
+    ArrayParameter { base: ArrayPointerLocation },
+}
+
+#[derive(Clone, Debug)]
+pub enum ArrayPointerLocation {
+    Register(u8),
+    Stack(u16),
 }
 
 pub struct VariableScope<'a, 'b> {
@@ -87,6 +110,10 @@ pub struct VariableScope<'a, 'b> {
     var_lookup_table: HashMap<Cow<'a, str>, VariableLocation<'a>>,
     device_reference_lookup_table: HashMap<Cow<'a, str>, DeviceType>,
     stack_offset: u16,
+    /// Number of array slots allocated in this scope (absolute addresses,
+    /// not relative to `sp`). Freed automatically when the scope is dropped,
+    /// since sibling scopes are constructed fresh with `array_offset: 0`.
+    array_offset: u16,
     parent: Option<&'b VariableScope<'a, 'b>>,
 }
 
@@ -95,6 +122,7 @@ impl<'a, 'b> Default for VariableScope<'a, 'b> {
         Self {
             parent: None,
             stack_offset: 0,
+            array_offset: 0,
             persistant_vars: PERSIST.to_vec().into(),
             temporary_vars: TEMP.to_vec().into(),
             var_lookup_table: HashMap::new(),
@@ -149,6 +177,61 @@ impl<'a, 'b> VariableScope<'a, 'b> {
             total += parent.total_stack_depth();
         }
         total
+    }
+
+    /// Returns the total number of array slots consumed by this scope and all
+    /// of its ancestors. Used to compute the next array's absolute base address.
+    pub fn total_array_depth(&self) -> u16 {
+        let mut total = self.array_offset;
+        if let Some(parent) = self.parent {
+            total += parent.total_array_depth();
+        }
+        total
+    }
+
+    pub fn reserve_array_slots(&mut self, high_water: u16) {
+        self.array_offset = self.array_offset.max(high_water);
+    }
+
+    /// Allocates a fixed-size array at the next available absolute `db` stack
+    /// address. Arrays are freed implicitly when their declaring scope is
+    /// dropped, since sibling scopes start with a fresh `array_offset` of 0
+    /// and therefore reuse the same absolute addresses.
+    pub fn define_array(
+        &mut self,
+        var_name: Cow<'a, str>,
+        len: u16,
+        span: Option<Span>,
+    ) -> Result<VariableLocation<'a>, Error<'a>> {
+        if self.var_lookup_table.contains_key(&var_name) {
+            return Err(Error::DuplicateVariable(var_name, span));
+        }
+
+        let parent_depth = self.parent.map(|p| p.total_array_depth()).unwrap_or(0);
+        let base = parent_depth + self.array_offset;
+
+        let end = base.checked_add(len).unwrap_or(u16::MAX);
+        if end > ARRAY_REGION_SIZE {
+            return Err(Error::ArrayCapacityExceeded(end, ARRAY_REGION_SIZE, span));
+        }
+
+        self.array_offset += len;
+
+        let new_value = VariableLocation::Array { base, len };
+        self.var_lookup_table.insert(var_name, new_value.clone());
+        Ok(new_value)
+    }
+
+    pub fn mark_array_parameter(
+        &mut self,
+        var_name: &Cow<'a, str>,
+        base: ArrayPointerLocation,
+    ) -> Result<(), Error<'a>> {
+        let Some(location) = self.var_lookup_table.get_mut(var_name) else {
+            return Err(Error::UnknownVariable(var_name.clone(), None));
+        };
+        *location = VariableLocation::ArrayParameter { base };
+        Ok(())
     }
 
     /// Adds and tracks a new scoped variable. If the location you request is full, will fall back
@@ -255,6 +338,13 @@ impl<'a, 'b> VariableScope<'a, 'b> {
                 return Ok(VariableLocation::Stack(
                     self.stack_offset - inserted_at_offset,
                 ));
+            } else if let VariableLocation::ArrayParameter {
+                base: ArrayPointerLocation::Stack(inserted_at_offset),
+            } = var
+            {
+                return Ok(VariableLocation::ArrayParameter {
+                    base: ArrayPointerLocation::Stack(self.stack_offset - inserted_at_offset),
+                });
             } else {
                 return Ok(var.clone());
             }
@@ -266,6 +356,14 @@ impl<'a, 'b> VariableScope<'a, 'b> {
 
             if let VariableLocation::Stack(parent_offset) = loc {
                 return Ok(VariableLocation::Stack(parent_offset + self.stack_offset));
+            }
+            if let VariableLocation::ArrayParameter {
+                base: ArrayPointerLocation::Stack(parent_offset),
+            } = loc
+            {
+                return Ok(VariableLocation::ArrayParameter {
+                    base: ArrayPointerLocation::Stack(parent_offset + self.stack_offset),
+                });
             }
             return Ok(loc);
         }
