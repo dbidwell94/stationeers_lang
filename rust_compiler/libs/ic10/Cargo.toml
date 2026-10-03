@@ -1,0 +1,8 @@
+[package]
+name = "ic10"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+il = { path = "../il" }
+thiserror = { workspace = true }

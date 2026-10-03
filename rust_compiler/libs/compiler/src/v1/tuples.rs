@@ -31,6 +31,13 @@ impl<'a> Compiler<'a> {
                             Some(span),
                         )?;
                     }
+                    VariableLocation::VirtualTemporary(register)
+                    | VariableLocation::VirtualPersistant(register) => {
+                        self.write_instruction(
+                            Instruction::Pop(Operand::VirtualRegister(register)),
+                            Some(span),
+                        )?;
+                    }
                     VariableLocation::Stack(offset) => {
                         // Pop into temp register, then write to stack
                         self.write_instruction(
@@ -131,7 +138,8 @@ impl<'a> Compiler<'a> {
         match &value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call - tuple values will be on the stack
-                self.expression_function_invocation_with_invocation(invoke_expr, scope, false)?;
+                let saved_virtual_registers =
+                    self.expression_function_invocation_with_invocation(invoke_expr, scope, false)?;
 
                 // Validate tuple return size matches the declaration
                 self.validate_tuple_function_size(
@@ -159,6 +167,12 @@ impl<'a> Compiler<'a> {
 
                 // Pop tuple values from stack into variables
                 self.pop_tuple_values(var_locations)?;
+                for register in saved_virtual_registers.iter().rev() {
+                    self.write_instruction(
+                        Instruction::Pop(Operand::VirtualRegister(*register)),
+                        Some(value.span),
+                    )?;
+                }
             }
             Expression::Tuple(tuple_expr) => {
                 // Direct tuple literal: (value1, value2, ...)
@@ -219,7 +233,8 @@ impl<'a> Compiler<'a> {
         match &value.node {
             Expression::Invocation(invoke_expr) => {
                 // Execute the function call - tuple values will be on the stack
-                self.expression_function_invocation_with_invocation(invoke_expr, scope, false)?;
+                let saved_virtual_registers =
+                    self.expression_function_invocation_with_invocation(invoke_expr, scope, false)?;
 
                 // Validate tuple return size matches the assignment
                 self.validate_tuple_function_size(
@@ -251,6 +266,12 @@ impl<'a> Compiler<'a> {
 
                 // Pop tuple values from stack into variables
                 self.pop_tuple_values(var_locations)?;
+                for register in saved_virtual_registers.iter().rev() {
+                    self.write_instruction(
+                        Instruction::Pop(Operand::VirtualRegister(*register)),
+                        Some(value.span),
+                    )?;
+                }
             }
             Expression::Tuple(tuple_expr) => {
                 // Direct tuple literal: (value1, value2, ...)
@@ -293,6 +314,16 @@ impl<'a> Compiler<'a> {
                         VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
                             self.write_instruction(
                                 Instruction::Move(Operand::Register(*reg), value_operand),
+                                Some(name_spanned.span),
+                            )?;
+                        }
+                        VariableLocation::VirtualTemporary(register)
+                        | VariableLocation::VirtualPersistant(register) => {
+                            self.write_instruction(
+                                Instruction::Move(
+                                    Operand::VirtualRegister(*register),
+                                    value_operand,
+                                ),
                                 Some(name_spanned.span),
                             )?;
                         }

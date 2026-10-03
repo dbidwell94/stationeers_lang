@@ -176,22 +176,16 @@ impl<'a> Compiler<'a> {
                     scope,
                     span,
                 )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
-                    Instruction::Load(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                        device_val,
-                        Operand::LogicType(logic_type_str),
-                    ),
+                    Instruction::Load(destination, device_val, Operand::LogicType(logic_type_str)),
                     Some(span),
                 )?;
 
                 cleanup!(device_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Temporary(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::LoadBatch(device_hash, logic_type, batch_mode) => {
                 let (device_hash, device_hash_cleanup) =
@@ -224,10 +218,11 @@ impl<'a> Compiler<'a> {
                     scope,
                     span,
                 )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
                     Instruction::LoadBatch(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        destination,
                         device_hash,
                         Operand::LogicType(logic_type_str),
                         Operand::LogicType(batch_mode_str),
@@ -236,10 +231,7 @@ impl<'a> Compiler<'a> {
                 )?;
                 cleanup!(device_hash_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::LoadBatchNamed(device_hash, name_hash, logic_type, batch_mode) => {
                 let ((device_hash, device_hash_cleanup), (name_hash, name_hash_cleanup)) =
@@ -272,10 +264,11 @@ impl<'a> Compiler<'a> {
                     scope,
                     span,
                 )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
                     Instruction::LoadBatchNamed(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        destination,
                         device_hash,
                         name_hash,
                         Operand::LogicType(logic_type_str),
@@ -285,10 +278,7 @@ impl<'a> Compiler<'a> {
                 )?;
                 cleanup!(device_hash_cleanup, name_hash_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::LoadBatchSlot(device_hash, slot_index, logic_slot_type, batch_mode) => {
                 let ((device_hash, device_hash_cleanup), (slot_index, slot_cleanup)) =
@@ -319,10 +309,11 @@ impl<'a> Compiler<'a> {
                     scope,
                     span,
                 )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
                     Instruction::LoadBatchSlot(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        destination,
                         device_hash,
                         slot_index,
                         Operand::LogicType(logic_slot_type_str),
@@ -332,10 +323,7 @@ impl<'a> Compiler<'a> {
                 )?;
                 cleanup!(device_hash_cleanup, slot_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::LoadBatchNamedSlot(
                 device_hash,
@@ -375,10 +363,11 @@ impl<'a> Compiler<'a> {
                     scope,
                     span,
                 )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
                     Instruction::LoadBatchNamedSlot(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        destination,
                         device_hash,
                         name_hash,
                         slot_index,
@@ -389,10 +378,7 @@ impl<'a> Compiler<'a> {
                 )?;
                 cleanup!(device_hash_cleanup, name_hash_cleanup, slot_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::LoadSlot(dev_name, slot_index, logic_type) => {
                 let (dev_hash, hash_cleanup) = self.compile_device_operand(dev_name, scope)?;
@@ -411,10 +397,11 @@ impl<'a> Compiler<'a> {
                     scope,
                     span,
                 )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
                     Instruction::LoadSlot(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        destination,
                         dev_hash,
                         slot_index,
                         Operand::LogicType(logic_type_operand),
@@ -423,10 +410,7 @@ impl<'a> Compiler<'a> {
                 )?;
                 cleanup!(hash_cleanup, slot_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::SetSlot(dev_name, slot_index, logic_type, var) => {
                 let (dev_name, name_cleanup) = self.compile_device_operand(dev_name, scope)?;
@@ -479,10 +463,11 @@ impl<'a> Compiler<'a> {
 
                 let (reagent_hash, reagent_hash_cleanup) =
                     self.compile_operand(reagent_hash, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
                     Instruction::LoadReagent(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
+                        destination,
                         device,
                         Operand::LogicType(reagent_mode_str),
                         reagent_hash,
@@ -492,66 +477,44 @@ impl<'a> Compiler<'a> {
 
                 cleanup!(reagent_hash_cleanup, device_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::DeviceNotSet(dev_name) => {
                 let (dev_hash, hash_cleanup) = self.compile_device_operand(dev_name, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
-                    Instruction::DeviceNotSet(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                        dev_hash,
-                    ),
+                    Instruction::DeviceNotSet(destination, dev_hash),
                     Some(span),
                 )?;
                 cleanup!(hash_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::DeviceSet(dev_name) => {
                 let (dev_hash, hash_cleanup) = self.compile_device_operand(dev_name, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::DeviceSet(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                        dev_hash,
-                    ),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::DeviceSet(destination, dev_hash), Some(span))?;
                 cleanup!(hash_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             System::Rmap(device, reagent_hash) => {
                 let (device, device_cleanup) = self.compile_device_operand(device, scope)?;
 
                 let (reagent_hash, reagent_hash_cleanup) =
                     self.compile_operand(reagent_hash, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
                 self.write_instruction(
-                    Instruction::Rmap(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                        device,
-                        reagent_hash,
-                    ),
+                    Instruction::Rmap(destination, device, reagent_hash),
                     Some(span),
                 )?;
 
                 cleanup!(reagent_hash_cleanup, device_cleanup);
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
         }
     }
@@ -585,235 +548,128 @@ impl<'a> Compiler<'a> {
         match &expr {
             Math::Acos(expr) => {
                 let (var, cleanup) = self.compile_operand(expr, scope)?;
-                self.write_instruction(
-                    Instruction::Acos(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
+                self.write_instruction(Instruction::Acos(destination, var), Some(span))?;
                 cleanup!(cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Asin(expr) => {
                 let (var, cleanup) = self.compile_operand(expr, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Asin(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Asin(destination, var), Some(span))?;
                 cleanup!(cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Atan(expr) => {
                 let (var, cleanup) = self.compile_operand(expr, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Atan(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Atan(destination, var), Some(span))?;
                 cleanup!(cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Atan2(expr1, expr2) => {
                 let ((var1, var1_cleanup), (var2, var2_cleanup)) =
                     compile_operands!(self, (expr1, expr2), scope);
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Atan2(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                        var1,
-                        var2,
-                    ),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Atan2(destination, var1, var2), Some(span))?;
                 cleanup!(var1_cleanup, var2_cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Abs(expr) => {
                 let (var, cleanup) = self.compile_operand(expr, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Abs(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Abs(destination, var), Some(span))?;
                 cleanup!(cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Ceil(expr) => {
                 let (var, cleanup) = self.compile_operand(expr, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Ceil(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Ceil(destination, var), Some(span))?;
                 cleanup!(cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Cos(expr) => {
                 let (var, cleanup) = self.compile_operand(expr, scope)?;
-                self.write_instruction(
-                    Instruction::Cos(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
+                self.write_instruction(Instruction::Cos(destination, var), Some(span))?;
                 cleanup!(cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Floor(expr) => {
                 let (var, cleanup) = self.compile_operand(expr, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Floor(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Floor(destination, var), Some(span))?;
                 cleanup!(cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Log(expr) => {
                 let (var, cleanup) = self.compile_operand(expr, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Log(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Log(destination, var), Some(span))?;
                 cleanup!(cleanup);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Max(expr1, expr2) => {
                 let ((var1, clean1), (var2, clean2)) =
                     compile_operands!(self, (expr1, expr2), scope);
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Max(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                        var1,
-                        var2,
-                    ),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Max(destination, var1, var2), Some(span))?;
                 cleanup!(clean1, clean2);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Min(expr1, expr2) => {
                 let ((var1, clean1), (var2, clean2)) =
                     compile_operands!(self, (expr1, expr2), scope);
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Min(
-                        Operand::Register(VariableScope::RETURN_REGISTER),
-                        var1,
-                        var2,
-                    ),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Min(destination, var1, var2), Some(span))?;
                 cleanup!(clean1, clean2);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Rand => {
-                self.write_instruction(
-                    Instruction::Rand(Operand::Register(VariableScope::RETURN_REGISTER)),
-                    Some(span),
-                )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
+                self.write_instruction(Instruction::Rand(destination), Some(span))?;
 
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Sin(expr) => {
                 let (var, clean) = self.compile_operand(expr, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Sin(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Sin(destination, var), Some(span))?;
                 cleanup!(clean);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Sqrt(expr) => {
                 let (var, clean) = self.compile_operand(expr, scope)?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
 
-                self.write_instruction(
-                    Instruction::Sqrt(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                self.write_instruction(Instruction::Sqrt(destination, var), Some(span))?;
                 cleanup!(clean);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Tan(expr) => {
                 let (var, clean) = self.compile_operand(expr, scope)?;
-                self.write_instruction(
-                    Instruction::Tan(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
+                self.write_instruction(Instruction::Tan(destination, var), Some(span))?;
                 cleanup!(clean);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
             Math::Trunc(expr) => {
                 let (var, clean) = self.compile_operand(expr, scope)?;
-                self.write_instruction(
-                    Instruction::Trunc(Operand::Register(VariableScope::RETURN_REGISTER), var),
-                    Some(span),
-                )?;
+                let (destination, result) = self.syscall_result_destination(scope)?;
+                self.write_instruction(Instruction::Trunc(destination, var), Some(span))?;
                 cleanup!(clean);
-
-                Ok(Some(CompileLocation {
-                    location: VariableLocation::Persistant(VariableScope::RETURN_REGISTER),
-                    temp_name: None,
-                }))
+                Ok(Some(result))
             }
         }
     }

@@ -9,23 +9,24 @@ ternary:
 pop r8
 push sp
 push ra
-move r9 0
+move r1 0
 beqz r8 __internal_L3
-move r9 10
+move r1 10
 j __internal_L2
 __internal_L3:
-move r9 20
+move r1 20
 __internal_L2:
-move r15 r9
+move r15 r1
 j __internal_L1
 __internal_L1:
 pop ra
 pop sp
 j ra
+main:
 
 ## Optimized Output
 
-j main
+j 8
 pop r8
 push sp
 push ra

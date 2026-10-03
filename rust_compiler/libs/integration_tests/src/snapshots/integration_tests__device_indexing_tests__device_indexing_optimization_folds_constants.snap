@@ -6,13 +6,12 @@ expression: output
 
 j main
 main:
-move r8 -62440604628430
-put d0 255 r8
+move r1 -62440604628430
+put d0 255 r1
 get r1 d0 255
-move r9 r1
 
 ## Optimized Output
 
-move r8 -62440604628430
-put d0 255 r8
-get r9 d0 255
+move r1 -62440604628430
+put d0 255 r1
+get r1 d0 255

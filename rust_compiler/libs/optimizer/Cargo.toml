@@ -6,5 +6,6 @@ edition = "2024"
 [dependencies]
 il = { path = "../il" }
 helpers = { path = "../helpers" }
+thiserror = { workspace = true }
 rust_decimal = { workspace = true }
 anyhow = { workspace = true }

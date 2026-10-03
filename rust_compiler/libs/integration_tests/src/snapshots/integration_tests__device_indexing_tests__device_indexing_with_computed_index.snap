@@ -6,21 +6,16 @@ expression: output
 
 j main
 main:
-move r8 10
-move r9 5
-add r1 r8 r9
-move r10 r1
-move r11 42
-put d1 r10 r11
-get r2 d1 r10
-move r12 r2
+move r2 10
+move r1 5
+add r2 r2 r1
+move r1 42
+put d1 r2 r1
+get r1 d1 r2
 
 ## Optimized Output
 
-move r8 10
-move r9 5
-move r1 15
-move r10 15
-move r11 42
-put d1 r10 r11
-get r12 d1 r10
+move r2 15
+move r1 42
+put d1 r2 r1
+get r1 d1 r2

@@ -225,7 +225,7 @@ impl<'a> Compiler<'a> {
         let result_reg = self.resolve_register(&result_loc)?;
 
         self.write_instruction(
-            Instruction::Select(Operand::Register(result_reg), cond, true_val, false_val),
+            Instruction::Select(result_reg, cond, true_val, false_val),
             Some(span),
         )?;
 

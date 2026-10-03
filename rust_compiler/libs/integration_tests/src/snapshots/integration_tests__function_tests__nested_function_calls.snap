@@ -41,27 +41,28 @@ push r8
 jal add
 pop r9
 pop r8
-move r10 r15
+move r1 r15
 push r8
 push r9
-push r10
-push r10
+push r1
+push r1
 push 2
 jal multiply
-pop r10
+pop r1
 pop r9
 pop r8
-move r11 r15
-move r15 r11
+move r1 r15
+move r15 r1
 j __internal_L3
 __internal_L3:
 pop ra
 pop sp
 j ra
+main:
 
 ## Optimized Output
 
-j main
+j 43
 pop r8
 pop r9
 push sp
@@ -89,18 +90,18 @@ push r8
 jal 1
 pop r9
 pop r8
-move r10 r15
+move r1 r15
 push r8
 push r9
-push r10
-push r10
+push r1
+push r1
 push 2
 jal 9
-pop r10
+pop r1
 pop r9
 pop r8
-move r11 r15
-move r15 r11
+move r1 r15
+move r15 r1
 pop ra
 pop sp
 j ra

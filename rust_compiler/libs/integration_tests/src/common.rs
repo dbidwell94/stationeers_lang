@@ -18,14 +18,16 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
         .analyze(&output.root)
         .expect("Failed to analyze source code");
 
-    let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
-    let result = compiler.compile(&output.root);
+    let result = Compiler::compile_allocated(analyze_result, output.declaration_docs, &output.root);
+    assert!(
+        result.register_allocated,
+        "unoptimized integration output fell back: {:?}",
+        result.allocation_fallback_reason
+    );
 
     // Get unoptimized output
     let mut unoptimized_writer = std::io::BufWriter::new(Vec::new());
-    result
-        .instructions
-        .write(&mut unoptimized_writer)
+    ic10::write(result.instructions, &mut unoptimized_writer)
         .expect("Failed to write unoptimized output");
     let unoptimized_bytes = unoptimized_writer
         .into_inner()
@@ -46,16 +48,20 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
         .analyze(&output2.root)
         .expect("Failed to analyze source code");
 
-    let compiler2 = Compiler::new(analyze_result2, output2.declaration_docs, None);
-    let result2 = compiler2.compile(&output2.root);
+    let result2 =
+        Compiler::compile_allocated(analyze_result2, output2.declaration_docs, &output2.root);
+    assert!(
+        result2.register_allocated,
+        "optimized integration output fell back: {:?}",
+        result2.allocation_fallback_reason
+    );
 
     // Apply optimizations
     let optimized_instructions = optimizer::optimize(result2.instructions);
 
     // Get optimized output
     let mut optimized_writer = std::io::BufWriter::new(Vec::new());
-    optimized_instructions
-        .write(&mut optimized_writer)
+    ic10::write(optimized_instructions, &mut optimized_writer)
         .expect("Failed to write optimized output");
     let optimized_bytes = optimized_writer.into_inner().expect("Failed to get bytes");
     let optimized = String::from_utf8(optimized_bytes).expect("Invalid UTF-8");

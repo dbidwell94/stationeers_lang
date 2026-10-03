@@ -166,7 +166,7 @@ impl<'a> Compiler<'a> {
             let temp_reg = self.resolve_register(&temp_loc)?;
             self.write_instruction(
                 Instruction::Add(
-                    Operand::Register(temp_reg),
+                    temp_reg.clone(),
                     Operand::Number((*base).into()),
                     idx_operand,
                 ),
@@ -175,7 +175,7 @@ impl<'a> Compiler<'a> {
             if let Some(c) = idx_cleanup {
                 scope.free_temp(c, None)?;
             }
-            return Ok((Operand::Register(temp_reg), Some(temp_name)));
+            return Ok((temp_reg, Some(temp_name)));
         }
 
         let VariableLocation::ArrayParameter { base } = array else {
@@ -192,7 +192,7 @@ impl<'a> Compiler<'a> {
         let temp_reg = self.resolve_register(&temp_loc)?;
 
         self.write_instruction(
-            Instruction::Add(Operand::Register(temp_reg), base_operand, index_operand),
+            Instruction::Add(temp_reg.clone(), base_operand, index_operand),
             Some(index.span),
         )?;
 
@@ -203,7 +203,7 @@ impl<'a> Compiler<'a> {
             scope.free_temp(c, None)?;
         }
 
-        Ok((Operand::Register(temp_reg), Some(temp_name)))
+        Ok((temp_reg, Some(temp_name)))
     }
 
     pub(super) fn array_pointer_operand(
@@ -228,13 +228,13 @@ impl<'a> Compiler<'a> {
                 )?;
                 self.write_instruction(
                     Instruction::Get(
-                        Operand::Register(temp_reg),
+                        temp_reg.clone(),
                         Operand::Device(DeviceType::Housing),
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                     ),
                     None,
                 )?;
-                Ok((Operand::Register(temp_reg), Some(temp_name)))
+                Ok((temp_reg, Some(temp_name)))
             }
         }
     }

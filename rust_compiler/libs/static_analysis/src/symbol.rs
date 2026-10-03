@@ -32,13 +32,14 @@ pub struct Symbol<'a> {
     pub span: Span,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Scope<'a> {
     pub id: usize,
     pub parent: Option<usize>,
     pub bindings: HashMap<&'a str, SymbolId>,
 }
 
+#[derive(Clone)]
 pub struct SymbolTable<'a> {
     /// Arena storage for all symbols across all scopes
     pub symbols: Vec<Symbol<'a>>,

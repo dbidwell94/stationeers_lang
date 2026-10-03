@@ -11,9 +11,8 @@ pop r9
 push sp
 push ra
 sll r1 r9 8
-or r2 r1 r8
-move r10 r2
-move r15 r10
+or r1 r1 r8
+move r15 r1
 j __internal_L1
 __internal_L1:
 pop ra
@@ -25,11 +24,9 @@ push sp
 push ra
 sra r1 r8 8
 and r2 r1 255
-move r9 r2
-and r3 r8 255
-move r10 r3
-push r9
-push r10
+and r1 r8 255
+push r2
+push r1
 sub r0 sp 4
 get r0 db r0
 move r15 r0
@@ -38,10 +35,11 @@ __internal_L2:
 sub r0 sp 3
 get ra db r0
 j ra
+main:
 
 ## Optimized Output
 
-j main
+j 23
 pop r8
 pop r9
 push sp
@@ -55,10 +53,10 @@ pop r8
 push sp
 push ra
 sra r1 r8 8
-and r9 r1 255
-and r10 r8 255
-push r9
-push r10
+and r2 r1 255
+and r1 r8 255
+push r2
+push r1
 sub r0 sp 4
 get r15 db r0
 sub r0 sp 3

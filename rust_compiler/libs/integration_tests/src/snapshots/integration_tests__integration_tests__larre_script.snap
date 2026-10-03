@@ -11,8 +11,8 @@ push ra
 yield
 __internal_L2:
 l r1 d0 Idle
-seq r2 r1 0
-beqz r2 __internal_L3
+seq r1 r1 0
+beqz r1 __internal_L3
 yield
 j __internal_L2
 __internal_L3:
@@ -28,7 +28,7 @@ jal waitForIdle
 move r1 r15
 s d0 Activate 1
 jal waitForIdle
-move r2 r15
+move r1 r15
 s d1 Open 0
 __internal_L4:
 pop ra
@@ -38,94 +38,91 @@ checkAndHarvest:
 pop r8
 push sp
 push ra
-sle r1 r8 1
-ls r15 d0 255 Seeding
-move r2 r15
-slt r3 r2 1
-or r4 r1 r3
-beqz r4 __internal_L6
+sle r2 r8 1
+ls r1 d0 255 Seeding
+slt r1 r1 1
+or r1 r2 r1
+beqz r1 __internal_L6
 j __internal_L5
 __internal_L6:
 __internal_L7:
-ls r15 d0 255 Mature
-beqz r15 __internal_L8
+ls r1 d0 255 Mature
+beqz r1 __internal_L8
 yield
 s d0 Activate 1
 j __internal_L7
 __internal_L8:
-ls r15 d0 255 Occupied
-move r9 r15
+ls r2 d0 255 Occupied
 s d0 Setting 1
 push r8
-push r9
+push r2
 jal waitForIdle
-pop r9
+pop r2
 pop r8
-move r5 r15
+move r1 r15
 push r8
-push r9
+push r2
 jal deposit
-pop r9
+pop r2
 pop r8
-move r6 r15
-beqz r9 __internal_L9
+move r1 r15
+beqz r2 __internal_L9
 push r8
-push r9
+push r2
 jal deposit
-pop r9
+pop r2
 pop r8
-move r7 r15
+move r1 r15
 __internal_L9:
 s d0 Setting r8
 push r8
-push r9
+push r2
 jal waitForIdle
-pop r9
+pop r2
 pop r8
-move r7 r15
-ls r15 d0 0 Occupied
-beqz r15 __internal_L10
+move r1 r15
+ls r1 d0 0 Occupied
+beqz r1 __internal_L10
 s d0 Activate 1
 __internal_L10:
 push r8
-push r9
+push r2
 jal waitForIdle
-pop r9
+pop r2
 pop r8
-move r2 r15
+move r1 r15
 __internal_L5:
 pop ra
 pop sp
 j ra
 main:
-move r8 0
+move r3 0
 __internal_L11:
 yield
 l r1 d0 Idle
-seq r2 r1 0
-beqz r2 __internal_L13
+seq r1 r1 0
+beqz r1 __internal_L13
 j __internal_L11
 __internal_L13:
-add r3 r8 1
-sgt r4 r3 19
-add r5 r8 1
-select r6 r4 2 r5
-move r9 r6
-push r8
-push r9
-push r8
+add r1 r3 1
+sgt r2 r1 19
+add r1 r3 1
+select r2 r2 2 r1
+push r3
+push r2
+push r3
 jal checkAndHarvest
-pop r9
-pop r8
-move r7 r15
-s d0 Setting r9
-move r8 r9
+pop r2
+pop r3
+move r1 r15
+s d0 Setting r2
+move r3 r2
 j __internal_L11
 __internal_L12:
 
 ## Optimized Output
 
-j 77
+j 74
 push sp
 push ra
 yield
@@ -140,10 +137,9 @@ push sp
 push ra
 s d0 Setting 1
 jal 1
-move r1 r15
 s d0 Activate 1
 jal 1
-move r2 r15
+move r1 r15
 s d1 Open 0
 pop ra
 pop sp
@@ -151,73 +147,71 @@ j ra
 pop r8
 push sp
 push ra
-sle r1 r8 1
-ls r2 d0 255 Seeding
-slt r3 r2 1
-or r4 r1 r3
-beqz r4 32
-j 74
-ls r15 d0 255 Mature
-beqz r15 37
+sle r2 r8 1
+ls r1 d0 255 Seeding
+slt r1 r1 1
+or r1 r2 r1
+beqz r1 31
+j 71
+ls r1 d0 255 Mature
+beqz r1 36
 yield
 s d0 Activate 1
-j 32
-ls r9 d0 255 Occupied
+j 31
+ls r2 d0 255 Occupied
 s d0 Setting 1
 push r8
-push r9
+push r2
 jal 1
-pop r9
+pop r2
 pop r8
-move r5 r15
 push r8
-push r9
+push r2
 jal 11
-pop r9
+pop r2
 pop r8
-move r6 r15
-beqz r9 58
+move r1 r15
+beqz r2 56
 push r8
-push r9
+push r2
 jal 11
-pop r9
+pop r2
 pop r8
-move r7 r15
+move r1 r15
 s d0 Setting r8
 push r8
-push r9
+push r2
 jal 1
-pop r9
+pop r2
 pop r8
-move r7 r15
-ls r15 d0 0 Occupied
-beqz r15 68
+ls r1 d0 0 Occupied
+beqz r1 65
 s d0 Activate 1
 push r8
-push r9
+push r2
 jal 1
-pop r9
+pop r2
 pop r8
-move r2 r15
+move r1 r15
 pop ra
 pop sp
 j ra
-move r8 0
+move r3 0
 yield
 l r1 d0 Idle
-bne r1 0 82
-j 78
-add r3 r8 1
-sgt r4 r3 19
-add r5 r8 1
-select r9 r4 2 r5
-push r8
-push r9
-push r8
-jal 23
-pop r9
-pop r8
-move r7 r15
-s d0 Setting r9
-move r8 r9
-j 78
+bne r1 0 79
+j 75
+add r1 r3 1
+sgt r2 r1 19
+add r1 r3 1
+select r2 r2 2 r1
+push r3
+push r2
+push r3
+jal 22
+pop r2
+pop r3
+move r1 r15
+s d0 Setting r2
+move r3 r2
+j 75

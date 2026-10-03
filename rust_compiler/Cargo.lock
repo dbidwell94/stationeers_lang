@@ -197,9 +197,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "helpers",
+ "ic10",
  "il",
  "indoc",
  "lsp-types",
+ "optimizer",
  "parser",
  "pretty_assertions",
  "rust_decimal",
@@ -367,6 +369,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ic10"
+version = "0.1.0"
+dependencies = [
+ "il",
+ "thiserror",
+]
+
+[[package]]
 name = "il"
 version = "0.1.0"
 dependencies = [
@@ -412,6 +422,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "compiler",
+ "ic10",
  "il",
  "indoc",
  "insta",
@@ -550,6 +561,7 @@ dependencies = [
  "helpers",
  "il",
  "rust_decimal",
+ "thiserror",
 ]
 
 [[package]]
@@ -873,12 +885,13 @@ checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "slang"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "clap",
  "compiler",
  "helpers",
+ "ic10",
  "lsp-types",
  "optimizer",
  "parser",

@@ -176,9 +176,8 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilat
             Ok(result) => result,
             Err(_) => return (safer_ffi::String::EMPTY, Default::default()),
         };
-        let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
-
-        let res = compiler.compile(&output.root);
+        let res =
+            Compiler::compile_allocated(analyze_result, output.declaration_docs, &output.root);
 
         if !res.errors.is_empty() {
             return (safer_ffi::String::EMPTY, res.instructions.source_map());
@@ -189,7 +188,9 @@ pub fn compile_from_string(input: safer_ffi::slice::Ref<'_, u16>) -> FfiCompilat
         // writing into a Vec<u8>. This should not fail.
         let optimized = optimizer::optimize(res.instructions);
         let map = optimized.source_map();
-        _ = optimized.write(&mut writer);
+        if ic10::write(optimized, &mut writer).is_err() {
+            return (safer_ffi::String::EMPTY, map);
+        }
 
         let Ok(compiled_vec) = writer.into_inner() else {
             return (safer_ffi::String::EMPTY, map);
@@ -353,7 +354,7 @@ pub fn diagnose_source_with_symbols(
                 return FfiDiagnosticsAndSymbols {
                     diagnostics: vec![].into(),
                     symbols: vec![].into(),
-                }
+                };
             }
             Err(parse_errs) => {
                 let diagnostics = parse_errs

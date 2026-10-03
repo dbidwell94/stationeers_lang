@@ -8,7 +8,9 @@ use lsp_types::{Diagnostic, DiagnosticSeverity};
 use parser::tree_node::{DeviceType, Literal};
 use std::{
     borrow::Cow,
-    collections::{HashMap, VecDeque},
+    cell::Cell,
+    collections::{HashMap, HashSet, VecDeque},
+    rc::Rc,
 };
 use thiserror::Error;
 
@@ -74,6 +76,8 @@ pub enum LocationRequest {
     Temp,
     /// Request to store a variable in a persistant register.
     Persist,
+    /// Request a hardware persistent register even when virtual locals are enabled.
+    PhysicalPersist,
     /// Request to store a variable in the stack.
     Stack,
 }
@@ -82,8 +86,12 @@ pub enum LocationRequest {
 pub enum VariableLocation<'a> {
     /// Represents a temporary register (r1 - r7)
     Temporary(u8),
+    /// Represents a compiler temporary whose hardware register is assigned later.
+    VirtualTemporary(u32),
     /// Represents a persistant register (r8 - r14)
     Persistant(u8),
+    /// Represents a persistent local whose hardware register is assigned later.
+    VirtualPersistant(u32),
     /// Represents a a stack offset (current stack - offset = variable loc)
     Stack(u16),
     /// Represents a constant value and should be directly substituted as such.
@@ -115,6 +123,9 @@ pub struct VariableScope<'a, 'b> {
     /// since sibling scopes are constructed fresh with `array_offset: 0`.
     array_offset: u16,
     parent: Option<&'b VariableScope<'a, 'b>>,
+    virtual_persistent_registers: bool,
+    next_virtual_register: Rc<Cell<u32>>,
+    spilled_virtual_registers: Rc<HashSet<u32>>,
 }
 
 impl<'a, 'b> Default for VariableScope<'a, 'b> {
@@ -127,6 +138,9 @@ impl<'a, 'b> Default for VariableScope<'a, 'b> {
             temporary_vars: TEMP.to_vec().into(),
             var_lookup_table: HashMap::new(),
             device_reference_lookup_table: HashMap::new(),
+            virtual_persistent_registers: false,
+            next_virtual_register: Rc::new(Cell::new(0)),
+            spilled_virtual_registers: Rc::new(HashSet::new()),
         }
     }
 }
@@ -161,8 +175,43 @@ impl<'a, 'b> VariableScope<'a, 'b> {
             parent: Option::Some(parent),
             temporary_vars: parent.temporary_vars.clone(),
             persistant_vars: parent.persistant_vars.clone(),
+            virtual_persistent_registers: parent.virtual_persistent_registers,
+            next_virtual_register: parent.next_virtual_register.clone(),
+            spilled_virtual_registers: parent.spilled_virtual_registers.clone(),
             ..Default::default()
         }
+    }
+
+    pub fn virtualized_with_spills(spilled_registers: HashSet<u32>) -> Self {
+        Self {
+            virtual_persistent_registers: true,
+            spilled_virtual_registers: Rc::new(spilled_registers),
+            ..Default::default()
+        }
+    }
+
+    fn allocate_virtual_register(&self) -> u32 {
+        let register = self.next_virtual_register.get();
+        self.next_virtual_register.set(register + 1);
+        register
+    }
+
+    pub fn virtual_registers(&self) -> Vec<u32> {
+        let mut registers: Vec<u32> = self
+            .var_lookup_table
+            .values()
+            .filter_map(|location| match location {
+                VariableLocation::VirtualTemporary(register)
+                | VariableLocation::VirtualPersistant(register) => Some(*register),
+                _ => None,
+            })
+            .collect();
+        if let Some(parent) = self.parent {
+            registers.extend(parent.virtual_registers());
+        }
+        registers.sort_unstable();
+        registers.dedup();
+        registers
     }
 
     pub fn stack_offset(&self) -> u16 {
@@ -247,7 +296,16 @@ impl<'a, 'b> VariableScope<'a, 'b> {
         }
         let var_location = match location {
             LocationRequest::Temp => {
-                if let Some(next_var) = self.temporary_vars.pop_front() {
+                if self.virtual_persistent_registers {
+                    let register = self.allocate_virtual_register();
+                    if self.spilled_virtual_registers.contains(&register) {
+                        let loc = VariableLocation::Stack(self.stack_offset);
+                        self.stack_offset += 1;
+                        loc
+                    } else {
+                        VariableLocation::VirtualTemporary(register)
+                    }
+                } else if let Some(next_var) = self.temporary_vars.pop_front() {
                     VariableLocation::Temporary(next_var)
                 } else {
                     let loc = VariableLocation::Stack(self.stack_offset);
@@ -256,6 +314,24 @@ impl<'a, 'b> VariableScope<'a, 'b> {
                 }
             }
             LocationRequest::Persist => {
+                if self.virtual_persistent_registers {
+                    let register = self.allocate_virtual_register();
+                    if self.spilled_virtual_registers.contains(&register) {
+                        let loc = VariableLocation::Stack(self.stack_offset);
+                        self.stack_offset += 1;
+                        loc
+                    } else {
+                        VariableLocation::VirtualPersistant(register)
+                    }
+                } else if let Some(next_var) = self.persistant_vars.pop_front() {
+                    VariableLocation::Persistant(next_var)
+                } else {
+                    let loc = VariableLocation::Stack(self.stack_offset);
+                    self.stack_offset += 1;
+                    loc
+                }
+            }
+            LocationRequest::PhysicalPersist => {
                 if let Some(next_var) = self.persistant_vars.pop_front() {
                     VariableLocation::Persistant(next_var)
                 } else {
@@ -389,7 +465,14 @@ impl<'a, 'b> VariableScope<'a, 'b> {
             VariableLocation::Temporary(t) => {
                 self.temporary_vars.push_back(t);
             }
+            VariableLocation::VirtualTemporary(_) => {}
             VariableLocation::Persistant(_) => {
+                return Err(Error::UnknownVariable(
+                    Cow::from("Attempted to free a `let` variable."),
+                    span,
+                ));
+            }
+            VariableLocation::VirtualPersistant(_) => {
                 return Err(Error::UnknownVariable(
                     Cow::from("Attempted to free a `let` variable."),
                     span,
