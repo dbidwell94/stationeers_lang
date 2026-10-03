@@ -1,9 +1,7 @@
 use super::operands::fold_expression;
 use super::*;
-use crate::variable_manager::ArrayDescriptorLocation;
+use crate::variable_manager::ArrayPointerLocation;
 use parser::tree_node::ArrayRepeatExpression;
-
-const ARRAY_DESCRIPTOR_RADIX: i128 = 512;
 
 impl<'a> Compiler<'a> {
     /// Folds an array-repeat's `size` expression into a compile-time constant.
@@ -177,74 +175,46 @@ impl<'a> Compiler<'a> {
             return Ok((Operand::Register(temp_reg), Some(temp_name)));
         }
 
-        let VariableLocation::ArrayParameter { descriptor } = array else {
+        let VariableLocation::ArrayParameter { base } = array else {
             return Err(Error::OperationNotSupported(
                 "Expected an array location.".to_string(),
                 index.span,
             ));
         };
 
-        let (descriptor_operand, descriptor_cleanup) =
-            self.array_descriptor_operand(descriptor, scope)?;
-
+        let (base_operand, base_cleanup) = self.array_pointer_operand(base, scope)?;
+        let (index_operand, index_cleanup) = self.compile_operand(index, scope)?;
         let temp_name = self.next_temp_name();
         let temp_loc = scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
         let temp_reg = self.resolve_register(&temp_loc)?;
 
         self.write_instruction(
-            Instruction::Div(
+            Instruction::Add(
                 Operand::Register(temp_reg),
-                descriptor_operand,
-                Operand::Number(ARRAY_DESCRIPTOR_RADIX.into()),
+                base_operand,
+                index_operand,
             ),
             Some(index.span),
         )?;
 
-        if let Some(c) = descriptor_cleanup {
+        if let Some(c) = base_cleanup {
             scope.free_temp(c, None)?;
         }
-
-        if let Some(folded) = fold_expression(&index.node, scope) {
-            let is_zero = match folded {
-                Number::Integer(value, _) => value == 0,
-                Number::Decimal(value, _) => value == Decimal::ZERO,
-            };
-            if !is_zero {
-                self.write_instruction(
-                    Instruction::Add(
-                        Operand::Register(temp_reg),
-                        Operand::Register(temp_reg),
-                        Operand::Number(folded.into()),
-                    ),
-                    Some(index.span),
-                )?;
-            }
-        } else {
-            let (idx_operand, idx_cleanup) = self.compile_operand(index, scope)?;
-            self.write_instruction(
-                Instruction::Add(
-                    Operand::Register(temp_reg),
-                    Operand::Register(temp_reg),
-                    idx_operand,
-                ),
-                Some(index.span),
-            )?;
-            if let Some(c) = idx_cleanup {
-                scope.free_temp(c, None)?;
-            }
+        if let Some(c) = index_cleanup {
+            scope.free_temp(c, None)?;
         }
 
         Ok((Operand::Register(temp_reg), Some(temp_name)))
     }
 
-    pub(super) fn array_descriptor_operand(
+    pub(super) fn array_pointer_operand(
         &mut self,
-        descriptor: &ArrayDescriptorLocation,
+        base: &ArrayPointerLocation,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
-        match descriptor {
-            ArrayDescriptorLocation::Register(reg) => Ok((Operand::Register(*reg), None)),
-            ArrayDescriptorLocation::Stack(offset) => {
+        match base {
+            ArrayPointerLocation::Register(reg) => Ok((Operand::Register(*reg), None)),
+            ArrayPointerLocation::Stack(offset) => {
                 let temp_name = self.next_temp_name();
                 let temp_loc =
                     scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
@@ -270,51 +240,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn compile_array_length(
-        &mut self,
-        array: &VariableLocation<'a>,
-        scope: &mut VariableScope<'a, '_>,
-        span: Span,
-    ) -> Result<CompileLocation<'a>, Error<'a>> {
-        match array {
-            VariableLocation::Array { len, .. } => Ok(CompileLocation {
-                location: VariableLocation::Constant(Literal::Number(Number::Integer(
-                    *len as i128,
-                    Unit::None,
-                ))),
-                temp_name: None,
-            }),
-            VariableLocation::ArrayParameter { descriptor } => {
-                let (descriptor_operand, descriptor_cleanup) =
-                    self.array_descriptor_operand(descriptor, scope)?;
-                let temp_name = self.next_temp_name();
-                let temp_loc =
-                    scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
-                let temp_reg = self.resolve_register(&temp_loc)?;
-                self.write_instruction(
-                    Instruction::Mod(
-                        Operand::Register(temp_reg),
-                        descriptor_operand,
-                        Operand::Number(ARRAY_DESCRIPTOR_RADIX.into()),
-                    ),
-                    Some(span),
-                )?;
-                if let Some(c) = descriptor_cleanup {
-                    scope.free_temp(c, None)?;
-                }
-                Ok(CompileLocation {
-                    location: temp_loc,
-                    temp_name: Some(temp_name),
-                })
-            }
-            _ => Err(Error::OperationNotSupported(
-                "Expected an array location.".to_string(),
-                span,
-            )),
-        }
-    }
-
-    pub(super) fn compile_array_argument_descriptor(
+    pub(super) fn compile_array_argument_base(
         &mut self,
         expr: &Spanned<Expression<'a>>,
         scope: &mut VariableScope<'a, '_>,
@@ -324,18 +250,18 @@ impl<'a> Compiler<'a> {
                 let name = self.next_temp_name();
                 let name_span = expr.span;
                 let location = self.expression_array_literal(items, name, name_span, scope)?;
-                self.pack_array_descriptor(&location, scope, expr.span)
+                self.array_argument_base(&location, scope, expr.span)
             }
             Expression::ArrayRepeat(repeat) => {
                 let name = self.next_temp_name();
                 let name_span = expr.span;
                 let location = self.expression_array_repeat(repeat, name, name_span, scope)?;
-                self.pack_array_descriptor(&location, scope, expr.span)
+                self.array_argument_base(&location, scope, expr.span)
             }
-            Expression::Priority(inner) => self.compile_array_argument_descriptor(inner, scope),
+            Expression::Priority(inner) => self.compile_array_argument_base(inner, scope),
             Expression::Variable(name) => {
                 let location = scope.get_location_of(&name.node, Some(name.span))?;
-                self.pack_array_descriptor(&location, scope, name.span)
+                self.array_argument_base(&location, scope, name.span)
             }
             _ => Err(Error::OperationNotSupported(
                 "Function array arguments must be array literals or array variables.".to_string(),
@@ -344,19 +270,18 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn pack_array_descriptor(
+    fn array_argument_base(
         &mut self,
         location: &VariableLocation<'a>,
         scope: &mut VariableScope<'a, '_>,
         span: Span,
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
         match location {
-            VariableLocation::Array { base, len } => {
-                let packed = (*base as i128) * ARRAY_DESCRIPTOR_RADIX + *len as i128;
-                Ok((Operand::Number(Decimal::from(packed)), None))
+            VariableLocation::Array { base, .. } => {
+                Ok((Operand::Number((*base).into()), None))
             }
-            VariableLocation::ArrayParameter { descriptor } => {
-                self.array_descriptor_operand(descriptor, scope)
+            VariableLocation::ArrayParameter { base } => {
+                self.array_pointer_operand(base, scope)
             }
             _ => Err(Error::OperationNotSupported(
                 "Function argument is not an array.".to_string(),

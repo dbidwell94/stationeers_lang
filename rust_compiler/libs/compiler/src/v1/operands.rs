@@ -468,7 +468,7 @@ impl<'a> Compiler<'a> {
                     ..
                 } = comp_res
                 {
-                    // e.g. `arr.length`, constant-folded, no register involved.
+                    // Constant expressions need no intermediate register.
                     self.emit_variable_assignment(&var_loc, Operand::Number(num.into()))?;
                 } else {
                     let result_reg = self.resolve_register(&comp_res.location)?;

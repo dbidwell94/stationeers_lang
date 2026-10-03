@@ -413,12 +413,11 @@ impl<'a> Compiler<'a> {
                 // "load" behavior (e.g. `let x = d0.On`)
                 let MemberAccessExpression { object, member } = &access.node;
 
-                // `arr.length` is always known at compile time - constant-fold it,
-                // no instruction emitted.
-                if member.node == "length"
-                    && let Some(array) = Self::array_location_of(object, scope)
-                {
-                    return Ok(Some(self.compile_array_length(&array, scope, expr.span)?));
+                if member.node == "length" && Self::array_location_of(object, scope).is_some() {
+                    return Err(Error::OperationNotSupported(
+                        "Array length is not supported.".to_string(),
+                        expr.span,
+                    ));
                 }
 
                 // 1. Resolve the object to a device string (e.g., "d0" or "rX")

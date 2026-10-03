@@ -1,4 +1,4 @@
-use crate::variable_manager::ArrayDescriptorLocation;
+use crate::variable_manager::ArrayPointerLocation;
 use il::DeviceReference;
 
 use super::*;
@@ -62,9 +62,8 @@ impl<'a> Compiler<'a> {
         let parameter_kinds = self.function_parameter_kinds(&name.node);
         for (index, arg) in arguments.iter().enumerate() {
             if parameter_kinds.get(index) == Some(&ParameterKind::Array) {
-                let (descriptor, cleanup) =
-                    self.compile_array_argument_descriptor(arg, &mut stack)?;
-                self.write_instruction(Instruction::Push(descriptor), Some(arg.span))?;
+                let (base, cleanup) = self.compile_array_argument_base(arg, &mut stack)?;
+                self.write_instruction(Instruction::Push(base), Some(arg.span))?;
                 if let Some(temp_name) = cleanup {
                     stack.free_temp(temp_name, None)?;
                 }
@@ -259,9 +258,8 @@ impl<'a> Compiler<'a> {
         for (index, arg) in arguments.iter().enumerate() {
             let arg_span = arg.span;
             if parameter_kinds.get(index) == Some(&ParameterKind::Array) {
-                let (descriptor, temp_cleanup) =
-                    self.compile_array_argument_descriptor(arg, &mut stack)?;
-                self.write_instruction(Instruction::Push(descriptor), Some(arg_span))?;
+                let (base, temp_cleanup) = self.compile_array_argument_base(arg, &mut stack)?;
+                self.write_instruction(Instruction::Push(base), Some(arg_span))?;
                 if let Some(temp_name) = temp_cleanup {
                     stack.free_temp(temp_name, None)?;
                 }
@@ -711,7 +709,7 @@ impl<'a> Compiler<'a> {
             // we don't need to imcrement the stack offset as it's already on the stack from the
             // previous scope
 
-            let descriptor_register = match loc {
+            let base_register = match loc {
                 VariableLocation::Persistant(loc) => {
                     self.write_instruction(
                         Instruction::Pop(Operand::Register(loc)),
@@ -748,7 +746,7 @@ impl<'a> Compiler<'a> {
                 ParameterKind::Array => {
                     block_scope.mark_array_parameter(
                         &var_name.node,
-                        ArrayDescriptorLocation::Register(descriptor_register),
+                        ArrayPointerLocation::Register(base_register),
                     )?;
                 }
                 ParameterKind::Unknown | ParameterKind::Value => {}
@@ -773,7 +771,7 @@ impl<'a> Compiler<'a> {
                 && let VariableLocation::Stack(offset) = parameter_location
             {
                 block_scope
-                    .mark_array_parameter(&var_name.node, ArrayDescriptorLocation::Stack(offset))?;
+                    .mark_array_parameter(&var_name.node, ArrayPointerLocation::Stack(offset))?;
             }
             match parameter_kind {
                 ParameterKind::DevicePin => {

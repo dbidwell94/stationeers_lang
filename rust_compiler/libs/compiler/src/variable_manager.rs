@@ -93,13 +93,13 @@ pub enum VariableLocation<'a> {
     /// Represents a fixed, absolute `db` stack address range reserved for a
     /// user array: `base` is the starting address, `len` the element count.
     Array { base: u16, len: u16 },
-    /// Represents an array parameter whose packed base/length descriptor is
-    /// stored in a register or a compiler stack slot.
-    ArrayParameter { descriptor: ArrayDescriptorLocation },
+    /// Represents an array parameter whose base address is stored in a register
+    /// or a compiler stack slot.
+    ArrayParameter { base: ArrayPointerLocation },
 }
 
 #[derive(Clone, Debug)]
-pub enum ArrayDescriptorLocation {
+pub enum ArrayPointerLocation {
     Register(u8),
     Stack(u16),
 }
@@ -225,12 +225,12 @@ impl<'a, 'b> VariableScope<'a, 'b> {
     pub fn mark_array_parameter(
         &mut self,
         var_name: &Cow<'a, str>,
-        descriptor: ArrayDescriptorLocation,
+        base: ArrayPointerLocation,
     ) -> Result<(), Error<'a>> {
         let Some(location) = self.var_lookup_table.get_mut(var_name) else {
             return Err(Error::UnknownVariable(var_name.clone(), None));
         };
-        *location = VariableLocation::ArrayParameter { descriptor };
+        *location = VariableLocation::ArrayParameter { base };
         Ok(())
     }
 
@@ -339,13 +339,11 @@ impl<'a, 'b> VariableScope<'a, 'b> {
                     self.stack_offset - inserted_at_offset,
                 ));
             } else if let VariableLocation::ArrayParameter {
-                descriptor: ArrayDescriptorLocation::Stack(inserted_at_offset),
+                base: ArrayPointerLocation::Stack(inserted_at_offset),
             } = var
             {
                 return Ok(VariableLocation::ArrayParameter {
-                    descriptor: ArrayDescriptorLocation::Stack(
-                        self.stack_offset - inserted_at_offset,
-                    ),
+                    base: ArrayPointerLocation::Stack(self.stack_offset - inserted_at_offset),
                 });
             } else {
                 return Ok(var.clone());
@@ -360,11 +358,11 @@ impl<'a, 'b> VariableScope<'a, 'b> {
                 return Ok(VariableLocation::Stack(parent_offset + self.stack_offset));
             }
             if let VariableLocation::ArrayParameter {
-                descriptor: ArrayDescriptorLocation::Stack(parent_offset),
+                base: ArrayPointerLocation::Stack(parent_offset),
             } = loc
             {
                 return Ok(VariableLocation::ArrayParameter {
-                    descriptor: ArrayDescriptorLocation::Stack(parent_offset + self.stack_offset),
+                    base: ArrayPointerLocation::Stack(parent_offset + self.stack_offset),
                 });
             }
             return Ok(loc);

@@ -7,14 +7,13 @@ fn arrayless_program_does_not_reserve_stack() -> anyhow::Result<()> {
 }
 
 #[test]
-fn arrays_reserve_stack_and_support_indexing_and_length() -> anyhow::Result<()> {
+fn arrays_reserve_stack_and_support_indexing() -> anyhow::Result<()> {
     let result = compile! {
         check "
             let values = [10, 20, 30];
             let index = 1;
             let value = values[index];
             values[0] = 99;
-            let count = values.length;
         "
     };
 
@@ -28,7 +27,6 @@ fn arrays_reserve_stack_and_support_indexing_and_length() -> anyhow::Result<()> 
     assert!(result.output.contains("get r"));
     assert!(result.output.contains("put db 0 99"));
     assert!(result.output.contains("move r"));
-    assert!(result.output.ends_with(" 3\n"));
     Ok(())
 }
 
@@ -46,7 +44,7 @@ fn arrays_can_be_passed_and_mutated_by_functions() -> anyhow::Result<()> {
 
     assert!(result.errors.is_empty(), "{:?}", result.errors);
     assert!(result.output.contains("put db r"));
-    assert!(result.output.contains("push 3\njal mutate"));
+    assert!(result.output.contains("push 0\njal mutate"));
     Ok(())
 }
 
@@ -63,7 +61,7 @@ fn array_literal_can_be_passed_directly_to_a_function() -> anyhow::Result<()> {
 
     assert!(result.errors.is_empty(), "{:?}", result.errors);
     assert!(result.output.contains("put db 0 1\nput db 1 2"));
-    assert!(result.output.contains("push 2\njal mutate"));
+    assert!(result.output.contains("push 0\njal mutate"));
     Ok(())
 }
 
@@ -199,7 +197,7 @@ fn arrays_forward_through_function_parameters() -> anyhow::Result<()> {
     let result = compile! {
         check "
             fn inner(values) {
-                values[0] = values.length;
+                values[0] = 7;
             }
             fn outer(values) {
                 inner(values);
@@ -210,8 +208,48 @@ fn arrays_forward_through_function_parameters() -> anyhow::Result<()> {
     };
 
     assert!(result.errors.is_empty(), "{:?}", result.errors);
-    assert!(result.output.contains("div r"));
-    assert!(result.output.contains("mod r"));
+    assert!(!result.output.contains("div "));
+    assert!(result.output.contains("push r8\njal inner"));
+    Ok(())
+}
+
+#[test]
+fn array_length_is_not_supported() -> anyhow::Result<()> {
+    let result = compile! {
+        check "
+            let values = [1, 2, 3];
+            let count = values.length;
+        "
+    };
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|error| error.to_string().contains("Array length is not supported")),
+        "expected an unsupported array length error, got: {:?}",
+        result.errors
+    );
+    Ok(())
+}
+
+#[test]
+fn function_array_parameter_receives_the_base_address() -> anyhow::Result<()> {
+    let result = compile! {
+        check "
+            fn read_four(values) {
+                let value = values[4];
+            }
+            let prefix = [|2|];
+            let values = [|8|];
+            let value = read_four(values);
+        "
+    };
+
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert!(result.output.contains("add r1 r8 4"));
+    assert!(result.output.contains("push 2\njal read_four"));
+    assert!(!result.output.contains("div "));
+    assert!(!result.output.contains("mod "));
     Ok(())
 }
 
