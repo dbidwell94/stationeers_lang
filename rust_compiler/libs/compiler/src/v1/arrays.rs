@@ -158,6 +158,9 @@ impl<'a> Compiler<'a> {
             }
 
             let (idx_operand, idx_cleanup) = self.compile_operand(index, scope)?;
+            if *base == 0 {
+                return Ok((idx_operand, idx_cleanup));
+            }
             let temp_name = self.next_temp_name();
             let temp_loc = scope.add_variable(temp_name.clone(), LocationRequest::Temp, None)?;
             let temp_reg = self.resolve_register(&temp_loc)?;
@@ -189,11 +192,7 @@ impl<'a> Compiler<'a> {
         let temp_reg = self.resolve_register(&temp_loc)?;
 
         self.write_instruction(
-            Instruction::Add(
-                Operand::Register(temp_reg),
-                base_operand,
-                index_operand,
-            ),
+            Instruction::Add(Operand::Register(temp_reg), base_operand, index_operand),
             Some(index.span),
         )?;
 
@@ -277,12 +276,8 @@ impl<'a> Compiler<'a> {
         span: Span,
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
         match location {
-            VariableLocation::Array { base, .. } => {
-                Ok((Operand::Number((*base).into()), None))
-            }
-            VariableLocation::ArrayParameter { base } => {
-                self.array_pointer_operand(base, scope)
-            }
+            VariableLocation::Array { base, .. } => Ok((Operand::Number((*base).into()), None)),
+            VariableLocation::ArrayParameter { base } => self.array_pointer_operand(base, scope),
             _ => Err(Error::OperationNotSupported(
                 "Function argument is not an array.".to_string(),
                 span,

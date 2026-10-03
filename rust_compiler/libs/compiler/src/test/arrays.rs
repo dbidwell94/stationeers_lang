@@ -31,6 +31,39 @@ fn arrays_reserve_stack_and_support_indexing() -> anyhow::Result<()> {
 }
 
 #[test]
+fn zero_base_array_index_skips_address_add() -> anyhow::Result<()> {
+    let result = compile! {
+        check "
+            let values = [1, 2, 3];
+            let index = 1;
+            let value = values[index];
+        "
+    };
+
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert!(result.output.contains("get r1 db r8"), "{}", result.output);
+    assert!(!result.output.contains("add r1 0 r8"), "{}", result.output);
+    Ok(())
+}
+
+#[test]
+fn nonzero_base_array_index_adds_base() -> anyhow::Result<()> {
+    let result = compile! {
+        check "
+            let first = [1, 2];
+            let values = [3, 4, 5];
+            let index = 1;
+            let value = values[index];
+        "
+    };
+
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert!(result.output.contains("add r1 2 r8"), "{}", result.output);
+    assert!(result.output.contains("get r2 db r1"), "{}", result.output);
+    Ok(())
+}
+
+#[test]
 fn arrays_can_be_passed_and_mutated_by_functions() -> anyhow::Result<()> {
     let result = compile! {
         check "
