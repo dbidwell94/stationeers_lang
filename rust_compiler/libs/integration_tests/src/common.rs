@@ -18,8 +18,12 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
         .analyze(&output.root)
         .expect("Failed to analyze source code");
 
-    let compiler = Compiler::new(analyze_result, output.declaration_docs, None);
-    let result = compiler.compile(&output.root);
+    let result = Compiler::compile_allocated(analyze_result, output.declaration_docs, &output.root);
+    assert!(
+        result.register_allocated,
+        "unoptimized integration output fell back: {:?}",
+        result.allocation_fallback_reason
+    );
 
     // Get unoptimized output
     let mut unoptimized_writer = std::io::BufWriter::new(Vec::new());
@@ -44,8 +48,13 @@ pub fn compile_with_and_without_optimization(source: &str) -> String {
         .analyze(&output2.root)
         .expect("Failed to analyze source code");
 
-    let compiler2 = Compiler::new(analyze_result2, output2.declaration_docs, None);
-    let result2 = compiler2.compile(&output2.root);
+    let result2 =
+        Compiler::compile_allocated(analyze_result2, output2.declaration_docs, &output2.root);
+    assert!(
+        result2.register_allocated,
+        "optimized integration output fell back: {:?}",
+        result2.allocation_fallback_reason
+    );
 
     // Apply optimizations
     let optimized_instructions = optimizer::optimize(result2.instructions);

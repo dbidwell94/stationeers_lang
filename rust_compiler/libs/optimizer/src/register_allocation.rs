@@ -52,6 +52,7 @@ pub fn build_control_flow_graph(
     for (index, node) in instructions.iter().enumerate() {
         let fallthrough = (index + 1 < instructions.len()).then_some(index + 1);
         match &node.instruction {
+            Instruction::Jump(Operand::ReturnAddress) => {}
             Instruction::Jump(target) => {
                 successors[index].push(resolve_target(target, &labels)?);
             }
@@ -399,7 +400,7 @@ mod tests {
             )),
             node(Instruction::Jump(Operand::Label("done".into()))),
             node(Instruction::LabelDef("done".into())),
-            node(Instruction::JumpRelative(Operand::ReturnAddress)),
+            node(Instruction::Jump(Operand::ReturnAddress)),
         ];
 
         let graph = build_control_flow_graph(&instructions).unwrap();

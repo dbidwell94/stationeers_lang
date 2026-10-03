@@ -158,6 +158,13 @@ impl<'a> Compiler<'a> {
                     None,
                 )?;
             }
+            VariableLocation::VirtualTemporary(register)
+            | VariableLocation::VirtualPersistant(register) => {
+                self.write_instruction(
+                    Instruction::Move(Operand::VirtualRegister(*register), source_value),
+                    None,
+                )?;
+            }
             VariableLocation::Stack(_) => {
                 self.write_instruction(Instruction::Push(source_value), None)?;
             }
@@ -319,7 +326,7 @@ impl<'a> Compiler<'a> {
                 } else {
                     // Move result from temp to new persistent variable
                     let result_reg = self.resolve_register(&result.location)?;
-                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+                    self.emit_variable_assignment(&var_loc, result_reg)?;
 
                     // Free the temp result
                     if let Some(name) = result.temp_name {
@@ -338,7 +345,7 @@ impl<'a> Compiler<'a> {
 
                 // Move result from temp to new persistent variable
                 let result_reg = self.resolve_register(&result.location)?;
-                self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+                self.emit_variable_assignment(&var_loc, result_reg)?;
 
                 // Free the temp result
                 if let Some(name) = result.temp_name {
@@ -373,6 +380,10 @@ impl<'a> Compiler<'a> {
                 let src = match src_loc {
                     VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
                         Operand::Register(r)
+                    }
+                    VariableLocation::VirtualTemporary(register)
+                    | VariableLocation::VirtualPersistant(register) => {
+                        Operand::VirtualRegister(register)
                     }
                     VariableLocation::Stack(offset) => {
                         self.write_instruction(
@@ -472,7 +483,7 @@ impl<'a> Compiler<'a> {
                     self.emit_variable_assignment(&var_loc, Operand::Number(num.into()))?;
                 } else {
                     let result_reg = self.resolve_register(&comp_res.location)?;
-                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+                    self.emit_variable_assignment(&var_loc, result_reg)?;
 
                     if let Some(temp) = comp_res.temp_name {
                         scope.free_temp(temp, None)?;
@@ -490,7 +501,7 @@ impl<'a> Compiler<'a> {
                 )?;
 
                 let res_register = self.resolve_register(&res.location)?;
-                self.emit_variable_assignment(&var_loc, Operand::Register(res_register))?;
+                self.emit_variable_assignment(&var_loc, res_register)?;
 
                 if let Some(name) = res.temp_name {
                     scope.free_temp(name, None)?;
@@ -523,7 +534,7 @@ impl<'a> Compiler<'a> {
                 if let Some(res) = result {
                     // Move result from temp to new persistent variable
                     let result_reg = self.resolve_register(&res.location)?;
-                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+                    self.emit_variable_assignment(&var_loc, result_reg)?;
 
                     // Free the temp result
                     if let Some(name) = res.temp_name {
@@ -549,7 +560,7 @@ impl<'a> Compiler<'a> {
                 if let Some(res) = result {
                     // Move result from temp to new persistent variable
                     let result_reg = self.resolve_register(&res.location)?;
-                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+                    self.emit_variable_assignment(&var_loc, result_reg)?;
 
                     // Free the temp result
                     if let Some(name) = res.temp_name {
@@ -575,7 +586,7 @@ impl<'a> Compiler<'a> {
                 if let Some(res) = result {
                     // Move result from temp to new persistent variable
                     let result_reg = self.resolve_register(&res.location)?;
-                    self.emit_variable_assignment(&var_loc, Operand::Register(result_reg))?;
+                    self.emit_variable_assignment(&var_loc, result_reg)?;
 
                     // Free the temp result
                     if let Some(name) = res.temp_name {
@@ -645,6 +656,13 @@ impl<'a> Compiler<'a> {
                     VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
                         self.write_instruction(
                             Instruction::Move(Operand::Register(reg), val),
+                            Some(expr_span),
+                        )?;
+                    }
+                    VariableLocation::VirtualTemporary(register)
+                    | VariableLocation::VirtualPersistant(register) => {
+                        self.write_instruction(
+                            Instruction::Move(Operand::VirtualRegister(register), val),
                             Some(expr_span),
                         )?;
                     }
@@ -805,9 +823,18 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    pub(super) fn resolve_register(&self, loc: &VariableLocation) -> Result<u8, Error<'a>> {
+    pub(super) fn resolve_register(
+        &self,
+        loc: &VariableLocation<'a>,
+    ) -> Result<Operand<'a>, Error<'a>> {
         match loc {
-            VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => Ok(*r),
+            VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
+                Ok(Operand::Register(*r))
+            }
+            VariableLocation::VirtualTemporary(register)
+            | VariableLocation::VirtualPersistant(register) => {
+                Ok(Operand::VirtualRegister(*register))
+            }
             VariableLocation::Constant(_) => Err(Error::Unknown(
                 "Cannot resolve a constant value to register".into(),
                 None,
@@ -876,6 +903,10 @@ impl<'a> Compiler<'a> {
             VariableLocation::Temporary(r) | VariableLocation::Persistant(r) => {
                 Ok((Operand::Register(r), result.temp_name))
             }
+            VariableLocation::VirtualTemporary(register)
+            | VariableLocation::VirtualPersistant(register) => {
+                Ok((Operand::VirtualRegister(register), result.temp_name))
+            }
             VariableLocation::Constant(lit) => match lit {
                 Literal::Number(n) => Ok((Operand::Number(n.into()), None)),
                 Literal::Boolean(b) => Ok((Operand::Number(Number::from(b).into()), None)),
@@ -898,7 +929,7 @@ impl<'a> Compiler<'a> {
                 )?;
                 self.write_instruction(
                     Instruction::Get(
-                        Operand::Register(temp_reg),
+                        temp_reg.clone(),
                         Operand::Device(DeviceType::Housing),
                         Operand::Register(VariableScope::TEMP_STACK_REGISTER),
                     ),
@@ -908,7 +939,7 @@ impl<'a> Compiler<'a> {
                 // If the original result had a temp name (unlikely for Stack, but possible logic),
                 // we technically should free it if it's not needed, but Stack usually implies it's safe there.
                 // We return the NEW temp name to be freed.
-                Ok((Operand::Register(temp_reg), Some(temp_name)))
+                Ok((temp_reg, Some(temp_name)))
             }
             VariableLocation::Device(d) => Ok((Operand::Device(d), None)),
             VariableLocation::Array { .. } => Err(Error::OperationNotSupported(
@@ -963,11 +994,16 @@ impl<'a> Compiler<'a> {
                 scope.add_variable(temp_name.clone(), LocationRequest::Temp, Some(expr.span))?;
             let register = self.resolve_register(&temp_location)?;
             self.emit_variable_assignment(&temp_location, Operand::Number(value))?;
+            let reference = match register {
+                Operand::Register(register) => LiteralOrReference::Reference(register),
+                Operand::VirtualRegister(register) => {
+                    LiteralOrReference::VirtualReference(register)
+                }
+                _ => unreachable!("register allocation returned a non-register operand"),
+            };
 
             return Ok((
-                Operand::DeviceReference(DeviceReference::Pin(LiteralOrReference::Reference(
-                    register,
-                ))),
+                Operand::DeviceReference(DeviceReference::Pin(reference)),
                 Some(temp_name),
             ));
         }
@@ -978,11 +1014,15 @@ impl<'a> Compiler<'a> {
 
         let device_reference = scope.get_device_reference(&name.node);
         let (operand, cleanup) = self.compile_operand(expr, scope)?;
-        let (Operand::Register(register), Some(device)) = (&operand, device_reference) else {
+        let Some(device) = device_reference else {
             return Ok((operand, cleanup));
         };
 
-        let reference = LiteralOrReference::Reference(*register);
+        let reference = match operand {
+            Operand::Register(register) => LiteralOrReference::Reference(register),
+            Operand::VirtualRegister(register) => LiteralOrReference::VirtualReference(register),
+            _ => return Ok((operand, cleanup)),
+        };
         let operand = match device {
             DeviceType::Housing => DeviceReference::Housing(reference),
             DeviceType::Pin(_) => DeviceReference::Pin(reference),
@@ -1001,20 +1041,17 @@ impl<'a> Compiler<'a> {
     ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
         // If opr result landed in RETURN_REGISTER, spill it to a fresh temp before
         // compiling the next operand, which may also emit a syscall and overwrite that register.
-        if !matches!(operand, Operand::Register(r) if r == VariableScope::RETURN_REGISTER) {
+        if !matches!(&operand, Operand::Register(r) if *r == VariableScope::RETURN_REGISTER) {
             return Ok((operand, cleanup));
         }
         let spill_name = self.next_temp_name();
         let spill_loc = scope.add_variable(spill_name.clone(), LocationRequest::Temp, None)?;
         let spill_reg = self.resolve_register(&spill_loc)?;
-        self.write_instruction(
-            Instruction::Move(Operand::Register(spill_reg), operand),
-            None,
-        )?;
+        self.write_instruction(Instruction::Move(spill_reg.clone(), operand), None)?;
         if let Some(name) = cleanup {
             scope.free_temp(name, None)?;
         }
-        Ok((Operand::Register(spill_reg), Some(spill_name)))
+        Ok((spill_reg, Some(spill_name)))
     }
 
     pub(super) fn compile_literal_or_variable(
@@ -1142,10 +1179,7 @@ impl<'a> Compiler<'a> {
         let result_reg = self.resolve_register(&result_loc)?;
 
         // Emit instruction: op result lhs rhs
-        self.write_instruction(
-            op_instr(Operand::Register(result_reg), lhs_tup.0, rhs_tup.0),
-            Some(span),
-        )?;
+        self.write_instruction(op_instr(result_reg, lhs_tup.0, rhs_tup.0), Some(span))?;
 
         // Clean up operand temps
         Self::cleanup_temps(scope, &[lhs_tup.1, rhs_tup.1])?;
@@ -1173,11 +1207,7 @@ impl<'a> Compiler<'a> {
 
                 // seq rX rY 0  => if rY == 0 set rX = 1 else rX = 0
                 self.write_instruction(
-                    Instruction::SetEq(
-                        Operand::Register(result_reg),
-                        inner_str,
-                        Operand::Number(0.into()),
-                    ),
+                    Instruction::SetEq(result_reg, inner_str, Operand::Number(0.into())),
                     Some(span),
                 )?;
 
@@ -1236,10 +1266,7 @@ impl<'a> Compiler<'a> {
                 let result_reg = self.resolve_register(&result_loc)?;
 
                 // Emit instruction: op result lhs rhs
-                self.write_instruction(
-                    op_instr(Operand::Register(result_reg), lhs, rhs),
-                    Some(span),
-                )?;
+                self.write_instruction(op_instr(result_reg, lhs, rhs), Some(span))?;
 
                 // Clean up operand temps
                 Self::cleanup_temps(scope, &[lhs_cleanup, rhs_cleanup])?;

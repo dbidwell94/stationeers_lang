@@ -12,22 +12,23 @@ push sp
 push ra
 sgt r1 r9 r8
 beqz r1 __internal_L2
-move r10 1
+move r1 1
 __internal_L2:
 __internal_L1:
 pop ra
 pop sp
 j ra
+main:
 
 ## Optimized Output
 
-j main
+j 10
 pop r8
 pop r9
 push sp
 push ra
 ble r9 r8 7
-move r10 1
+move r1 1
 pop ra
 pop sp
 j ra

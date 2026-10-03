@@ -6,8 +6,8 @@ expression: output
 
 j main
 main:
-move r8 15
+move r1 15
 
 ## Optimized Output
 
-move r8 15
+move r1 15

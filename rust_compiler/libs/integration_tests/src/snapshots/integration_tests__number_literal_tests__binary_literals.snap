@@ -6,14 +6,11 @@ expression: output
 
 j main
 main:
-move r8 172
-move r9 493
-move r10 3735928559
-move r11 51966
+move r1 172
+move r1 493
+move r1 3735928559
+move r1 51966
 
 ## Optimized Output
 
-move r8 172
-move r9 493
-move r10 3735928559
-move r11 51966
+move r1 51966

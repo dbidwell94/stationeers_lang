@@ -18,7 +18,7 @@ impl<'a> Compiler<'a> {
         invoke_expr: &InvocationExpression<'a>,
         parent_scope: &mut VariableScope<'a, '_>,
         backup_registers: bool,
-    ) -> Result<(), Error<'a>> {
+    ) -> Result<Vec<u32>, Error<'a>> {
         let InvocationExpression { name, arguments } = invoke_expr;
 
         if !self
@@ -28,7 +28,7 @@ impl<'a> Compiler<'a> {
         {
             self.errors
                 .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let Some(args) = self.function_meta.params.get(name.node.as_ref()) else {
@@ -38,9 +38,10 @@ impl<'a> Compiler<'a> {
         if args.len() != arguments.len() {
             self.errors
                 .push(Error::AgrumentMismatch(name.node.clone(), name.span));
-            return Ok(());
+            return Ok(Vec::new());
         }
         let mut stack = VariableScope::scoped(parent_scope);
+        let active_virtual_registers = stack.virtual_registers();
 
         // Get the list of active registers (may or may not backup)
         let active_registers = stack.registers();
@@ -58,6 +59,17 @@ impl<'a> Compiler<'a> {
                     Some(name.span),
                 )?;
             }
+        }
+        for register in &active_virtual_registers {
+            stack.add_variable(
+                Cow::from(format!("__virtual_backup_{register}")),
+                LocationRequest::Stack,
+                None,
+            )?;
+            self.write_instruction(
+                Instruction::Push(Operand::VirtualRegister(*register)),
+                Some(name.span),
+            )?;
         }
         let parameter_kinds = self.function_parameter_kinds(&name.node);
         for (index, arg) in arguments.iter().enumerate() {
@@ -102,6 +114,13 @@ impl<'a> Compiler<'a> {
                         VariableLocation::Persistant(reg) | VariableLocation::Temporary(reg) => {
                             self.write_instruction(
                                 Instruction::Push(Operand::Register(reg)),
+                                Some(var_name.span),
+                            )?;
+                        }
+                        VariableLocation::VirtualTemporary(register)
+                        | VariableLocation::VirtualPersistant(register) => {
+                            self.write_instruction(
+                                Instruction::Push(Operand::VirtualRegister(register)),
                                 Some(var_name.span),
                             )?;
                         }
@@ -175,7 +194,7 @@ impl<'a> Compiler<'a> {
         let Some(_location) = self.function_meta.locations.get(&name.node) else {
             self.errors
                 .push(Error::UnknownIdentifier(name.node.clone(), name.span));
-            return Ok(());
+            return Ok(Vec::new());
         };
 
         self.write_instruction(
@@ -204,6 +223,15 @@ impl<'a> Compiler<'a> {
             }
         }
 
+        if !returns_tuple {
+            for register in active_virtual_registers.iter().rev() {
+                self.write_instruction(
+                    Instruction::Pop(Operand::VirtualRegister(*register)),
+                    Some(name.span),
+                )?;
+            }
+        }
+
         // pop all registers back (if they were backed up)
         if backup_registers {
             for register in active_registers.iter().rev() {
@@ -214,7 +242,11 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        Ok(())
+        Ok(if returns_tuple {
+            active_virtual_registers
+        } else {
+            Vec::new()
+        })
     }
 
     pub(super) fn expression_function_invocation(
@@ -243,6 +275,7 @@ impl<'a> Compiler<'a> {
 
         // backup all used registers to the stack
         let active_registers = stack.registers();
+        let active_virtual_registers = stack.virtual_registers();
         for register in &active_registers {
             stack.add_variable(
                 Cow::from(format!("temp_{register}")),
@@ -251,6 +284,17 @@ impl<'a> Compiler<'a> {
             )?;
             self.write_instruction(
                 Instruction::Push(Operand::Register(*register)),
+                Some(name.span),
+            )?;
+        }
+        for register in &active_virtual_registers {
+            stack.add_variable(
+                Cow::from(format!("__virtual_backup_{register}")),
+                LocationRequest::Stack,
+                None,
+            )?;
+            self.write_instruction(
+                Instruction::Push(Operand::VirtualRegister(*register)),
                 Some(name.span),
             )?;
         }
@@ -363,7 +407,7 @@ impl<'a> Compiler<'a> {
 
         // cleanup spilled temporary variables
         let total_stack_usage = stack.stack_offset();
-        let saved_regs_count = active_registers.len() as u16;
+        let saved_regs_count = (active_registers.len() + active_virtual_registers.len()) as u16;
 
         if total_stack_usage > saved_regs_count {
             let spill_amount = total_stack_usage - saved_regs_count;
@@ -373,6 +417,14 @@ impl<'a> Compiler<'a> {
                     Operand::StackPointer,
                     Operand::Number(spill_amount.into()),
                 ),
+                Some(name.span),
+            )?;
+        }
+
+        // Restore virtual values first because they were pushed after physical registers.
+        for register in active_virtual_registers.iter().rev() {
+            self.write_instruction(
+                Instruction::Pop(Operand::VirtualRegister(*register)),
                 Some(name.span),
             )?;
         }
@@ -414,6 +466,16 @@ impl<'a> Compiler<'a> {
                                     Instruction::Move(
                                         Operand::Register(VariableScope::RETURN_REGISTER),
                                         Operand::Register(reg),
+                                    ),
+                                    Some(span),
+                                )?;
+                            }
+                            VariableLocation::VirtualTemporary(register)
+                            | VariableLocation::VirtualPersistant(register) => {
+                                self.write_instruction(
+                                    Instruction::Move(
+                                        Operand::Register(VariableScope::RETURN_REGISTER),
+                                        Operand::VirtualRegister(register),
                                     ),
                                     Some(span),
                                 )?;
@@ -498,7 +560,7 @@ impl<'a> Compiler<'a> {
                     self.write_instruction(
                         Instruction::Move(
                             Operand::Register(VariableScope::RETURN_REGISTER),
-                            Operand::Register(result_reg),
+                            result_reg,
                         ),
                         Some(span),
                     )?;
@@ -514,7 +576,7 @@ impl<'a> Compiler<'a> {
                     self.write_instruction(
                         Instruction::Move(
                             Operand::Register(VariableScope::RETURN_REGISTER),
-                            Operand::Register(result_reg),
+                            result_reg,
                         ),
                         Some(span),
                     )?;
@@ -538,7 +600,7 @@ impl<'a> Compiler<'a> {
                         self.write_instruction(
                             Instruction::Move(
                                 Operand::Register(VariableScope::RETURN_REGISTER),
-                                Operand::Register(reg),
+                                reg,
                             ),
                             Some(span),
                         )?;
@@ -709,7 +771,7 @@ impl<'a> Compiler<'a> {
         {
             let loc = block_scope.add_variable(
                 var_name.node.clone(),
-                LocationRequest::Persist,
+                LocationRequest::PhysicalPersist,
                 Some(var_name.span),
             )?;
             // we don't need to imcrement the stack offset as it's already on the stack from the

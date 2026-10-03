@@ -10,6 +10,7 @@ tokenizer = { path = "../tokenizer" }
 helpers = { path = "../helpers" }
 static_analysis = { path = "../static_analysis" }
 il = { path = "../il" }
+optimizer = { path = "../optimizer" }
 lsp-types = { workspace = true }
 rust_decimal = { workspace = true }
 anyhow = { workspace = true }

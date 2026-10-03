@@ -6,28 +6,27 @@ expression: output
 
 j main
 main:
-move r8 r15
-move r9 16
-move r10 7
-sll r1 r8 16
-sll r2 r9 8
-or r3 r1 r2
-or r4 r3 r10
-move r11 r4
-move r12 255
-put d0 r12 r11
-get r5 d0 r12
-move r13 r5
+move r2 r15
+move r1 16
+move r3 7
+sll r2 r2 16
+sll r1 r1 8
+or r1 r2 r1
+or r1 r1 r3
+move r2 r1
+move r1 255
+put d0 r1 r2
+get r1 d0 r1
+move r1 r1
 
 ## Optimized Output
 
-move r8 r15
-move r9 16
-move r10 7
-sll r1 r8 16
-move r2 4096
-or r3 r1 r2
-or r11 r3 r10
-move r12 255
-put d0 r12 r11
-get r13 d0 r12
+move r2 r15
+move r3 7
+sll r2 r2 16
+move r1 4096
+or r1 r2 r1
+or r2 r1 r3
+move r1 255
+put d0 r1 r2
+get r1 d0 r1

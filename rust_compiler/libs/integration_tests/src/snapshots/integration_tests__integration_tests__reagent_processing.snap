@@ -8,54 +8,54 @@ j main
 main:
 s d2 Mode 1
 s d2 On 0
-move r8 0
-move r9 0
+move r4 0
+move r3 0
 __internal_L1:
 yield
 l r1 d0 Reagents
-move r10 r1
-sge r2 r10 100
-sge r3 r9 2
-or r4 r2 r3
-beqz r4 __internal_L3
-move r8 1
+move r5 r1
+sge r2 r5 100
+sge r1 r3 2
+or r1 r2 r1
+beqz r1 __internal_L3
+move r4 1
 __internal_L3:
-slt r5 r10 100
+slt r2 r5 100
 ls r15 d0 0 Occupied
-seq r6 r15 0
-and r7 r5 r6
-add r1 r9 1
-select r2 r7 r1 0
-move r9 r2
-l r3 d0 Rpm
-slt r4 r3 1
-and r5 r8 r4
-beqz r5 __internal_L4
+seq r1 r15 0
+and r2 r2 r1
+add r1 r3 1
+select r1 r2 r1 0
+move r3 r1
+l r1 d0 Rpm
+slt r1 r1 1
+and r1 r4 r1
+beqz r1 __internal_L4
 s d0 Open 1
-seq r6 r10 0
+seq r1 r5 0
 ls r15 d0 0 Occupied
-and r7 r6 r15
-seq r1 r7 0
-move r8 r1
+and r1 r1 r15
+seq r1 r1 0
+move r4 r1
 __internal_L4:
-seq r6 r8 0
-s d0 On r6
+seq r1 r4 0
+s d0 On r1
 ls r15 d1 0 Quantity
-move r11 r15
-l r7 d3 Pressure
-sgt r1 r7 200
+move r2 r15
+l r1 d3 Pressure
+sgt r1 r1 200
 beqz r1 __internal_L5
 j __internal_L1
 __internal_L5:
-sgt r2 r11 0
-s d1 On r2
-sgt r3 r11 0
-s d1 Activate r3
-l r4 d3 Pressure
-sgt r5 r4 0
-l r6 d1 Activate
-or r7 r5 r6
-s d2 On r7
+sgt r1 r2 0
+s d1 On r1
+sgt r1 r2 0
+s d1 Activate r1
+l r1 d3 Pressure
+sgt r2 r1 0
+l r1 d1 Activate
+or r1 r2 r1
+s d2 On r1
 l r1 d1 Activate
 s db Setting r1
 j __internal_L1
@@ -65,45 +65,45 @@ __internal_L2:
 
 s d2 Mode 1
 s d2 On 0
-move r8 0
-move r9 0
+move r4 0
+move r3 0
 yield
-l r10 d0 Reagents
-sge r2 r10 100
-sge r3 r9 2
-or r4 r2 r3
-beqz r4 11
-move r8 1
-slt r5 r10 100
+l r5 d0 Reagents
+sge r2 r5 100
+sge r1 r3 2
+or r1 r2 r1
+beqz r1 11
+move r4 1
+slt r2 r5 100
 ls r15 d0 0 Occupied
-seq r6 r15 0
-and r7 r5 r6
-add r1 r9 1
-select r9 r7 r1 0
-l r3 d0 Rpm
-slt r4 r3 1
-and r5 r8 r4
-beqz r5 26
+seq r1 r15 0
+and r2 r2 r1
+add r1 r3 1
+select r3 r2 r1 0
+l r1 d0 Rpm
+slt r1 r1 1
+and r1 r4 r1
+beqz r1 26
 s d0 Open 1
-seq r6 r10 0
+seq r1 r5 0
 ls r15 d0 0 Occupied
-and r7 r6 r15
-seq r8 r7 0
-seq r6 r8 0
-s d0 On r6
-ls r11 d1 0 Quantity
-l r7 d3 Pressure
-ble r7 200 32
+and r1 r1 r15
+seq r4 r1 0
+seq r1 r4 0
+s d0 On r1
+ls r2 d1 0 Quantity
+l r1 d3 Pressure
+ble r1 200 32
 j 4
-sgt r2 r11 0
-s d1 On r2
-sgt r3 r11 0
-s d1 Activate r3
-l r4 d3 Pressure
-sgt r5 r4 0
-l r6 d1 Activate
-or r7 r5 r6
-s d2 On r7
+sgt r1 r2 0
+s d1 On r1
+sgt r1 r2 0
+s d1 Activate r1
+l r1 d3 Pressure
+sgt r2 r1 0
+l r1 d1 Activate
+or r1 r2 r1
+s d2 On r1
 l r1 d1 Activate
 s db Setting r1
 j 4

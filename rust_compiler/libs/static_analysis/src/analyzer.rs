@@ -45,6 +45,7 @@ pub struct FunctionMetadata<'a> {
 #[cfg(test)]
 mod tests;
 
+#[derive(Clone)]
 pub struct AnalyzeResult<'a> {
     pub symbol_table: SymbolTable<'a>,
     pub functions: HashMap<SymbolId, FunctionMetadata<'a>>,

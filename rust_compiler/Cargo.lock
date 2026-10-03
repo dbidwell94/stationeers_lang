@@ -201,6 +201,7 @@ dependencies = [
  "il",
  "indoc",
  "lsp-types",
+ "optimizer",
  "parser",
  "pretty_assertions",
  "rust_decimal",
@@ -884,7 +885,7 @@ checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "slang"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "clap",

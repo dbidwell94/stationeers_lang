@@ -6,12 +6,10 @@ expression: output
 
 j main
 main:
-move r8 5
-mul r1 r8 1
-move r9 r1
+move r1 5
+mul r1 r1 1
+move r1 r1
 
 ## Optimized Output
 
-move r8 5
 move r1 5
-move r9 5

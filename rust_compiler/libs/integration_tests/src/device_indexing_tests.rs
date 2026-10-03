@@ -68,9 +68,8 @@ fn array_boundary_does_not_overlap_compiler_stack_spills() {
 
     for section in sections {
         assert!(section.contains("move sp 256\n"));
-        assert!(section.contains("push 8\npush 9"));
-        assert!(section.contains("sub r0 sp 2\nget"));
-        assert!(section.contains("sub r0 sp 1\nget"));
+        assert!(!section.contains("push "));
+        assert!(!section.contains("sub r0 sp"));
         assert!(section.contains("put db 255"));
         assert!(section.contains("get r"));
         assert!(section.contains("db 255"));

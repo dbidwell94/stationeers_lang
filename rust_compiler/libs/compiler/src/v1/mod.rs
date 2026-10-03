@@ -16,7 +16,10 @@ use parser::{
 };
 use rust_decimal::Decimal;
 use static_analysis::{AnalyzeResult, ParameterKind};
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 use tokenizer::token::{Number, Unit};
 
 mod error;
@@ -58,6 +61,17 @@ pub struct CompilationResult<'a> {
     pub errors: Vec<Error<'a>>,
     pub instructions: Instructions<'a>,
     pub metadata: crate::CompilationMetadata<'a>,
+    pub register_allocated: bool,
+    pub allocation_fallback_reason: Option<AllocationFallbackReason>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum AllocationFallbackReason {
+    VirtualCodegenErrors,
+    ControlFlowAnalysis(optimizer::register_allocation::AnalysisError),
+    RegisterRewrite,
+    NoRetryProgress,
+    RetryLimit,
 }
 
 /// Metadata for the currently compiling function
@@ -92,6 +106,8 @@ pub struct Compiler<'a> {
 
     current_line: usize,
     declared_main: bool,
+    virtualize_persistent_registers: bool,
+    spilled_virtual_registers: HashSet<u32>,
     _config: CompilerConfig,
     temp_counter: usize,
     label_counter: usize,
@@ -153,6 +169,8 @@ impl<'a> Compiler<'a> {
             instructions: Instructions::default(),
             current_line: 1,
             declared_main: false,
+            virtualize_persistent_registers: false,
+            spilled_virtual_registers: HashSet::new(),
             _config: config.unwrap_or_default(),
             temp_counter: 0,
             label_counter: 0,
@@ -163,6 +181,92 @@ impl<'a> Compiler<'a> {
             metadata: crate::CompilationMetadata::new(),
             declaration_docs,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_virtualized_for_tests(
+        analyze_result: AnalyzeResult<'a>,
+        declaration_docs: std::collections::HashMap<String, String>,
+    ) -> Self {
+        let mut compiler = Self::new(analyze_result, declaration_docs, None);
+        compiler.virtualize_persistent_registers = true;
+        compiler
+    }
+
+    fn new_virtualized_with_spills(
+        analyze_result: AnalyzeResult<'a>,
+        declaration_docs: std::collections::HashMap<String, String>,
+        spilled_virtual_registers: HashSet<u32>,
+    ) -> Self {
+        let mut compiler = Self::new(analyze_result, declaration_docs, None);
+        compiler.virtualize_persistent_registers = true;
+        compiler.spilled_virtual_registers = spilled_virtual_registers;
+        compiler
+    }
+
+    /// Compiles through virtual registers, assigning stack-backed locals only when coloring spills.
+    /// If the allocator cannot make progress, this safely falls back to the legacy allocator.
+    pub fn compile_allocated(
+        analyze_result: AnalyzeResult<'a>,
+        declaration_docs: std::collections::HashMap<String, String>,
+        ast: &Spanned<Expression<'a>>,
+    ) -> CompilationResult<'a> {
+        let mut spilled_virtual_registers = HashSet::new();
+        const MAX_SPILL_RETRIES: usize = 128;
+        let mut fallback_reason = AllocationFallbackReason::RetryLimit;
+
+        for _ in 0..MAX_SPILL_RETRIES {
+            let result = Self::new_virtualized_with_spills(
+                analyze_result.clone(),
+                declaration_docs.clone(),
+                spilled_virtual_registers.clone(),
+            )
+            .compile(ast);
+
+            if !result.errors.is_empty() {
+                let mut legacy = Self::new(analyze_result, declaration_docs, None).compile(ast);
+                legacy.allocation_fallback_reason =
+                    Some(AllocationFallbackReason::VirtualCodegenErrors);
+                return legacy;
+            }
+
+            let allocation =
+                match optimizer::register_allocation::allocate_registers(&result.instructions) {
+                    Ok(allocation) => allocation,
+                    Err(error) => {
+                        fallback_reason = AllocationFallbackReason::ControlFlowAnalysis(error);
+                        break;
+                    }
+                };
+
+            if allocation.spills.is_empty() {
+                if let Ok(instructions) = optimizer::register_allocation::rewrite_registers(
+                    result.instructions,
+                    &allocation,
+                ) {
+                    return CompilationResult {
+                        errors: result.errors,
+                        instructions,
+                        metadata: result.metadata,
+                        register_allocated: true,
+                        allocation_fallback_reason: None,
+                    };
+                }
+                fallback_reason = AllocationFallbackReason::RegisterRewrite;
+                break;
+            }
+
+            let previous_spill_count = spilled_virtual_registers.len();
+            spilled_virtual_registers.extend(allocation.spills);
+            if spilled_virtual_registers.len() == previous_spill_count {
+                fallback_reason = AllocationFallbackReason::NoRetryProgress;
+                break;
+            }
+        }
+
+        let mut legacy = Self::new(analyze_result, declaration_docs, None).compile(ast);
+        legacy.allocation_fallback_reason = Some(fallback_reason);
+        legacy
     }
 
     pub fn compile(mut self, ast: &Spanned<Expression<'a>>) -> CompilationResult<'a> {
@@ -184,6 +288,8 @@ impl<'a> Compiler<'a> {
                 errors: self.errors,
                 instructions: self.instructions,
                 metadata: self.metadata,
+                register_allocated: false,
+                allocation_fallback_reason: None,
             };
         }
 
@@ -196,20 +302,36 @@ impl<'a> Compiler<'a> {
                 errors: self.errors,
                 instructions: self.instructions,
                 metadata: self.metadata,
+                register_allocated: false,
+                allocation_fallback_reason: None,
             };
         }
 
-        let mut scope = VariableScope::default();
+        let mut scope = if self.virtualize_persistent_registers {
+            VariableScope::virtualized_with_spills(self.spilled_virtual_registers.clone())
+        } else {
+            VariableScope::default()
+        };
 
         // We ignore the result of the root expression (usually a block)
         if let Err(e) = self.expression(expr, &mut scope) {
             self.errors.push(e);
         }
 
+        if self.virtualize_persistent_registers
+            && !self.declared_main
+            && let Err(error) =
+                self.write_instruction(Instruction::LabelDef(Cow::from("main")), Some(expr.span))
+        {
+            self.errors.push(error);
+        }
+
         CompilationResult {
             errors: self.errors,
             instructions: self.instructions,
             metadata: self.metadata,
+            register_allocated: false,
+            allocation_fallback_reason: None,
         }
     }
 
@@ -430,11 +552,7 @@ impl<'a> Compiler<'a> {
 
                 // 3. Emit load instruction: l rX device member
                 self.write_instruction(
-                    Instruction::Load(
-                        Operand::Register(reg),
-                        device,
-                        Operand::LogicType(member.node.clone()),
-                    ),
+                    Instruction::Load(reg, device, Operand::LogicType(member.node.clone())),
                     Some(expr.span),
                 )?;
 
@@ -462,11 +580,7 @@ impl<'a> Compiler<'a> {
                     let reg = self.resolve_register(&loc)?;
 
                     self.write_instruction(
-                        Instruction::Get(
-                            Operand::Register(reg),
-                            Operand::Device(DeviceType::Housing),
-                            addr,
-                        ),
+                        Instruction::Get(reg, Operand::Device(DeviceType::Housing), addr),
                         Some(expr.span),
                     )?;
 
@@ -500,10 +614,7 @@ impl<'a> Compiler<'a> {
                 let reg = self.resolve_register(&loc)?;
 
                 // 4. Emit get instruction: get rX device address
-                self.write_instruction(
-                    Instruction::Get(Operand::Register(reg), device, addr),
-                    Some(expr.span),
-                )?;
+                self.write_instruction(Instruction::Get(reg, device, addr), Some(expr.span))?;
 
                 // 5. Cleanup
                 if let Some(c) = dev_cleanup {
@@ -539,11 +650,7 @@ impl<'a> Compiler<'a> {
                 let result_reg = self.resolve_register(&result_loc)?;
 
                 self.write_instruction(
-                    Instruction::Sub(
-                        Operand::Register(result_reg),
-                        Operand::Number(0.into()),
-                        inner_str,
-                    ),
+                    Instruction::Sub(result_reg, Operand::Number(0.into()), inner_str),
                     Some(expr.span),
                 )?;
 
@@ -564,10 +671,7 @@ impl<'a> Compiler<'a> {
                     scope.add_variable(result_name.clone(), LocationRequest::Temp, None)?;
                 let result_reg = self.resolve_register(&result_loc)?;
 
-                self.write_instruction(
-                    Instruction::Not(Operand::Register(result_reg), inner_str),
-                    Some(expr.span),
-                )?;
+                self.write_instruction(Instruction::Not(result_reg, inner_str), Some(expr.span))?;
 
                 if let Some(name) = cleanup {
                     scope.free_temp(name, None)?;
