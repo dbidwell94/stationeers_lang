@@ -266,7 +266,7 @@ fn allocated_compilation_retries_spilled_locals_without_leaking_virtuals() {
 }
 
 #[test]
-fn virtualized_locals_are_saved_across_scalar_function_calls() {
+fn virtualized_locals_skip_saves_when_scalar_callee_does_not_clobber_them() {
     let source = r#"
         fn clobber() { let scratch = 1; return scratch; }
         device d = "d0";
@@ -311,15 +311,19 @@ fn virtualized_locals_are_saved_across_scalar_function_calls() {
         optimizer::register_allocation::rewrite_registers(result.instructions, &allocation)
             .expect("call-preserved IL should rewrite to hardware registers");
     let caller_register = allocation.registers[&1];
+    assert_ne!(
+        caller_register, 1,
+        "the fixture's caller local must not share the callee's clobbered register"
+    );
     let optimized = optimizer::optimize(allocated);
     let call_index = optimized
         .iter()
         .position(|node| matches!(node.instruction, il::Instruction::JumpAndLink(_)))
         .expect("optimized clobber call should remain");
-    assert!(optimized[..call_index].iter().any(|node| {
+    assert!(!optimized[..call_index].iter().any(|node| {
         matches!(node.instruction, il::Instruction::Push(il::Operand::Register(register)) if register == caller_register)
     }));
-    assert!(optimized[call_index + 1..].iter().any(|node| {
+    assert!(!optimized[call_index + 1..].iter().any(|node| {
         matches!(node.instruction, il::Instruction::Pop(il::Operand::Register(register)) if register == caller_register)
     }));
     let mut writer = std::io::BufWriter::new(Vec::new());

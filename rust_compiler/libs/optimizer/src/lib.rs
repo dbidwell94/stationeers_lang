@@ -54,8 +54,7 @@ pub fn optimize<'a>(instructions: Instructions<'a>) -> Instructions<'a> {
         instructions = new_inst;
         changed |= c3;
 
-        // Pass 4: Leaf Function Optimization (Remove RA save/restore for leaf functions)
-        // This is separate from pass 3 as it deals with the function *definition*, not the call site.
+        // Pass 4: Remove stack frames from stack-free leaf functions.
         let (new_inst, c4) = optimize_leaf_functions(instructions);
         instructions = new_inst;
         changed |= c4;
