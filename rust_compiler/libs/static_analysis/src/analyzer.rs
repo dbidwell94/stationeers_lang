@@ -184,20 +184,6 @@ impl<'a> Analyzer<'a> {
                 ))),
                 _ => None,
             },
-            Expression::Invocation(invocation)
-                if invocation.node.name.node == "hash" && invocation.node.arguments.len() == 1 =>
-            {
-                match &invocation.node.arguments[0].node {
-                    Expression::Literal(Spanned {
-                        node: Literal::String(value),
-                        ..
-                    }) => Some(Literal::Number(Number::Integer(
-                        helpers::prelude::crc_hash_signed(value),
-                        Unit::None,
-                    ))),
-                    _ => None,
-                }
-            }
             _ => None,
         }
     }
