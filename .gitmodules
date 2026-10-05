@@ -1,0 +1,3 @@
+[submodule "stationeers_lang.wiki"]
+	path = stationeers_lang.wiki
+	url = git@github.com:dbidwell94/stationeers_lang.wiki.git
