@@ -173,7 +173,16 @@ fn test_const_hash() -> Result<()> {
 fn test_negative_literal_const() -> Result<()> {
     let expr = parser!(r#"const i = -123"#).parse()?.unwrap();
 
-    assert_eq!("(const i = -123)", expr.to_string());
+    assert_eq!("(const i = (-123))", expr.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn test_const_expression() -> Result<()> {
+    let expr = parser!(r#"const i = 2 + 3;"#).parse()?.unwrap();
+
+    assert_eq!("(const i = (2 + 3))", expr.to_string());
 
     Ok(())
 }

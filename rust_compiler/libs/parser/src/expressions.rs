@@ -921,7 +921,7 @@ impl<'a> Parser<'a> {
 
         self.assign_next()?;
 
-        if self_matches_peek!(self, TokenType::Symbol(Symbol::RParen)) {
+        if self_matches_current!(self, TokenType::Symbol(Symbol::RParen)) {
             self.assign_next()?;
             let end_span = self.current_span();
             let span = Span {

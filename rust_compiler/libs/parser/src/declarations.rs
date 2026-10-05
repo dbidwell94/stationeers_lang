@@ -202,45 +202,15 @@ impl<'a> Parser<'a> {
         }
 
         self.assign_next()?;
-        let current_token_index = self.tokenizer.loc();
+        let value = self.expression()?.ok_or_else(|| self.unexpected_eof())?;
 
-        if let Ok(lit) = self.spanned(|p| p.literal()) {
-            Ok(ConstDeclarationExpression {
-                name: Spanned {
-                    span: ident_span,
-                    node: ident,
-                },
-                value: LiteralOr::Literal(lit),
-            })
-        } else {
-            self.tokenizer.seek(SeekFrom::Current(
-                current_token_index - self.tokenizer.loc(),
-            ))?;
-            let syscall = self.spanned(|p| p.syscall())?;
-
-            if !matches!(
-                syscall,
-                Spanned {
-                    node: SysCall::System(sys_call::System::Hash(_)),
-                    ..
-                }
-            ) {
-                return Err(Error::UnexpectedToken(
-                    syscall.span,
-                    self.current_token
-                        .clone()
-                        .ok_or_else(|| self.unexpected_eof())?,
-                ));
-            }
-
-            Ok(ConstDeclarationExpression {
-                name: Spanned {
-                    span: ident_span,
-                    node: ident,
-                },
-                value: LiteralOr::Or(syscall),
-            })
-        }
+        Ok(ConstDeclarationExpression {
+            name: Spanned {
+                span: ident_span,
+                node: ident,
+            },
+            value: Box::new(value),
+        })
     }
 
     pub(super) fn declaration(&mut self) -> Result<Expression<'a>, Error<'a>> {
