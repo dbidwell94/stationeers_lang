@@ -73,6 +73,18 @@ cargo test --workspace --lib
 ./build.sh
 ```
 
+### Bump project version
+
+```bash
+./bump-version.sh          # Increment patch version
+./bump-version.sh minor    # Increment minor version
+./bump-version.sh 1.0.0    # Set an explicit version
+./bump-version.sh --dry-run
+```
+
+The script checks that version declarations agree, then updates the Rust
+manifest and lockfile, mod metadata, plugin constant, and C# project version.
+
 ## Compiler pipeline at a glance
 
 Slang compiles in staged passes:
