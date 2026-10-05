@@ -853,6 +853,7 @@ impl<'a> Parser<'a> {
                     Symbol::MinusAssign => AssignmentOperator::Subtract,
                     Symbol::AsteriskAssign => AssignmentOperator::Multiply,
                     Symbol::SlashAssign => AssignmentOperator::Divide,
+                    Symbol::ExponentAssign => AssignmentOperator::Exponent,
                     Symbol::BitwiseAndAssign => AssignmentOperator::BitwiseAnd,
                     Symbol::BitwiseOrAssign => AssignmentOperator::BitwiseOr,
                     Symbol::BitwiseXorAssign => AssignmentOperator::BitwiseXor,

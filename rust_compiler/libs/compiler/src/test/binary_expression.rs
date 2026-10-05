@@ -156,6 +156,7 @@ fn arithmetic_compound_assignments_compile() -> Result<()> {
         value -= 3;
         value *= 2;
         value /= 5;
+        value **= 2;
     "#);
 
     assert!(
@@ -163,7 +164,7 @@ fn arithmetic_compound_assignments_compile() -> Result<()> {
         "Expected no errors, got: {:?}",
         result.errors
     );
-    for operation in ["add ", "sub ", "mul ", "div "] {
+    for operation in ["add ", "sub ", "mul ", "div ", "pow "] {
         assert!(
             result.output.contains(operation),
             "Expected `{operation}` in output:\n{}",

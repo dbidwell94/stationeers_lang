@@ -194,6 +194,7 @@ fn test_compound_assignment_expressions() -> Result<()> {
         ("value -= 2;", "(value -= 2)"),
         ("value *= 2;", "(value *= 2)"),
         ("value /= 2;", "(value /= 2)"),
+        ("value **= 2;", "(value **= 2)"),
         ("value &= 2;", "(value &= 2)"),
         ("value |= 2;", "(value |= 2)"),
         ("value ^= 2;", "(value ^= 2)"),

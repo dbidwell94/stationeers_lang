@@ -632,6 +632,7 @@ impl<'a> Compiler<'a> {
             AssignmentOperator::Subtract => Instruction::Sub(result, left, right),
             AssignmentOperator::Multiply => Instruction::Mul(result, left, right),
             AssignmentOperator::Divide => Instruction::Div(result, left, right),
+            AssignmentOperator::Exponent => Instruction::Pow(result, left, right),
             AssignmentOperator::BitwiseAnd => Instruction::And(result, left, right),
             AssignmentOperator::BitwiseOr => Instruction::Or(result, left, right),
             AssignmentOperator::BitwiseXor => Instruction::Xor(result, left, right),

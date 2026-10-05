@@ -204,6 +204,7 @@ pub enum TokenType<'a> {
     #[token("||", symbol!(LogicalOr))]
     #[token("<=", symbol!(LessThanOrEqual))]
     #[token(">=", symbol!(GreaterThanOrEqual))]
+    #[token("**=", symbol!(ExponentAssign))]
     #[token("**", symbol!(Exp))]
     #[token("+=", symbol!(PlusAssign))]
     #[token("-=", symbol!(MinusAssign))]
@@ -726,6 +727,8 @@ pub enum Symbol {
     RightShiftLogical,
     /// Represents the `**` symbol
     Exp,
+    /// Represents the `**=` symbol
+    ExponentAssign,
     /// Represents the `+=` symbol
     PlusAssign,
     /// Represents the `-=` symbol
@@ -792,6 +795,7 @@ impl Symbol {
                 | Symbol::MinusAssign
                 | Symbol::AsteriskAssign
                 | Symbol::SlashAssign
+                | Symbol::ExponentAssign
                 | Symbol::BitwiseAndAssign
                 | Symbol::BitwiseOrAssign
                 | Symbol::BitwiseXorAssign
@@ -836,6 +840,7 @@ impl std::fmt::Display for Symbol {
             Self::RightShiftArithmetic => write!(f, ">>"),
             Self::RightShiftLogical => write!(f, ">>>"),
             Self::Exp => write!(f, "**"),
+            Self::ExponentAssign => write!(f, "**="),
             Self::PlusAssign => write!(f, "+="),
             Self::MinusAssign => write!(f, "-="),
             Self::AsteriskAssign => write!(f, "*="),
