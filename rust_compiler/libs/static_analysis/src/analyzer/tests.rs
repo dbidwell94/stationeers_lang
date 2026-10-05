@@ -125,6 +125,24 @@ fn const_expression_with_allowed_syscalls_are_folded() -> anyhow::Result<()> {
 }
 
 #[test]
+fn parenthesized_const_expression_is_folded() -> anyhow::Result<()> {
+    let parsed = parse!("const enabled = true; const copy = (true);").expect("an expression");
+
+    let AnalyzeResult { symbol_table, .. } = Analyzer::default().analyze(&parsed)?;
+
+    assert_matches!(
+        symbol_table.symbols[1],
+        Symbol {
+            name: "copy",
+            kind: SymbolKind::Constant(Literal::Boolean(true)),
+            ..
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
 fn scoped_variables_are_valid() -> anyhow::Result<()> {
     let parsed = parse!(indoc! {
         r#"

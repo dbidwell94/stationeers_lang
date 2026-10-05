@@ -1,4 +1,5 @@
 #![allow(clippy::result_large_err)]
+use self::operands::fold_expression;
 use crate::variable_manager::{
     ARRAY_REGION_SIZE, LocationRequest, VariableLocation, VariableScope,
 };
@@ -9,8 +10,8 @@ use parser::{
     tree_node::{
         AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
         DeviceDeclarationExpression, DeviceType, Expression, FunctionExpression, IfExpression,
-        IndexAccessExpression, InvocationExpression, Literal, LiteralOr, LiteralOrVariable,
-        LogicalExpression, LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
+        IndexAccessExpression, InvocationExpression, Literal, LiteralOrVariable, LogicalExpression,
+        LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
         TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
     },
 };
@@ -41,6 +42,21 @@ fn extract_literal<'a>(
         Literal::Number(n) => Operand::Number(n.into()),
         Literal::Boolean(b) => Operand::Number(Number::from(b).into()),
     })
+}
+
+fn fold_const_expression<'a>(
+    expr: &Expression<'a>,
+    scope: &VariableScope<'a, '_>,
+) -> Option<Literal<'a>> {
+    match expr {
+        Expression::Literal(literal) => Some(literal.node.clone()),
+        Expression::Priority(inner) => fold_const_expression(&inner.node, scope),
+        Expression::Variable(variable) => match scope.get_location_of(&variable.node, None).ok()? {
+            VariableLocation::Constant(literal) => Some(literal),
+            _ => None,
+        },
+        _ => fold_expression(expr, scope).map(Literal::Number),
+    }
 }
 
 #[derive(Default)]
@@ -739,23 +755,11 @@ impl<'a> Compiler<'a> {
             doc_comment,
         );
 
-        // check for a hash expression or a literal
-        let value = match const_value {
-            LiteralOr::Or(Spanned {
-                node:
-                    SysCall::System(System::Hash(Spanned {
-                        node: Literal::String(str_to_hash),
-                        ..
-                    })),
-                ..
-            }) => Literal::Number(Number::Integer(crc_hash_signed(str_to_hash), Unit::None)),
-            LiteralOr::Or(Spanned { span, .. }) => {
-                return Err(Error::Unknown(
-                    "hash only supports string literals in this context.".into(),
-                    Some(*span),
-                ));
-            }
-            LiteralOr::Literal(Spanned { node, .. }) => node.clone(),
+        let Some(value) = fold_const_expression(&const_value.node, scope) else {
+            return Err(Error::Unknown(
+                "Constant expressions must not require runtime values.".into(),
+                Some(const_value.span),
+            ));
         };
 
         Ok(CompileLocation {

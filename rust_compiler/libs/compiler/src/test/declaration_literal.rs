@@ -237,3 +237,72 @@ fn test_declaration_is_const() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_const_expression() -> anyhow::Result<()> {
+    let compiled = compile!(check r#"
+        const BASE = 3 + 4;
+        const ANSWER = 2 * BASE;
+        let result = ANSWER;
+    "#);
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 14
+            "
+        }
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_const_expression_rejects_runtime_variable() -> anyhow::Result<()> {
+    let compiled = compile!(check r#"
+        let input = 2;
+        const ANSWER = input + 1;
+    "#);
+
+    assert!(
+        !compiled.errors.is_empty(),
+        "Expected a runtime-dependent const initializer to fail"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_const_expression_aliases_boolean() -> anyhow::Result<()> {
+    let compiled = compile!(check r#"
+        const ENABLED = true;
+        const COPY = (ENABLED);
+        let result = COPY;
+    "#);
+
+    assert!(
+        compiled.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        compiled.errors
+    );
+    assert_eq!(
+        compiled.output,
+        indoc! {
+            "
+            j main
+            main:
+            move r8 1
+            "
+        }
+    );
+
+    Ok(())
+}

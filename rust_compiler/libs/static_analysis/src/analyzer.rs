@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use helpers::Span;
 use parser::sys_call::{SysCall, System};
 use parser::tree_node::DeviceType;
-use parser::tree_node::{ArrayRepeatExpression, Expression, Literal, LiteralOr, Spanned};
+use parser::tree_node::{ArrayRepeatExpression, BinaryExpression, Expression, Literal, Spanned};
 use tokenizer::token::{Number, Unit};
 
 use crate::error::{AnalyzeErrors, Error};
@@ -94,6 +94,97 @@ impl<'a> Analyzer<'a> {
     fn declare(&mut self, name: &'a str, kind: SymbolKind<'a>, span: Span) {
         if let Err(e) = self.symbol_table.declare(name, kind, span) {
             self.errors.push(e);
+        }
+    }
+
+    fn evaluate_constant_expression(&mut self, expr: &Expression<'a>) -> Option<Literal<'a>> {
+        fn number_to_i64(number: Number) -> Option<i64> {
+            match number {
+                Number::Integer(value, _) => i64::try_from(value).ok(),
+                Number::Decimal(value, _) => {
+                    let integer = value.trunc();
+                    i64::try_from(integer.mantissa() / 10_i128.pow(integer.scale())).ok()
+                }
+            }
+        }
+
+        fn i64_to_number(value: i64) -> Number {
+            Number::Integer(value as i128, Unit::None)
+        }
+
+        match expr {
+            Expression::Literal(literal) => Some(literal.node.clone()),
+            Expression::Priority(inner) => self.evaluate_constant_expression(&inner.node),
+            Expression::Negation(inner) => match self.evaluate_constant_expression(&inner.node)? {
+                Literal::Number(number) => Some(Literal::Number(-number)),
+                _ => None,
+            },
+            Expression::Variable(variable) => {
+                let symbol_id = self.symbol_table.lookup(&variable.node)?;
+                self.symbol_table.mark_read(&symbol_id);
+                match self.symbol_table.get(&symbol_id)?.kind {
+                    SymbolKind::Constant(literal) => Some(literal),
+                    _ => None,
+                }
+            }
+            Expression::Binary(binary) => {
+                let (left, right) = match &binary.node {
+                    BinaryExpression::Add(left, right)
+                    | BinaryExpression::Subtract(left, right)
+                    | BinaryExpression::Multiply(left, right)
+                    | BinaryExpression::Divide(left, right)
+                    | BinaryExpression::Modulo(left, right)
+                    | BinaryExpression::BitwiseAnd(left, right)
+                    | BinaryExpression::BitwiseOr(left, right)
+                    | BinaryExpression::BitwiseXor(left, right)
+                    | BinaryExpression::LeftShift(left, right)
+                    | BinaryExpression::RightShiftArithmetic(left, right)
+                    | BinaryExpression::RightShiftLogical(left, right)
+                    | BinaryExpression::Exponent(left, right) => (
+                        self.evaluate_constant_expression(&left.node)?,
+                        self.evaluate_constant_expression(&right.node)?,
+                    ),
+                };
+                let (Literal::Number(left), Literal::Number(right)) = (left, right) else {
+                    return None;
+                };
+                let result = match &binary.node {
+                    BinaryExpression::Add(..) => left + right,
+                    BinaryExpression::Subtract(..) => left - right,
+                    BinaryExpression::Multiply(..) => left * right,
+                    BinaryExpression::Divide(..) => left / right,
+                    BinaryExpression::Modulo(..) => left % right,
+                    BinaryExpression::BitwiseAnd(..) => {
+                        i64_to_number(number_to_i64(left)? & number_to_i64(right)?)
+                    }
+                    BinaryExpression::BitwiseOr(..) => {
+                        i64_to_number(number_to_i64(left)? | number_to_i64(right)?)
+                    }
+                    BinaryExpression::BitwiseXor(..) => {
+                        i64_to_number(number_to_i64(left)? ^ number_to_i64(right)?)
+                    }
+                    BinaryExpression::LeftShift(..) => {
+                        i64_to_number(number_to_i64(left)? << number_to_i64(right)?)
+                    }
+                    BinaryExpression::RightShiftArithmetic(..)
+                    | BinaryExpression::RightShiftLogical(..) => {
+                        i64_to_number(number_to_i64(left)? >> number_to_i64(right)?)
+                    }
+                    BinaryExpression::Exponent(..) => return None,
+                };
+                Some(Literal::Number(result))
+            }
+            Expression::Syscall(Spanned {
+                node: SysCall::System(System::Hash(value)),
+                ..
+            }) => match &value.node {
+                Literal::String(value) => Some(Literal::Number(Number::Integer(
+                    helpers::prelude::crc_hash_signed(value),
+                    Unit::None,
+                ))),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -428,27 +519,13 @@ impl<'a> parser::visitor::AstVisitor<'a> for Analyzer<'a> {
         spanned: &'a Spanned<parser::tree_node::ConstDeclarationExpression<'a>>,
     ) {
         let var_name = &spanned.name;
-
-        let computed_literal = match &spanned.value {
-            LiteralOr::Literal(lit) => Ok(lit.node.clone()),
-            LiteralOr::Or(Spanned { node: s, .. }) => match s {
-                SysCall::System(System::Hash(to_hash)) => Ok(Literal::Number(Number::Integer(
-                    helpers::prelude::crc_hash_signed(&to_hash.node.to_string()),
-                    Unit::None,
-                ))),
-                _ => Err(Error::InvalidArgType {
-                    error: "This syscall is not allowed here.".into(),
-                    span: spanned.span,
-                }),
-            },
-        };
-
-        let computed_literal = match computed_literal {
-            Ok(lit) => lit,
-            Err(e) => {
-                self.errors.push(e);
-                return;
-            }
+        self.visit_expression(&spanned.value);
+        let Some(computed_literal) = self.evaluate_constant_expression(&spanned.value.node) else {
+            self.errors.push(Error::InvalidArgType {
+                error: "Constant expressions must not require runtime values.".into(),
+                span: spanned.value.span,
+            });
+            return;
         };
 
         self.declare(

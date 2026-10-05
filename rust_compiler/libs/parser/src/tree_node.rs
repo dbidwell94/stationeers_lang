@@ -304,7 +304,7 @@ impl<'a> std::fmt::Display for LiteralOrVariable<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConstDeclarationExpression<'a> {
     pub name: Spanned<Cow<'a, str>>,
-    pub value: LiteralOr<'a, SysCall<'a>>,
+    pub value: Box<Spanned<Expression<'a>>>,
 }
 
 impl<'a> ConstDeclarationExpression<'a> {

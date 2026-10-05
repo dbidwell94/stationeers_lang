@@ -125,22 +125,7 @@ pub(super) fn fold_expression<'a>(
             ..
         }) => Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None)),
 
-        // 7. Handle hash() macro as invocation - evaluates to a constant at compile time
-        Expression::Invocation(inv) => {
-            if inv.node.name.node == "hash"
-                && inv.node.arguments.len() == 1
-                && let Expression::Literal(Spanned {
-                    node: Literal::String(str_to_hash),
-                    ..
-                }) = &inv.node.arguments[0].node
-            {
-                // hash() takes a string literal and returns a signed integer
-                return Some(Number::Integer(crc_hash_signed(str_to_hash), Unit::None));
-            }
-            None
-        }
-
-        // 8. Anything else cannot be compile-time folded
+        // 7. Anything else cannot be compile-time folded
         _ => None,
     }
 }
