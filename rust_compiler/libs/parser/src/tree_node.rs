@@ -108,13 +108,45 @@ impl<'a> std::fmt::Display for LogicalExpression<'a> {
 /// Represents an assignment expression, where a value is assigned to a variable or a property.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AssignmentExpression<'a> {
+    pub operator: AssignmentOperator,
     pub assignee: Box<Spanned<Expression<'a>>>,
     pub expression: Box<Spanned<Expression<'a>>>,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum AssignmentOperator {
+    Assign,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+}
+
+impl std::fmt::Display for AssignmentOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Assign => "=",
+            Self::Add => "+=",
+            Self::Subtract => "-=",
+            Self::Multiply => "*=",
+            Self::Divide => "/=",
+            Self::BitwiseAnd => "&=",
+            Self::BitwiseOr => "|=",
+            Self::BitwiseXor => "^=",
+        })
+    }
+}
+
 impl<'a> std::fmt::Display for AssignmentExpression<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({} = {})", self.assignee, self.expression)
+        write!(
+            f,
+            "({} {} {})",
+            self.assignee, self.operator, self.expression
+        )
     }
 }
 

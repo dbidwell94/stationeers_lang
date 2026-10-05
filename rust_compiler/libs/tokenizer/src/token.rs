@@ -205,6 +205,13 @@ pub enum TokenType<'a> {
     #[token("<=", symbol!(LessThanOrEqual))]
     #[token(">=", symbol!(GreaterThanOrEqual))]
     #[token("**", symbol!(Exp))]
+    #[token("+=", symbol!(PlusAssign))]
+    #[token("-=", symbol!(MinusAssign))]
+    #[token("*=", symbol!(AsteriskAssign))]
+    #[token("/=", symbol!(SlashAssign))]
+    #[token("&=", symbol!(BitwiseAndAssign))]
+    #[token("|=", symbol!(BitwiseOrAssign))]
+    #[token("^=", symbol!(BitwiseXorAssign))]
     // Single-character tokens
     #[token("+", symbol!(Plus))]
     #[token("-", symbol!(Minus))]
@@ -719,6 +726,20 @@ pub enum Symbol {
     RightShiftLogical,
     /// Represents the `**` symbol
     Exp,
+    /// Represents the `+=` symbol
+    PlusAssign,
+    /// Represents the `-=` symbol
+    MinusAssign,
+    /// Represents the `*=` symbol
+    AsteriskAssign,
+    /// Represents the `/=` symbol
+    SlashAssign,
+    /// Represents the `&=` symbol
+    BitwiseAndAssign,
+    /// Represents the `|=` symbol
+    BitwiseOrAssign,
+    /// Represents the `^=` symbol
+    BitwiseXorAssign,
 }
 
 impl Symbol {
@@ -762,6 +783,20 @@ impl Symbol {
     pub fn is_logical(&self) -> bool {
         matches!(self, Symbol::LogicalAnd | Symbol::LogicalOr)
     }
+
+    pub fn is_assignment(&self) -> bool {
+        matches!(
+            self,
+            Symbol::Assign
+                | Symbol::PlusAssign
+                | Symbol::MinusAssign
+                | Symbol::AsteriskAssign
+                | Symbol::SlashAssign
+                | Symbol::BitwiseAndAssign
+                | Symbol::BitwiseOrAssign
+                | Symbol::BitwiseXorAssign
+        )
+    }
 }
 
 impl std::fmt::Display for Symbol {
@@ -801,6 +836,13 @@ impl std::fmt::Display for Symbol {
             Self::RightShiftArithmetic => write!(f, ">>"),
             Self::RightShiftLogical => write!(f, ">>>"),
             Self::Exp => write!(f, "**"),
+            Self::PlusAssign => write!(f, "+="),
+            Self::MinusAssign => write!(f, "-="),
+            Self::AsteriskAssign => write!(f, "*="),
+            Self::SlashAssign => write!(f, "/="),
+            Self::BitwiseAndAssign => write!(f, "&="),
+            Self::BitwiseOrAssign => write!(f, "|="),
+            Self::BitwiseXorAssign => write!(f, "^="),
         }
     }
 }

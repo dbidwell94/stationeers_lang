@@ -149,6 +149,83 @@ fn test_temperature_literal_multiplication_constant_folding() -> Result<()> {
 }
 
 #[test]
+fn arithmetic_compound_assignments_compile() -> Result<()> {
+    let result = compile!(check r#"
+        let value = 20;
+        value += 8;
+        value -= 3;
+        value *= 2;
+        value /= 5;
+    "#);
+
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+    for operation in ["add ", "sub ", "mul ", "div "] {
+        assert!(
+            result.output.contains(operation),
+            "Expected `{operation}` in output:\n{}",
+            result.output
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn arithmetic_compound_assignments_support_properties_and_arrays() -> Result<()> {
+    let result = compile!(check r#"
+        device sensor = "d0";
+        sensor.Setting = 10;
+        sensor.Setting += 5;
+        let values = [1, 2];
+        values[0] *= 3;
+    "#);
+
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+    for instruction in ["l ", "s ", "get ", "put ", "add ", "mul "] {
+        assert!(
+            result.output.contains(instruction),
+            "Expected `{instruction}` in output:\n{}",
+            result.output
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn bitwise_compound_assignments_compile() -> Result<()> {
+    let result = compile!(check r#"
+        let value = 15;
+        value &= 7;
+        value |= 8;
+        value ^= 3;
+    "#);
+
+    assert!(
+        result.errors.is_empty(),
+        "Expected no errors, got: {:?}",
+        result.errors
+    );
+    for operation in ["and ", "or ", "xor "] {
+        assert!(
+            result.output.contains(operation),
+            "Expected `{operation}` in output:\n{}",
+            result.output
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
 fn test_constant_folding_with_variables_mixed_in() -> Result<()> {
     let result = compile! {
         check

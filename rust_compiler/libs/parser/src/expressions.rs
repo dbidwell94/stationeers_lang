@@ -13,7 +13,8 @@ impl<'a> Parser<'a> {
             || s.is_comparison()
             || s.is_logical()
             || s.is_bitwise()
-            || matches!(s, Symbol::Assign | Symbol::Question)
+            || s.is_assignment()
+            || matches!(s, Symbol::Question)
     }
 
     pub(super) fn expression(
@@ -543,7 +544,7 @@ impl<'a> Parser<'a> {
 
         while token_matches!(
             temp_token,
-            TokenType::Symbol(s) if (s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || matches!(s, Symbol::Assign | Symbol::Question | Symbol::Colon)) && !(self.suppress_bitwise_or_pipe > 0 && matches!(s, Symbol::BitwiseOr))
+            TokenType::Symbol(s) if (s.is_operator() || s.is_comparison() || s.is_logical() || s.is_bitwise() || s.is_assignment() || matches!(s, Symbol::Question | Symbol::Colon)) && !(self.suppress_bitwise_or_pipe > 0 && matches!(s, Symbol::BitwiseOr))
         ) {
             let operator = match temp_token.token_type {
                 TokenType::Symbol(s) => s,
@@ -836,7 +837,7 @@ impl<'a> Parser<'a> {
         }
 
         for (i, operator) in operators.iter().enumerate().rev() {
-            if matches!(operator, Symbol::Assign) {
+            if operator.is_assignment() {
                 let right = expressions.remove(i + 1);
                 let left = expressions.remove(i);
                 let span = Span {
@@ -846,7 +847,25 @@ impl<'a> Parser<'a> {
                     end_col: right.span.end_col,
                 };
 
+                let assignment_operator = match operator {
+                    Symbol::Assign => AssignmentOperator::Assign,
+                    Symbol::PlusAssign => AssignmentOperator::Add,
+                    Symbol::MinusAssign => AssignmentOperator::Subtract,
+                    Symbol::AsteriskAssign => AssignmentOperator::Multiply,
+                    Symbol::SlashAssign => AssignmentOperator::Divide,
+                    Symbol::BitwiseAndAssign => AssignmentOperator::BitwiseAnd,
+                    Symbol::BitwiseOrAssign => AssignmentOperator::BitwiseOr,
+                    Symbol::BitwiseXorAssign => AssignmentOperator::BitwiseXor,
+                    _ => unreachable!(),
+                };
+
                 let node = if let Expression::Tuple(tuple_expr) = &left.node {
+                    if assignment_operator != AssignmentOperator::Assign {
+                        return Err(Error::InvalidSyntax(
+                            left.span,
+                            String::from("Compound assignment cannot target a tuple"),
+                        ));
+                    }
                     let mut names = Vec::new();
                     for item in &tuple_expr.node {
                         if let Expression::Variable(var) = &item.node {
@@ -870,6 +889,7 @@ impl<'a> Parser<'a> {
                     Expression::Assignment(Spanned {
                         span,
                         node: AssignmentExpression {
+                            operator: assignment_operator,
                             assignee: boxed!(left),
                             expression: boxed!(right),
                         },
@@ -879,7 +899,7 @@ impl<'a> Parser<'a> {
                 expressions.insert(i, Spanned { span, node });
             }
         }
-        operators.retain(|symbol| !matches!(symbol, Symbol::Assign));
+        operators.retain(|symbol| !symbol.is_assignment());
 
         if expressions.len() != 1 || !operators.is_empty() {
             return Err(Error::InvalidSyntax(

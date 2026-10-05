@@ -188,6 +188,24 @@ fn test_const_expression() -> Result<()> {
 }
 
 #[test]
+fn test_compound_assignment_expressions() -> Result<()> {
+    for (source, expected) in [
+        ("value += 2;", "(value += 2)"),
+        ("value -= 2;", "(value -= 2)"),
+        ("value *= 2;", "(value *= 2)"),
+        ("value /= 2;", "(value /= 2)"),
+        ("value &= 2;", "(value &= 2)"),
+        ("value |= 2;", "(value |= 2)"),
+        ("value ^= 2;", "(value ^= 2)"),
+    ] {
+        let expr = parser!(source).parse()?.unwrap();
+        assert_eq!(expected, expr.to_string());
+    }
+
+    Ok(())
+}
+
+#[test]
 fn test_dereference_with_variable() -> Result<()> {
     let expr = parser!(r#"(*devVar).Setting = 3;"#).parse()?.unwrap();
 

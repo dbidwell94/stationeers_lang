@@ -8,11 +8,11 @@ use il::{Instruction, InstructionNode, Instructions, Operand};
 use parser::{
     sys_call::{Math, SysCall, System},
     tree_node::{
-        AssignmentExpression, BinaryExpression, BlockExpression, ConstDeclarationExpression,
-        DeviceDeclarationExpression, DeviceType, Expression, FunctionExpression, IfExpression,
-        IndexAccessExpression, InvocationExpression, Literal, LiteralOrVariable, LogicalExpression,
-        LoopExpression, MemberAccessExpression, Spanned, TernaryExpression,
-        TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
+        AssignmentExpression, AssignmentOperator, BinaryExpression, BlockExpression,
+        ConstDeclarationExpression, DeviceDeclarationExpression, DeviceType, Expression,
+        FunctionExpression, IfExpression, IndexAccessExpression, InvocationExpression, Literal,
+        LiteralOrVariable, LogicalExpression, LoopExpression, MemberAccessExpression, Spanned,
+        TernaryExpression, TupleAssignmentExpression, TupleDeclarationExpression, WhileExpression,
     },
 };
 use rust_decimal::Decimal;
