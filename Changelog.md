@@ -1,5 +1,13 @@
 # Changelog
 
+[0.10.1]
+
+- Constant declarations now accept compile-time expressions, including arithmetic
+  and references to earlier constants. Expressions requiring runtime values remain
+  invalid.
+- Added arithmetic and bitwise compound assignment operators: `+=`, `-=`, `*=`,
+  `/=`, `**=`, `&=`, `|=`, and `^=`.
+
 [0.10.0]
 
 - Improved register reuse by assigning registers according to when values are
