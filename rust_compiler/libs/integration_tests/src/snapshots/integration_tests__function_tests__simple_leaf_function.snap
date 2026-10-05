@@ -17,10 +17,6 @@ main:
 
 ## Optimized Output
 
-j 7
-push sp
-push ra
+j 3
 move r1 10
-pop ra
-pop sp
 j ra

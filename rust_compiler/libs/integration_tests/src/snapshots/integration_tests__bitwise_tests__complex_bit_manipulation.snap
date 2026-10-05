@@ -45,18 +45,14 @@ main:
 
 ## Optimized Output
 
-j 29
+j 25
 pop r8
 pop r9
 pop r10
-push sp
-push ra
 sll r2 r10 7
 sll r1 r9 4
 or r1 r2 r1
 or r15 r1 r8
-pop ra
-pop sp
 j ra
 pop r8
 push sp

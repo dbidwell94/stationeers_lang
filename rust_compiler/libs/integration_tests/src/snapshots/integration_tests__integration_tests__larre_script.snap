@@ -122,16 +122,12 @@ __internal_L12:
 
 ## Optimized Output
 
-j 74
-push sp
-push ra
+j 50
 yield
 l r1 d0 Idle
-bne r1 0 8
+bne r1 0 6
 yield
-j 4
-pop ra
-pop sp
+j 2
 j ra
 push sp
 push ra
@@ -151,47 +147,27 @@ sle r2 r8 1
 ls r1 d0 255 Seeding
 slt r1 r1 1
 or r1 r2 r1
-beqz r1 31
-j 71
+beqz r1 27
+j 47
 ls r1 d0 255 Mature
-beqz r1 36
+beqz r1 32
 yield
 s d0 Activate 1
-j 31
+j 27
 ls r2 d0 255 Occupied
 s d0 Setting 1
-push r8
-push r2
 jal 1
-pop r2
-pop r8
-push r8
-push r2
-jal 11
-pop r2
-pop r8
+jal 7
 move r1 r15
-beqz r2 56
-push r8
-push r2
-jal 11
-pop r2
-pop r8
+beqz r2 40
+jal 7
 move r1 r15
 s d0 Setting r8
-push r8
-push r2
 jal 1
-pop r2
-pop r8
 ls r1 d0 0 Occupied
-beqz r1 65
+beqz r1 45
 s d0 Activate 1
-push r8
-push r2
 jal 1
-pop r2
-pop r8
 move r1 r15
 pop ra
 pop sp
@@ -199,19 +175,17 @@ j ra
 move r3 0
 yield
 l r1 d0 Idle
-bne r1 0 79
-j 75
+bne r1 0 55
+j 51
 add r1 r3 1
 sgt r2 r1 19
 add r1 r3 1
 select r2 r2 2 r1
-push r3
 push r2
 push r3
-jal 22
+jal 18
 pop r2
-pop r3
 move r1 r15
 s d0 Setting r2
 move r3 r2
-j 75
+j 51

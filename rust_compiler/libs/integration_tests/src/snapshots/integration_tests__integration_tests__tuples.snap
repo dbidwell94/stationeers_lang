@@ -58,13 +58,9 @@ __internal_L4:
 
 ## Optimized Output
 
-j 23
+j 19
 pop r8
-push sp
-push ra
 add r15 r8 1
-pop ra
-pop sp
 j ra
 push sp
 push ra
@@ -82,14 +78,14 @@ sub r0 sp 4
 get ra db r0
 j ra
 yield
-jal 8
+jal 4
 pop r0
 pop r1
 pop r2
 move sp r15
 push r2
 push r1
-jal 8
+jal 4
 pop r0
 pop r0
 pop r1
@@ -97,4 +93,4 @@ move sp r15
 pop r1
 pop r2
 s db Setting r1
-j 23
+j 19

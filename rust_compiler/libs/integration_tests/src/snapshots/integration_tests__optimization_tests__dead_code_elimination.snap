@@ -21,12 +21,8 @@ main:
 
 ## Optimized Output
 
-j 9
+j 5
 pop r8
-push sp
-push ra
 move r1 20
 add r15 r8 1
-pop ra
-pop sp
 j ra

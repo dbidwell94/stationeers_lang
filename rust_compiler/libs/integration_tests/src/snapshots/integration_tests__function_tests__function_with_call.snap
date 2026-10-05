@@ -32,14 +32,10 @@ main:
 
 ## Optimized Output
 
-j 18
+j 14
 pop r8
 pop r9
-push sp
-push ra
 add r15 r9 r8
-pop ra
-pop sp
 j ra
 push sp
 push ra
