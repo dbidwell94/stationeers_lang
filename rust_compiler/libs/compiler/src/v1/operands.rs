@@ -613,12 +613,44 @@ impl<'a> Compiler<'a> {
         }))
     }
 
+    fn compile_compound_assignment_value(
+        &mut self,
+        operator: AssignmentOperator,
+        left: Operand<'a>,
+        left_cleanup: Option<Cow<'a, str>>,
+        right: &Spanned<Expression<'a>>,
+        scope: &mut VariableScope<'a, '_>,
+        span: Span,
+    ) -> Result<(Operand<'a>, Option<Cow<'a, str>>), Error<'a>> {
+        let (right, right_cleanup) = self.compile_operand(right, scope)?;
+        let result_name = self.next_temp_name();
+        let result_location =
+            scope.add_variable(result_name.clone(), LocationRequest::Temp, Some(span))?;
+        let result = self.resolve_register(&result_location)?;
+        let instruction = match operator {
+            AssignmentOperator::Add => Instruction::Add(result, left, right),
+            AssignmentOperator::Subtract => Instruction::Sub(result, left, right),
+            AssignmentOperator::Multiply => Instruction::Mul(result, left, right),
+            AssignmentOperator::Divide => Instruction::Div(result, left, right),
+            AssignmentOperator::Exponent => Instruction::Pow(result, left, right),
+            AssignmentOperator::BitwiseAnd => Instruction::And(result, left, right),
+            AssignmentOperator::BitwiseOr => Instruction::Or(result, left, right),
+            AssignmentOperator::BitwiseXor => Instruction::Xor(result, left, right),
+            AssignmentOperator::Assign => unreachable!(),
+        };
+        self.write_instruction(instruction, Some(span))?;
+        Self::cleanup_temps(scope, &[left_cleanup, right_cleanup])?;
+
+        Ok((self.resolve_register(&result_location)?, Some(result_name)))
+    }
+
     pub(super) fn expression_assignment(
         &mut self,
         expr: &AssignmentExpression<'a>,
         scope: &mut VariableScope<'a, '_>,
     ) -> Result<(), Error<'a>> {
         let AssignmentExpression {
+            operator,
             assignee,
             expression,
         } = expr;
@@ -639,7 +671,44 @@ impl<'a> Compiler<'a> {
                     }
                 };
 
-                let (val, cleanup) = self.compile_operand(expression, scope)?;
+                if *operator != AssignmentOperator::Assign {
+                    match location {
+                        VariableLocation::Constant(_) => {
+                            return Err(Error::ConstAssignment(
+                                identifier.node.clone(),
+                                identifier.span,
+                            ));
+                        }
+                        VariableLocation::Device(_) => {
+                            return Err(Error::DeviceAssignment(
+                                identifier.node.clone(),
+                                identifier.span,
+                            ));
+                        }
+                        VariableLocation::Array { .. }
+                        | VariableLocation::ArrayParameter { .. } => {
+                            return Err(Error::OperationNotSupported(
+                                "Arrays cannot be reassigned; only individual elements (`arr[i] = value`) can be mutated.".to_string(),
+                                identifier.span,
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+
+                let (val, cleanup) = if *operator == AssignmentOperator::Assign {
+                    self.compile_operand(expression, scope)?
+                } else {
+                    let (left, left_cleanup) = self.compile_operand(assignee, scope)?;
+                    self.compile_compound_assignment_value(
+                        *operator,
+                        left,
+                        left_cleanup,
+                        expression,
+                        scope,
+                        expr_span,
+                    )?
+                };
 
                 match location {
                     VariableLocation::Temporary(reg) | VariableLocation::Persistant(reg) => {
@@ -711,7 +780,38 @@ impl<'a> Compiler<'a> {
                 let MemberAccessExpression { object, member } = &access.node;
 
                 let (device, dev_cleanup) = self.compile_device_operand(object, scope)?;
-                let (val, val_cleanup) = self.compile_operand(expression, scope)?;
+                let (device, dev_cleanup) = if *operator == AssignmentOperator::Assign {
+                    (device, dev_cleanup)
+                } else {
+                    self.prevent_return_register_clobbering(device, dev_cleanup, scope)?
+                };
+                let (val, val_cleanup) = if *operator == AssignmentOperator::Assign {
+                    self.compile_operand(expression, scope)?
+                } else {
+                    let current_name = self.next_temp_name();
+                    let current_location = scope.add_variable(
+                        current_name.clone(),
+                        LocationRequest::Temp,
+                        Some(member.span),
+                    )?;
+                    let current = self.resolve_register(&current_location)?;
+                    self.write_instruction(
+                        Instruction::Load(
+                            current.clone(),
+                            device.clone(),
+                            Operand::LogicType(member.node.clone()),
+                        ),
+                        Some(member.span),
+                    )?;
+                    self.compile_compound_assignment_value(
+                        *operator,
+                        current,
+                        Some(current_name),
+                        expression,
+                        scope,
+                        expr_span,
+                    )?
+                };
 
                 self.write_instruction(
                     Instruction::Store(device, Operand::LogicType(member.node.clone()), val),
@@ -732,7 +832,33 @@ impl<'a> Compiler<'a> {
                 if let Some(array) = Self::array_location_of(object, scope) {
                     let (addr, addr_cleanup) =
                         self.compile_array_index_address(&array, index, scope)?;
-                    let (val, val_cleanup) = self.compile_operand(expression, scope)?;
+                    let (val, val_cleanup) = if *operator == AssignmentOperator::Assign {
+                        self.compile_operand(expression, scope)?
+                    } else {
+                        let current_name = self.next_temp_name();
+                        let current_location = scope.add_variable(
+                            current_name.clone(),
+                            LocationRequest::Temp,
+                            Some(assignee.span),
+                        )?;
+                        let current = self.resolve_register(&current_location)?;
+                        self.write_instruction(
+                            Instruction::Get(
+                                current.clone(),
+                                Operand::Device(DeviceType::Housing),
+                                addr.clone(),
+                            ),
+                            Some(assignee.span),
+                        )?;
+                        self.compile_compound_assignment_value(
+                            *operator,
+                            current,
+                            Some(current_name),
+                            expression,
+                            scope,
+                            expr_span,
+                        )?
+                    };
 
                     self.write_instruction(
                         Instruction::Put(Operand::Device(DeviceType::Housing), addr, val),
@@ -759,8 +885,38 @@ impl<'a> Compiler<'a> {
                     ));
                 }
 
-                let ((addr, addr_cleanup), (val, val_cleanup)) =
-                    compile_operands!(self, (index, expression), scope);
+                let (device, dev_cleanup, addr, addr_cleanup, val, val_cleanup) =
+                    if *operator == AssignmentOperator::Assign {
+                        let ((addr, addr_cleanup), (val, val_cleanup)) =
+                            compile_operands!(self, (index, expression), scope);
+                        (device, dev_cleanup, addr, addr_cleanup, val, val_cleanup)
+                    } else {
+                        let (device, dev_cleanup) =
+                            self.prevent_return_register_clobbering(device, dev_cleanup, scope)?;
+                        let (addr, addr_cleanup) = self.compile_operand(index, scope)?;
+                        let (addr, addr_cleanup) =
+                            self.prevent_return_register_clobbering(addr, addr_cleanup, scope)?;
+                        let current_name = self.next_temp_name();
+                        let current_location = scope.add_variable(
+                            current_name.clone(),
+                            LocationRequest::Temp,
+                            Some(assignee.span),
+                        )?;
+                        let current = self.resolve_register(&current_location)?;
+                        self.write_instruction(
+                            Instruction::Get(current.clone(), device.clone(), addr.clone()),
+                            Some(assignee.span),
+                        )?;
+                        let (val, val_cleanup) = self.compile_compound_assignment_value(
+                            *operator,
+                            current,
+                            Some(current_name),
+                            expression,
+                            scope,
+                            expr_span,
+                        )?;
+                        (device, dev_cleanup, addr, addr_cleanup, val, val_cleanup)
+                    };
 
                 self.write_instruction(Instruction::Put(device, addr, val), Some(assignee.span))?;
 
